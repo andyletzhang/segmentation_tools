@@ -1,0 +1,247 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd ">
+<svg height="480" viewBox="0 0 640 480" width="640" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg" >
+	<defs>
+		<style type="text/css">
+			<![CDATA[
+				.data {
+					fill: none;
+					stroke-linecap: round;
+					stroke-width: 1.5;
+				}
+				line.axis {
+					stroke: dimgrey;
+					stroke-width: 0.75;
+				}
+				line.colorbar.tic {
+					stroke: black;
+					stroke-linecap: butt;
+					stroke-width: 0.5;
+				}
+				line.scalebar {
+					stroke: black;
+					stroke-width: 0.75;
+				}
+				line.tic {
+					stroke-linecap: round;
+				}
+				path.data.range {
+					fill: none;
+					stroke-linecap: round;
+					stroke-width: 2.5;
+				}
+				polyline.data.legend.connector {
+					stroke: black;
+					stroke-width: 0.75;
+				}
+				rect.colorbar {
+					fill: url(#colorbar_gradient);
+					stroke: black;
+					stroke-width: 0.5;
+				}
+				rect.plot {
+					fill: none;
+					stroke: none;
+				}
+				text {
+					font-family: Times;
+				}
+				text.axis {
+					fill: dimgrey;
+				}
+				text.colorbar.label {
+					fill: black;
+				}
+				text.label {
+					font-weight: normal;
+				}
+				text.title {
+					font-weight: bold;
+				}
+			]]>
+		</style>
+		<linearGradient id="colorbar_gradient" x1="0%" x2="0%" y1="0%" y2="100%">
+			<stop offset="0%" stop-color="rgb(0,0,0)"/>
+			<stop offset="30%" stop-color="rgb(70,0,255)"/>
+			<stop offset="70%" stop-color="rgb(255,70,0)"/>
+			<stop offset="100%" stop-color="rgb(255,150,0)"/>
+		</linearGradient>
+	</defs>
+	<g id="contours" class="layer">
+		<g id="WT Model">
+			<path d="M 324.13057 247.94248 C323.72961,244.78177 323.43181,241.61072 323.23069,238.43248" fill="none" stroke="rgb(0,0,0)" class="data range"/>
+			<path d="M 323.23069 238.43248 C323.02957,235.25424 322.92514,232.0688 322.91092,228.87931" fill="none" stroke="rgb(2,0,8)" class="data range"/>
+			<path d="M 322.91092 228.87931 C322.8967,225.68981 322.9727,222.49625 323.13245,219.30177" fill="none" stroke="rgb(4,0,17)" class="data range"/>
+			<path d="M 323.13245 219.30177 C323.29219,216.1073 323.53568,212.9119 323.85645,209.71872" fill="none" stroke="rgb(7,0,25)" class="data range"/>
+			<path d="M 323.85645 209.71872 C324.17722,206.52554 324.57526,203.33457 325.04411,200.14897" fill="none" stroke="rgb(9,0,34)" class="data range"/>
+			<path d="M 325.04411 200.14897 C325.51296,196.96336 326.05262,193.78311 326.65662,190.61135" fill="none" stroke="rgb(11,0,42)" class="data range"/>
+			<path d="M 326.65662 190.61135 C327.26062,187.43959 327.92895,184.27633 328.65515,181.1247" fill="none" stroke="rgb(14,0,51)" class="data range"/>
+			<path d="M 328.65515 181.1247 C329.38136,177.97307 330.16543,174.83307 331.0009,171.70784" fill="none" stroke="rgb(16,0,60)" class="data range"/>
+			<path d="M 331.0009 171.70784 C331.83637,168.58261 332.72324,165.47215 333.65504,162.3796" fill="none" stroke="rgb(18,0,68)" class="data range"/>
+			<path d="M 333.65504 162.3796 C334.58684,159.28705 335.56356,156.21241 336.57875,153.15882" fill="none" stroke="rgb(21,0,77)" class="data range"/>
+			<path d="M 336.57875 153.15882 C337.59394,150.10523 338.64759,147.07268 339.73323,144.06432" fill="none" stroke="rgb(23,0,85)" class="data range"/>
+			<path d="M 339.73323 144.06432 C340.81887,141.05596 341.9365,138.07179 343.07965,135.11494" fill="none" stroke="rgb(25,0,94)" class="data range"/>
+			<path d="M 343.07965 135.11494 C344.2228,132.15809 345.39147,129.22856 346.57919,126.32949" fill="none" stroke="rgb(28,0,103)" class="data range"/>
+			<path d="M 346.57919 126.32949 C347.76692,123.43043 348.97369,120.56183 350.16784,117.70893" fill="none" stroke="rgb(30,0,111)" class="data range"/>
+			<path d="M 350.16784 117.70893 C351.362,114.85603 352.54352,112.01883 353.68075,109.18259" fill="none" stroke="rgb(32,0,120)" class="data range"/>
+			<path d="M 353.68075 109.18259 C354.81797,106.34634 355.9109,103.51104 356.92784,100.66193" fill="none" stroke="rgb(35,0,128)" class="data range"/>
+			<path d="M 356.92784 100.66193 C357.94479,97.812821 358.88576,94.9499 359.71908,92.058411" fill="none" stroke="rgb(37,0,137)" class="data range"/>
+			<path d="M 359.71908 92.058411 C360.55239,89.166922 361.27806,86.246866 361.86439,83.283484" fill="none" stroke="rgb(40,0,145)" class="data range"/>
+			<path d="M 361.86439 83.283484 C362.45072,80.320101 362.89772,77.313394 363.17372,74.248603" fill="none" stroke="rgb(42,0,154)" class="data range"/>
+			<path d="M 363.17372 74.248603 C363.44972,71.183813 363.55471,68.060939 363.47248,64.950312" fill="none" stroke="rgb(44,0,163)" class="data range"/>
+			<path d="M 363.47248 64.950312 C363.39026,61.839685 363.12081,58.741304 362.64795,55.7255" fill="none" stroke="rgb(47,0,171)" class="data range"/>
+			<path d="M 362.64795 55.7255 C362.17508,52.709696 361.49878,49.776467 360.60284,46.996144" fill="none" stroke="rgb(49,0,180)" class="data range"/>
+			<path d="M 360.60284 46.996144 C359.70691,44.215821 358.59134,41.588404 357.23992,39.184222" fill="none" stroke="rgb(51,0,188)" class="data range"/>
+			<path d="M 357.23992 39.184222 C355.8885,36.78004 354.30123,34.599092 352.4619,32.71171" fill="none" stroke="rgb(54,0,197)" class="data range"/>
+			<path d="M 352.4619 32.71171 C350.62257,30.824327 348.53119,29.230509 346.17153,28.000585" fill="none" stroke="rgb(56,0,206)" class="data range"/>
+			<path d="M 346.17153 28.000585 C343.81188,26.770661 341.18395,25.904631 338.38636,25.37362" fill="none" stroke="rgb(58,0,214)" class="data range"/>
+			<path d="M 338.38636 25.37362 C335.58877,24.842609 332.62151,24.646618 329.58319,24.756771" fill="none" stroke="rgb(61,0,223)" class="data range"/>
+			<path d="M 329.58319 24.756771 C326.54486,24.866924 323.43548,25.283222 320.35363,25.976789" fill="none" stroke="rgb(63,0,231)" class="data range"/>
+			<path d="M 320.35363 25.976789 C317.27178,26.670356 314.21747,27.641193 311.2893,28.860425" fill="none" stroke="rgb(65,0,240)" class="data range"/>
+			<path d="M 311.2893 28.860425 C308.36113,30.079657 305.5591,31.547283 302.86846,33.215638" fill="none" stroke="rgb(68,0,248)" class="data range"/>
+			<path d="M 302.86846 33.215638 C300.17781,34.883992 297.59854,36.753075 295.1159,38.775218" fill="none" stroke="rgb(71,0,253)" class="data range"/>
+			<path d="M 295.1159 38.775218 C292.63325,40.797362 290.24723,42.972566 287.94307,45.253164" fill="none" stroke="rgb(76,2,246)" class="data range"/>
+			<path d="M 287.94307 45.253164 C285.63891,47.533762 283.41661,49.919755 281.27646,52.39553" fill="none" stroke="rgb(80,4,240)" class="data range"/>
+			<path d="M 281.27646 52.39553 C279.1363,54.871305 277.07829,57.436863 275.1027,60.076593" fill="none" stroke="rgb(85,5,233)" class="data range"/>
+			<path d="M 275.1027 60.076593 C273.12711,62.716322 271.23395,65.430224 269.42348,68.202687" fill="none" stroke="rgb(90,7,227)" class="data range"/>
+			<path d="M 269.42348 68.202687 C267.61302,70.975149 265.88526,73.806173 264.24049,76.680146" fill="none" stroke="rgb(94,9,220)" class="data range"/>
+			<path d="M 264.24049 76.680146 C262.59572,79.55412 261.03393,82.471043 259.5554,85.415305" fill="none" stroke="rgb(99,11,214)" class="data range"/>
+			<path d="M 259.5554 85.415305 C258.07688,88.359567 256.68162,91.331168 255.36991,94.314497" fill="none" stroke="rgb(104,12,207)" class="data range"/>
+			<path d="M 255.36991 94.314497 C254.05819,97.297826 252.83003,100.29288 251.67982,103.30003" fill="none" stroke="rgb(108,14,201)" class="data range"/>
+			<path d="M 251.67982 103.30003 C250.52961,106.30718 249.45736,109.32641 248.45749,112.3581" fill="none" stroke="rgb(113,16,195)" class="data range"/>
+			<path d="M 248.45749 112.3581 C247.45761,115.38979 246.53011,118.43393 245.6694,121.49088" fill="none" stroke="rgb(118,18,188)" class="data range"/>
+			<path d="M 245.6694 121.49088 C244.80869,124.54784 244.01477,127.6176 243.28205,130.70055" fill="none" stroke="rgb(122,19,182)" class="data range"/>
+			<path d="M 243.28205 130.70055 C242.54933,133.78349 241.87781,136.87961 241.26191,139.98927" fill="none" stroke="rgb(127,21,175)" class="data range"/>
+			<path d="M 241.26191 139.98927 C240.64601,143.09893 240.08572,146.22212 239.57547,149.35922" fill="none" stroke="rgb(132,23,169)" class="data range"/>
+			<path d="M 239.57547 149.35922 C239.06522,152.49631 238.60499,155.64731 238.18922,158.81256" fill="none" stroke="rgb(136,25,162)" class="data range"/>
+			<path d="M 238.18922 158.81256 C237.77344,161.97782 237.40211,165.15734 237.06964,168.35148" fill="none" stroke="rgb(141,27,156)" class="data range"/>
+			<path d="M 237.06964 168.35148 C236.73717,171.54563 236.44355,174.75439 236.18322,177.97814" fill="none" stroke="rgb(146,28,150)" class="data range"/>
+			<path d="M 236.18322 177.97814 C235.92288,181.2019 235.69581,184.44063 235.49644,187.69472" fill="none" stroke="rgb(150,30,143)" class="data range"/>
+			<path d="M 235.49644 187.69472 C235.29706,190.94881 235.12537,194.21824 234.97579,197.50339" fill="none" stroke="rgb(155,32,137)" class="data range"/>
+			<path d="M 234.97579 197.50339 C234.8262,200.78853 234.69872,204.08938 234.58775,207.40631" fill="none" stroke="rgb(160,34,130)" class="data range"/>
+			<path d="M 234.58775 207.40631 C234.47679,210.72323 234.38234,214.05623 234.30784,217.40125" fill="none" stroke="rgb(164,35,124)" class="data range"/>
+			<path d="M 234.30784 217.40125 C234.23334,220.74627 234.1788,224.10331 234.14764,227.46832" fill="none" stroke="rgb(169,37,117)" class="data range"/>
+			<path d="M 234.14764 227.46832 C234.11648,230.83334 234.10871,234.20632 234.12777,237.58323" fill="none" stroke="rgb(174,39,111)" class="data range"/>
+			<path d="M 234.12777 237.58323 C234.14682,240.96013 234.1927,244.34096 234.26884,247.72166" fill="none" stroke="rgb(178,41,104)" class="data range"/>
+			<path d="M 234.26884 247.72166 C234.34498,251.10236 234.45138,254.48293 234.59147,257.85932" fill="none" stroke="rgb(183,42,98)" class="data range"/>
+			<path d="M 234.59147 257.85932 C234.73156,261.23571 234.90535,264.60792 235.11627,267.97191" fill="none" stroke="rgb(188,44,92)" class="data range"/>
+			<path d="M 235.11627 267.97191 C235.32719,271.33589 235.57524,274.69165 235.86386,278.03512" fill="none" stroke="rgb(192,46,85)" class="data range"/>
+			<path d="M 235.86386 278.03512 C236.15248,281.3786 236.48166,284.7098 236.85485,288.02467" fill="none" stroke="rgb(197,48,79)" class="data range"/>
+			<path d="M 236.85485 288.02467 C237.22804,291.33954 237.64523,294.63808 238.10986,297.91624" fill="none" stroke="rgb(202,50,72)" class="data range"/>
+			<path d="M 238.10986 297.91624 C238.57448,301.1944 239.08655,304.45218 239.64949,307.68553" fill="none" stroke="rgb(206,51,66)" class="data range"/>
+			<path d="M 239.64949 307.68553 C240.21243,310.91888 240.82625,314.1278 241.49437,317.30825" fill="none" stroke="rgb(211,53,59)" class="data range"/>
+			<path d="M 241.49437 317.30825 C242.1625,320.48869 242.88493,323.64066 243.66511,326.76009" fill="none" stroke="rgb(216,55,53)" class="data range"/>
+			<path d="M 243.66511 326.76009 C244.44529,329.87952 245.28322,332.96643 246.18233,336.01676" fill="none" stroke="rgb(220,57,47)" class="data range"/>
+			<path d="M 246.18233 336.01676 C247.08144,339.06708 248.04172,342.08083 249.06663,345.05394" fill="none" stroke="rgb(225,58,40)" class="data range"/>
+			<path d="M 249.06663 345.05394 C250.09154,348.02706 251.18106,350.95955 252.33863,353.84735" fill="none" stroke="rgb(230,60,34)" class="data range"/>
+			<path d="M 252.33863 353.84735 C253.49621,356.73516 254.72184,359.57829 256.01896,362.37268" fill="none" stroke="rgb(234,62,27)" class="data range"/>
+			<path d="M 256.01896 362.37268 C257.31607,365.16708 258.68468,367.91275 260.12821,370.60564" fill="none" stroke="rgb(239,64,21)" class="data range"/>
+			<path d="M 260.12821 370.60564 C261.57174,373.29852 263.0902,375.93863 264.68701,378.52191" fill="none" stroke="rgb(244,65,14)" class="data range"/>
+			<path d="M 264.68701 378.52191 C266.28383,381.10518 267.959,383.63163 269.71597,386.0972" fill="none" stroke="rgb(248,67,8)" class="data range"/>
+			<path d="M 269.71597 386.0972 C271.47294,388.56277 273.31171,390.96745 275.23571,393.30721" fill="none" stroke="rgb(253,69,1)" class="data range"/>
+			<path d="M 275.23571 393.30721 C277.15971,395.64696 279.16894,397.92179 281.26683,400.12763" fill="none" stroke="rgb(255,71,0)" class="data range"/>
+			<path d="M 281.26683 400.12763 C283.36473,402.33348 285.5513,404.47035 287.82996,406.53418" fill="none" stroke="rgb(255,74,0)" class="data range"/>
+			<path d="M 287.82996 406.53418 C290.10863,408.59801 292.4794,410.58882 294.94571,412.50254" fill="none" stroke="rgb(255,77,0)" class="data range"/>
+			<path d="M 294.94571 412.50254 C297.41202,414.41626 299.97387,416.25291 302.63469,418.00842" fill="none" stroke="rgb(255,79,0)" class="data range"/>
+			<path d="M 302.63469 418.00842 C305.29552,419.76393 308.05532,421.43831 310.91752,423.02751" fill="none" stroke="rgb(255,82,0)" class="data range"/>
+			<path d="M 310.91752 423.02751 C313.77973,424.61671 316.74435,426.12073 319.74107,427.43025" fill="none" stroke="rgb(255,85,0)" class="data range"/>
+			<path d="M 319.74107 427.43025 C322.7378,428.73977 325.76662,429.8548 328.75725,430.66602" fill="none" stroke="rgb(255,88,0)" class="data range"/>
+			<path d="M 328.75725 430.66602 C331.74787,431.47723 334.70029,431.98464 337.54421,432.07891" fill="none" stroke="rgb(255,90,0)" class="data range"/>
+			<path d="M 337.54421 432.07891 C340.38812,432.17319 343.12353,431.85434 345.68012,431.01306" fill="none" stroke="rgb(255,93,0)" class="data range"/>
+			<path d="M 345.68012 431.01306 C348.23671,430.17177 350.61448,428.80803 352.7681,427.04301" fill="none" stroke="rgb(255,96,0)" class="data range"/>
+			<path d="M 352.7681 427.04301 C354.92171,425.27798 356.85116,423.11165 358.51109,420.66518" fill="none" stroke="rgb(255,98,0)" class="data range"/>
+			<path d="M 358.51109 420.66518 C360.17103,418.2187 361.56145,415.49207 362.63701,412.60644" fill="none" stroke="rgb(255,101,0)" class="data range"/>
+			<path d="M 362.63701 412.60644 C363.71258,409.7208 364.47328,406.67616 364.97628,403.55074" fill="none" stroke="rgb(255,104,0)" class="data range"/>
+			<path d="M 364.97628 403.55074 C365.47929,400.42532 365.7246,397.21914 365.76939,394.01041" fill="none" stroke="rgb(255,106,0)" class="data range"/>
+			<path d="M 365.76939 394.01041 C365.81417,390.80169 365.65843,387.59042 365.35933,384.45486" fill="none" stroke="rgb(255,109,0)" class="data range"/>
+			<path d="M 365.35933 384.45486 C365.06022,381.3193 364.61776,378.25943 364.05951,375.24719" fill="none" stroke="rgb(255,112,0)" class="data range"/>
+			<path d="M 364.05951 375.24719 C363.50126,372.23494 362.82722,369.27031 362.06497,366.32521" fill="none" stroke="rgb(255,114,0)" class="data range"/>
+			<path d="M 362.06497 366.32521 C361.30272,363.38011 360.45225,360.45455 359.54114,357.52044" fill="none" stroke="rgb(255,117,0)" class="data range"/>
+			<path d="M 359.54114 357.52044 C358.63003,354.58633 357.65828,351.64368 356.63954,348.69232" fill="none" stroke="rgb(255,120,0)" class="data range"/>
+			<path d="M 356.63954 348.69232 C355.62079,345.74097 354.55506,342.78092 353.45598,339.81202" fill="none" stroke="rgb(255,123,0)" class="data range"/>
+			<path d="M 353.45598 339.81202 C352.3569,336.84313 351.22448,333.86539 350.07237,330.87865" fill="none" stroke="rgb(255,125,0)" class="data range"/>
+			<path d="M 350.07237 330.87865 C348.92025,327.89192 347.74845,324.89619 346.5706,321.89131" fill="none" stroke="rgb(255,128,0)" class="data range"/>
+			<path d="M 346.5706 321.89131 C345.39275,318.88644 344.20885,315.87242 343.03257,312.84911" fill="none" stroke="rgb(255,131,0)" class="data range"/>
+			<path d="M 343.03257 312.84911 C341.85628,309.8258 340.6876,306.7932 339.54018,303.75115" fill="none" stroke="rgb(255,133,0)" class="data range"/>
+			<path d="M 339.54018 303.75115 C338.39275,300.70911 337.26659,297.65762 336.17533,294.59655" fill="none" stroke="rgb(255,136,0)" class="data range"/>
+			<path d="M 336.17533 294.59655 C335.08406,291.53547 334.02771,288.4648 333.01991,285.3844" fill="none" stroke="rgb(255,139,0)" class="data range"/>
+			<path d="M 333.01991 285.3844 C332.01211,282.30399 331.05287,279.21384 330.15583,276.11381" fill="none" stroke="rgb(255,141,0)" class="data range"/>
+			<path d="M 330.15583 276.11381 C329.25879,273.01377 328.42396,269.90385 327.66498,266.78389" fill="none" stroke="rgb(255,144,0)" class="data range"/>
+			<path d="M 327.66498 266.78389 C326.906,263.66393 326.22288,260.53393 325.62926,257.39374" fill="none" stroke="rgb(255,147,0)" class="data range"/>
+			<path d="M 325.62926 257.39374 C325.03564,254.25356 324.53153,251.10318 324.13057,247.94248" fill="none" stroke="rgb(255,150,0)" class="data range"/>
+		</g>
+	</g>
+	<g id="scale bar" class="layer">
+		<g id="scalebar lines">
+			<line id="scalebar" class="scalebar" x1="30" x2="74.31179" y1="480" y2="480"/>
+			<line id="scalebar left tic" class="scalebar tic" x1="30" x2="30" y1="478.5" y2="481.5"/>
+			<line id="scalebar right tic" class="scalebar tic" x1="74.31179" x2="74.31179" y1="478.5" y2="481.5"/>
+		</g>
+		<text font-size="12" class="scalebar label" text-anchor="middle" x="52.155895" y="493.5">0.25 µm</text>
+	</g>
+	<g id="color bar" class="layer">
+		<rect height="240" id="colorbar" class="colorbar" width="30" x="606" y="120"/>
+		<g id="colorbar labels">
+			<text class="colorbar label" text-anchor="end" x="599" y="124.5">1</text>
+			<text class="colorbar label" text-anchor="end" x="599" y="148.74242">11</text>
+			<text class="colorbar label" text-anchor="end" x="599" y="172.98485">21</text>
+			<text class="colorbar label" text-anchor="end" x="599" y="197.22727">31</text>
+			<text class="colorbar label" text-anchor="end" x="599" y="221.4697">41</text>
+			<text class="colorbar label" text-anchor="end" x="599" y="245.71212">51</text>
+			<text class="colorbar label" text-anchor="end" x="599" y="269.95455">61</text>
+			<text class="colorbar label" text-anchor="end" x="599" y="294.19697">71</text>
+			<text class="colorbar label" text-anchor="end" x="599" y="318.43939">81</text>
+			<text class="colorbar label" text-anchor="end" x="599" y="342.68182">91</text>
+			<text class="colorbar label" text-anchor="end" x="599" y="364.5">100</text>
+		</g>
+		<g id="colorbar tics">
+			<line id="colorbar tic at 1" class="colorbar tic" x1="606" x2="602" y1="120" y2="120"/>
+			<line id="colorbar tic at 11" class="colorbar tic" x1="606" x2="602" y1="144.24242" y2="144.24242"/>
+			<line id="colorbar tic at 21" class="colorbar tic" x1="606" x2="602" y1="168.48485" y2="168.48485"/>
+			<line id="colorbar tic at 31" class="colorbar tic" x1="606" x2="602" y1="192.72727" y2="192.72727"/>
+			<line id="colorbar tic at 41" class="colorbar tic" x1="606" x2="602" y1="216.9697" y2="216.9697"/>
+			<line id="colorbar tic at 51" class="colorbar tic" x1="606" x2="602" y1="241.21212" y2="241.21212"/>
+			<line id="colorbar tic at 61" class="colorbar tic" x1="606" x2="602" y1="265.45455" y2="265.45455"/>
+			<line id="colorbar tic at 71" class="colorbar tic" x1="606" x2="602" y1="289.69697" y2="289.69697"/>
+			<line id="colorbar tic at 81" class="colorbar tic" x1="606" x2="602" y1="313.93939" y2="313.93939"/>
+			<line id="colorbar tic at 91" class="colorbar tic" x1="606" x2="602" y1="338.18182" y2="338.18182"/>
+			<line id="colorbar tic at 100" class="colorbar tic" x1="606" x2="602" y1="360" y2="360"/>
+			<line id="colorbar smalltic at 6" class="colorbar tic" x1="606" x2="604" y1="132.12121" y2="132.12121"/>
+			<line id="colorbar smalltic at 16" class="colorbar tic" x1="606" x2="604" y1="156.36364" y2="156.36364"/>
+			<line id="colorbar smalltic at 26" class="colorbar tic" x1="606" x2="604" y1="180.60606" y2="180.60606"/>
+			<line id="colorbar smalltic at 36" class="colorbar tic" x1="606" x2="604" y1="204.84848" y2="204.84848"/>
+			<line id="colorbar smalltic at 46" class="colorbar tic" x1="606" x2="604" y1="229.09091" y2="229.09091"/>
+			<line id="colorbar smalltic at 56" class="colorbar tic" x1="606" x2="604" y1="253.33333" y2="253.33333"/>
+			<line id="colorbar smalltic at 66" class="colorbar tic" x1="606" x2="604" y1="277.57576" y2="277.57576"/>
+			<line id="colorbar smalltic at 76" class="colorbar tic" x1="606" x2="604" y1="301.81818" y2="301.81818"/>
+			<line id="colorbar smalltic at 86" class="colorbar tic" x1="606" x2="604" y1="326.06061" y2="326.06061"/>
+			<line id="colorbar smalltic at 96" class="colorbar tic" x1="606" x2="604" y1="350.30303" y2="350.30303"/>
+		</g>
+	</g>
+	<g id="Point Labels" class="layer">
+		<g id="point label connectors">
+			<polyline id="point_connector 0" points="324.13871,248.07949 341.91611,245.25739" class="data legend connector"/>
+			<polyline id="point_connector 10" points="337.1944,153.35697 354.1607,159.36901" class="data legend connector"/>
+			<polyline id="point_connector 20" points="363.25356,65.243997 381.23818,65.987803" class="data legend connector"/>
+			<polyline id="point_connector 30" points="302.52773,33.915403 292.5622,18.925799" class="data legend connector"/>
+			<polyline id="point_connector 40" points="248.81334,111.56237 231.78918,105.71618" class="data legend connector"/>
+			<polyline id="point_connector 50" points="234.3955,208.47898 216.39576,208.38251" class="data legend connector"/>
+			<polyline id="point_connector 60" points="239.51507,306.63142 221.71921,309.33457" class="data legend connector"/>
+			<polyline id="point_connector 70" points="275.72217,393.8151 261.69334,405.09303" class="data legend connector"/>
+			<polyline id="point_connector 80" points="353.86073,426.54939 364.81925,440.82912" class="data legend connector"/>
+			<polyline id="point_connector 90" points="353.14994,339.71063 370.14696,333.78599" class="data legend connector"/>
+		</g>
+		<g id="point label text">
+			<text font-size="14" class="legend label" text-anchor="middle" x="350.21223" y="249.19042">1</text>
+			<text font-size="14" class="legend label" text-anchor="middle" x="362.07831" y="167.42463">11</text>
+			<text font-size="14" class="legend label" text-anchor="middle" x="389.63101" y="71.584913">21</text>
+			<text font-size="14" class="legend label" text-anchor="middle" x="287.91162" y="17.18065">31</text>
+			<text font-size="14" class="legend label" text-anchor="middle" x="223.84457" y="108.23795">41</text>
+			<text font-size="14" class="legend label" text-anchor="middle" x="207.99588" y="213.5875">51</text>
+			<text font-size="14" class="legend label" text-anchor="middle" x="213.41447" y="315.84604">61</text>
+			<text font-size="14" class="legend label" text-anchor="middle" x="255.14655" y="415.60607">71</text>
+			<text font-size="14" class="legend label" text-anchor="middle" x="369.93323" y="452.743">81</text>
+			<text font-size="14" class="legend label" text-anchor="middle" x="378.0789" y="336.27116">91</text>
+		</g>
+	</g>
+</svg>

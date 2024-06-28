@@ -1,6 +1,6 @@
 import numpy as np
 from scipy import ndimage
-from cellpose import utils
+import cellpose.utils as cp_utils
 import cv2
 import pickle
 from multiprocessing import Pool
@@ -38,7 +38,7 @@ def mend_gaps(masks, max_gap_size):
 
 def masks_to_outlines(masks):
         from scipy.sparse import csc_matrix
-        boundaries=utils.masks_to_outlines(masks) # have cellpose find new outlines
+        boundaries=cp_utils.masks_to_outlines(masks) # have cellpose find new outlines
         mended_outlines=np.zeros(masks.shape, dtype=np.uint16)
         mended_outlines[boundaries]=masks[boundaries] # attach labels to outlines
         return csc_matrix(mended_outlines)
@@ -54,31 +54,40 @@ def gaussian_parallel(imgs, n_processes=8, progress_bar=None, sigma=5, **kwargs)
 
     return out
 
-def normalize(image, dtype='float32', quantile=(0.01, 0.99)):
+def normalize(image, dtype='float32', quantile=(0.01, 0.99), **kwargs):
     ''' normalize image data (color or grayscale) between 0 and 1 (min max, or a specified quantile)'''
     image=image.astype(dtype)
-    if image.shape[-1]==3: # color image: normalize each channel separately
-        image=normalize_RGB(image, dtype, quantile)
+    if image.ndim==3: # multichannel image: normalize each channel separately
+        if np.argmin(image.shape)==2: #RGB
+            image=normalize_RGB(image, dtype, quantile, **kwargs)
+        elif np.argmin(image.shape)==0: # multipage grayscale
+            image=np.array([normalize_grayscale(page, dtype, quantile, **kwargs) for page in image])
     else: # grayscale
-        image=normalize_grayscale(image, dtype, quantile)
+        image=normalize_grayscale(image, dtype, quantile, **kwargs)
 
     return image
 
-def normalize_RGB(color_img, dtype='float32', quantile=(0,1)):
+def normalize_RGB(color_img, dtype='float32', quantile=(0,1), **kwargs):
     ''' normalize each channel of a color image separately '''
     image=color_img.astype(dtype)
     for n, color_channel in enumerate(np.transpose(image, axes=[2,0,1])):
         image[:,:,n]=normalize_grayscale(color_channel, dtype, quantile)
     return image
 
-def normalize_grayscale(image, dtype='float32', quantile=(0,1)):
+def normalize_grayscale(image, dtype='float32', quantile=(0,1), mask_zeros=False):
     ''' normalize data by min and max or by some specified quantile '''
-    bounds=np.quantile(image, quantile)
-    if np.array_equal(bounds,(0,0)):
-        return image
+    if mask_zeros:
+        masked=np.ma.masked_values(image, 0)
+        bounds=np.quantile(masked[~masked.mask].data, quantile)
     else:
+        bounds=np.quantile(image, quantile)
+
+    if not np.array_equal(bounds,(0,0)):
         image=(image-bounds[0])/(bounds[1]-bounds[0]).astype(dtype)
-        return np.clip(image, a_min=0, a_max=1)
+        image=np.clip(image, a_min=0, a_max=1)
+    return image
+
+
 
 from scipy.optimize import minimize_scalar
 def get_fluor_threshold(img, size_threshold, noise_score=0.02, quantile=(0.5, 0.95), tolerance=1):
@@ -113,14 +122,9 @@ def frame_FUCCI(args, percent_threshold=0.15):
 
     return cc_stage_number
 
-def parallel_frame_FUCCI(args, percent_threshold=0.15, progress_bar=None):
+def parallel_frame_FUCCI(args, percent_threshold=0.15, progress_bar=lambda x, **progress_kwargs: x):
     p=Pool(8)
-    if progress_bar is None:
-        progress_bar=lambda x: x
-        progress_kwargs={}
-    else:
-        progress_kwargs={'total': len(args), 'desc': 'Processing frames'}
-    results=[x for x in progress_bar(p.imap(partial(frame_FUCCI, percent_threshold=percent_threshold), args), **progress_kwargs)]
+    results=[x for x in progress_bar(p.imap(partial(frame_FUCCI, percent_threshold=percent_threshold), args), total=len(args), desc='Processing frames')]
 
     return results
 

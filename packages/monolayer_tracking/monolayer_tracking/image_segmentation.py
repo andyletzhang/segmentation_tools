@@ -26,15 +26,15 @@ def segment_img(img, cp_model, size_model, color_channels=[0,0], mend=True, max_
 def segment_stack(stack_path, output_path=None, segmentation_channel='membrane', geminin_path=None, pip_path=None, initial_frame_number=0, **kwargs):
     # load model
     if segmentation_channel=="membrane" or segmentation_channel=='FUCCI':
-        cp_model=models.CellposeModel(gpu=True, model_type='cyto2')
-        size_model=models.SizeModel(cp_model, pretrained_size='C:\\Users\\Andy\\.cellpose\\models\\size_cyto2torch_0.npy')
+        cp_model=models.CellposeModel(gpu=True, model_type='cyto3')
+        size_model=models.SizeModel(cp_model, pretrained_size='C:\\Users\\Andy\\.cellpose\\models\\size_cyto3.npy')
     ## TODO: update these
     elif segmentation_channel=="nuclei":
         cp_model=models.CellposeModel(gpu=True, model_type='nuclei')
         size_model=models.SizeModel(cp_model, pretrained_size='C:\\Users\\Andy\\.cellpose\\models\\size_nucleitorch_0.npy')
     if segmentation_channel=="ZO-1":
         cp_model=models.Cellpose(gpu=True, model_type='gastruloid_v6')
-        size_model=models.SizeModel(cp_model, pretrained_size='C:\\Users\\Andy\\.cellpose\\models\\size_cyto2torch_0.npy')
+        size_model=models.SizeModel(cp_model, pretrained_size='C:\\Users\\Andy\\.cellpose\\models\\size_cyto3.npy')
     
     stack_path=Path(stack_path)
     stack=io.imread(stack_path)

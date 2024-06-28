@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import trackpy as tp
-from cellpose import utils
+import cellpose.utils as cp_utils
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Polygon
 from scipy import ndimage
@@ -447,14 +447,14 @@ class Image:
         
         # Generate outlines channel or load from file
         if mended or 'outlines' not in data.keys():
-            self.outlines = preprocessing.masks_to_outlines(self.masks)  # Generate outlines from masks
+            self.outlines = cp_utils.masks_to_outlines(self.masks)  # Generate outlines from masks
         else:
-            self.outlines = sparse.csc_matrix(data['outlines'], dtype=self.masks.dtype)  # Load outlines from data file
+            self.outlines = data['outlines']  # Load outlines from data file
         
         # Generate outlines_list or load from file
         if mended or 'outlines_list' not in data.keys():
             self.vprint('creating new outlines_list from masks')
-            outlines_list = utils.outlines_list(self.masks)  # Generate outlines_list
+            outlines_list = cp_utils.outlines_list(self.masks)  # Generate outlines_list
         else:
             outlines_list = data['outlines_list']  # Load outlines_list from file
         
@@ -489,7 +489,7 @@ class Image:
     def to_seg_npy(self, export_path=None):
         data=np.load(self.name, allow_pickle=True).item()
         if not 'outlines_list' in data.keys():
-            outlines_list=utils.outlines_list(self.masks)
+            outlines_list=cp_utils.outlines_list(self.masks)
         else:
             outlines_list=data['outlines_list']
         export={'img':data['img'], 'masks':self.masks, 'outlines':self.outlines, 'outlines_list':outlines_list}
@@ -503,7 +503,7 @@ class Image:
         np.save(export_path, export) # write segmentation file
     
     # ------------FUCCI----------------        
-    def measure_FUCCI(self, percent_threshold=0.15, red_fluor_threshold=0.2, green_fluor_threshold=0.2, threshold_offset=0, noise_score=0.02):
+    def measure_FUCCI(self, percent_threshold=0.15, red_fluor_threshold=None, green_fluor_threshold=None, orange_brightness=1.5, threshold_offset=0, noise_score=0.02):
         """
         Measure the FUCCI (Fluorescence Ubiquitination Cell Cycle Indicator) levels in cells.
 
@@ -523,11 +523,16 @@ class Image:
         red, green = self.FUCCI
         
         # threshold fluorescence levels
-        red_fluor_threshold=preprocessing.get_fluor_threshold(red, nuclear_size_threshold, noise_score=noise_score)+threshold_offset
-        green_fluor_threshold=preprocessing.get_fluor_threshold(green, nuclear_size_threshold, noise_score=noise_score)+threshold_offset
+        if not red_fluor_threshold:
+            red_fluor_threshold=preprocessing.get_fluor_threshold(red, nuclear_size_threshold, noise_score=noise_score)+threshold_offset
+        if not green_fluor_threshold:
+            green_fluor_threshold=preprocessing.get_fluor_threshold(green, nuclear_size_threshold, noise_score=noise_score)+threshold_offset
+        self.red_fluor_threshold=red_fluor_threshold
+        self.green_fluor_threshold=green_fluor_threshold
+        self.orange_brightness=orange_brightness
         thresholded_green=green>green_fluor_threshold
         thresholded_red=red>red_fluor_threshold
-        thresholded_orange=thresholded_red&thresholded_green
+        thresholded_orange=(red>red_fluor_threshold*orange_brightness)&thresholded_green
 
         fluor_percentages=np.stack([preprocessing.fluorescent_percentages(self.masks, thresholded_green),
                                     preprocessing.fluorescent_percentages(self.masks, thresholded_red),
@@ -665,12 +670,11 @@ class Image:
         elif not hasattr(self.cells[0], 'centroid'): # get centroids if they're not already found
             self.get_centroids() # need centroids to order vertices
 
-        dense_outlines=np.array(self.outlines.todense())
         # get bottom-right corners of every non-zero square of pixels
-        cc_junctions=np.column_stack(np.where(convolve2d(dense_outlines!=0,np.array([[1,1],[1,1]]))==4))
+        cc_junctions=np.column_stack(np.where(convolve2d(self.outlines!=0,np.array([[1,1],[1,1]]))==4))
         
         # find 2x2 boxes with three or four cells in them (our metric for TCJs)
-        is_TCJ=lambda x,y: len(np.unique(dense_outlines[x-1:x+1,y-1:y+1]))>=3 # very rare cases will have four-cell junctions, generally three
+        is_TCJ=lambda x,y: len(np.unique(self.masks[x-1:x+1,y-1:y+1]))>=3 # very rare cases will have four-cell junctions, generally three
         is_TCJ_vect=np.vectorize(is_TCJ)
         TCJs=cc_junctions[is_TCJ_vect(cc_junctions[:,0],cc_junctions[:,1])]
         self.TCJs=TCJs
@@ -678,7 +682,7 @@ class Image:
         # figure out which cells participate in each TCJ
         TCJ_cells=[]
         for x,y in TCJs:
-            TCJ_cells.append(dense_outlines[x-1:x+1,y-1:y+1].flatten()) # kind of silly to do this again but idk how to vectorize and return a more complex output than True/False
+            TCJ_cells.append(self.masks[x-1:x+1,y-1:y+1].flatten()) # kind of silly to do this again but idk how to vectorize and return a more complex output than True/False
         TCJ_cells=np.array(TCJ_cells)-1 # subtract 1 so cells are 0-indexed
         self.TCJ_cells=TCJ_cells
         

@@ -278,7 +278,7 @@ def demo_seg(stack, output_path=None, highlight_mitoses=True, figsize=6, polygon
             plt.savefig(output_path / f'{output_path.stem}-{n}.tif', dpi=300)
             plt.close()
 
-def FUCCI_overlay(frame, imshow=True, ax=None, show_denoised=True, show_labels=False, alpha=0.2):
+def FUCCI_overlay(frame, imshow=True, ax=None, show_denoised=True, show_labels=False, alpha=0.2, normalize=True):
     if not ax: ax=plt.gca()
     if imshow:
         if show_denoised:
@@ -287,7 +287,8 @@ def FUCCI_overlay(frame, imshow=True, ax=None, show_denoised=True, show_labels=F
             if not hasattr(frame, 'img'):
                 frame.load_img()
             color_FUCCI=np.stack([frame.img[...,0], frame.img[...,1], np.zeros(frame.masks.shape, dtype=int)], axis=-1)
-            color_FUCCI=preprocessing.normalize(color_FUCCI, quantile=(0.01,0.99))
+            if normalize:
+                color_FUCCI=preprocessing.normalize(color_FUCCI, quantile=(0.01,0.99))
         plt.imshow(color_FUCCI)
     else:
         plt.xlim(0,frame.masks.shape[1])

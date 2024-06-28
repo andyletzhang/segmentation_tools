@@ -72,7 +72,7 @@ def circular_colony_tiles(input, output=None, use_colonies='all', x_spacing=290,
     head[-1]=f'{len(tiled)}\n'
     write_STG(output, head, tiled)
 
-def grid_from_bbox(min_corner, max_corner, x_spacing, y_spacing, padding=0, pad_from_center=True):
+def grid_from_bbox(min_corner, max_corner, x_spacing, y_spacing, padding=0, pad_from_center=True, reorder=True):
     grid_size=max_corner-min_corner+2*padding
     
     # number of tiles needed in x and y directions
@@ -92,7 +92,8 @@ def grid_from_bbox(min_corner, max_corner, x_spacing, y_spacing, padding=0, pad_
 
     # DataFrame of tile centers
     tile_centers=np.stack(np.meshgrid(x_tiles, y_tiles), axis=-1)
-    tile_centers[1::2,:]=tile_centers[1::2,::-1] # reverse every other row
+    if reorder:
+        tile_centers[1::2,:]=tile_centers[1::2,::-1] # reverse every other row
 
     tile_centers=pd.DataFrame(tile_centers.reshape(-1,2), columns=['x','y'])
 

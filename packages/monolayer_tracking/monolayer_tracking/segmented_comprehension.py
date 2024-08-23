@@ -24,7 +24,7 @@ tp.quiet() # turn off trackpy log messages
 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
 
-class Stack:
+class TimeSeries:
     '''
     a stack of images as Image objects, identified as a series of seg.npy files in the same folder and presumed to be in chronological order when sorted by name.
     '''
@@ -454,7 +454,7 @@ class Image:
         # Generate outlines_list or load from file
         if mended or 'outlines_list' not in data.keys():
             self.vprint('creating new outlines_list from masks')
-            outlines_list = cp_utils.outlines_list(self.masks)  # Generate outlines_list
+            outlines_list = cp_utils.outlines_list_multi(self.masks)  # Generate outlines_list
         else:
             outlines_list = data['outlines_list']  # Load outlines_list from file
         
@@ -486,13 +486,19 @@ class Image:
         if normalize:
             self.img=preprocessing.normalize(self.img, dtype=np.float32) # normalize
 
-    def to_seg_npy(self, export_path=None):
+    def to_seg_npy(self, export_path=None, overwrite_img=False):
         data=np.load(self.name, allow_pickle=True).item()
-        if not 'outlines_list' in data.keys():
-            outlines_list=cp_utils.outlines_list(self.masks)
-        else:
+        if 'outlines_list' in data.keys():
             outlines_list=data['outlines_list']
-        export={'img':data['img'], 'masks':self.masks, 'outlines':self.outlines, 'outlines_list':outlines_list}
+        else:
+            outlines_list=cp_utils.outlines_list_multi(self.masks)
+
+        if not overwrite_img:
+            img=data['img']
+        else:
+            img=self.img
+            
+        export={'img':img, 'masks':self.masks, 'outlines':self.outlines, 'outlines_list':outlines_list}
         if hasattr(self, 'FUCCI'): # export FUCCI channels if present
             export['FUCCI']=self.FUCCI
 
@@ -577,9 +583,9 @@ class Image:
 
     def set_cell_attr(self, attributes, values):
         for cell, value in zip(self.cells, values):
-            if isinstance(attributes, str):
+            if isinstance(attributes, str): # if only one attribute is being set
                 setattr(cell, attributes, value)
-            else:
+            else: # if multiple attributes are being set
                 for attribute, val in zip(attributes, value):
                     setattr(cell, attribute, val)
 
@@ -634,8 +640,7 @@ class Image:
     def get_centroids(self):
         '''adds centroid attribute to each Cell in the Image.'''
         centroids=np.array(ndimage.center_of_mass(np.ones(self.resolution),self.masks,np.arange(1,self.n+1)))
-        for n in np.arange(self.n):
-            self.cells[n].centroid=centroids[n]
+        self.set_cell_attr('centroid', centroids)
     
     # -------------Fit Ellipses to Cells-------------
     def fit_ellipses(self):
@@ -724,6 +729,52 @@ class Image:
         cell_collection=PatchCollection(cell_polygons, edgecolor=ec,facecolor=fc,linewidths=linewidths,**kwargs)
         return cell_collection
     
+class HeightMap(Image):
+    def __init__(self, seg_path, mesh_path=None, zero_to_nan=True, scale=0.1625, z_scale=0.3225, NORI=False, **kwargs):
+        if mesh_path is None:
+            mesh_path=seg_path.replace('segmented','heights').replace('seg.npy', 'binarized.tif')
+        self.z, self.height_img=preprocessing.read_height_tif(mesh_path, z_scale=z_scale, zero_to_nan=zero_to_nan)
+        super().__init__(seg_path, scale=scale, **kwargs)
+
+        self.masks_3d=np.repeat(self.masks[np.newaxis], self.height_img.shape[0], axis=0)
+        self.masks_3d[~self.height_img]=0
+
+        if NORI:
+            self.read_NORI()
+    
+    def read_NORI(self, file_path=None, mask_nan_z=True):
+        if file_path is None:
+            file_path=self.name.replace('segmented','NORI').replace('seg.npy', 'NORI.tif')
+        self.NORI=io.imread(file_path).astype(float)
+        if mask_nan_z:
+            #np.ma.masked_where(np.repeat(np.isnan(self.z)[np.newaxis], self.NORI.shape[0], axis=0), self.NORI, copy=False)
+            self.NORI[:, np.isnan(self.z)]=np.nan
+        return self.NORI
+    
+    def get_NORI_density(self):
+        if not hasattr(self, 'NORI'):
+            self.read_NORI()
+        self.NORI_density=np.array([ndimage.mean(self.NORI[...,i], labels=self.masks_3d, index=range(1,self.masks.max()+1)) for i in range(3)])
+        self.NORI_density_std=np.array([ndimage.standard_deviation(self.NORI[...,i], labels=self.masks_3d, index=range(1,self.masks.max()+1)) for i in range(3)])
+        self.set_cell_attr('NORI_density', self.NORI_density.T)
+        return self.NORI_density
+    
+    def get_NORI_mass(self):
+        if not hasattr(self, 'NORI'):
+            self.read_NORI()
+        self.NORI_mass=np.array([ndimage.sum(self.NORI[...,i], labels=self.masks_3d, index=range(1,self.masks.max()+1)) for i in range(3)])
+        self.set_cell_attr('NORI_mass', self.NORI_mass.T)
+        return self.NORI_mass
+    
+    
+    def get_volumes(self):
+        #self.heights=self.get_heights()
+        self.volumes=ndimage.sum(self.z, labels=self.masks, index=range(1,self.masks.max()+1))*self.scale**2
+        self.mean_heights=ndimage.mean(self.z, labels=self.masks, index=range(1,self.masks.max()+1))
+        self.set_cell_attr('volume', self.volumes)
+        self.set_cell_attr('height', self.mean_heights)
+
+        return self.volumes
 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
 

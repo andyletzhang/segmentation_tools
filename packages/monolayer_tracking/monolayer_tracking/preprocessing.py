@@ -6,6 +6,15 @@ import pickle
 from multiprocessing import Pool
 from functools import partial
 
+def read_height_tif(file_path, z_scale=1, zero_to_nan=True):
+    height_img=io.imread(file_path).astype(bool) # binary image
+    #top_surface=img.shape[0]-np.argmax(np.flip(img, axis=0), axis=0).astype(float) # first nonzero value from the top of the z stack
+    #top_surface[img.max(axis=0)==0]=0
+    top_surface=np.argmin(height_img, axis=0).astype(float) # first zero in the height image at each pixel is the top surface
+    if zero_to_nan:
+        top_surface[top_surface==0]=np.nan
+    top_surface*=z_scale
+    return top_surface, height_img
 
 def mend_gaps(masks, max_gap_size):
     '''
@@ -63,6 +72,8 @@ def normalize(image, dtype='float32', quantile=(0.01, 0.99), **kwargs):
         elif np.argmin(image.shape)==0: # multipage grayscale
             image=np.array([normalize_grayscale(page, dtype, quantile, **kwargs) for page in image])
     else: # grayscale
+        if image.ndim!=2:
+            print('Warning: image has more than 3 dimensions. Normalizing in grayscale.')
         image=normalize_grayscale(image, dtype, quantile, **kwargs)
 
     return image
@@ -74,7 +85,7 @@ def normalize_RGB(color_img, dtype='float32', quantile=(0,1), **kwargs):
         image[:,:,n]=normalize_grayscale(color_channel, dtype, quantile)
     return image
 
-def normalize_grayscale(image, dtype='float32', quantile=(0,1), mask_zeros=False):
+def normalize_grayscale(image, dtype='float32', quantile=(0,1), mask_zeros=True):
     ''' normalize data by min and max or by some specified quantile '''
     if mask_zeros:
         masked=np.ma.masked_values(image, 0)

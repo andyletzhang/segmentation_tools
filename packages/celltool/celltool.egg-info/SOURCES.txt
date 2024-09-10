@@ -1,7 +1,6 @@
-__init__.py
 setup.py
-simple_interface.py
 ./__init__.py
+./celltool_parallel.py
 ./simple_interface.py
 celltool.egg-info/PKG-INFO
 celltool.egg-info/SOURCES.txt

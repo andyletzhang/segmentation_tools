@@ -315,7 +315,7 @@ def FUCCI_overlay(frame, imshow=True, ax=None, show_denoised=True, show_labels=F
     plt.axis('off')
 
 # Volume Plots
-def volume_boxplot(volumes, labels, ax=None, SC_color='C0', ME_color='C2', default_color='C1', **boxplot_kwargs):
+def volume_boxplot(volumes, labels=None, ax=None, SC_color='C0', ME_color='C2', default_color='C1', **boxplot_kwargs):
     '''
     Simple boxplot of volumes. Cell cycle dimension is concatenated. SC and WT are colored blue and green, respectively.
 
@@ -331,7 +331,8 @@ def volume_boxplot(volumes, labels, ax=None, SC_color='C0', ME_color='C2', defau
     '''
 
     if ax==None: ax=plt.gca()
-
+    if labels is None: labels=['' for _ in volumes]
+    
     default_kwargs={'showfliers':False, 'patch_artist':True, 'notch':True, 'vert':True}
     boxplot_kwargs=default_kwargs|boxplot_kwargs # Merge default and user kwargs
 
@@ -353,7 +354,7 @@ def volume_boxplot(volumes, labels, ax=None, SC_color='C0', ME_color='C2', defau
 
     ax.set_xlabel('Volume (μm$^3$)')
 
-def cell_cycle_boxplot(volumes, labels, ax=None, colors=['g','r','orange'], ctrl_line=False, xticks='n', trial_labels=True, **boxplot_kwargs):
+def cell_cycle_boxplot(volumes, labels=None, ax=None, colors=None, hide_NS=True, ctrl_line=False, xticks='n', trial_labels=True, **boxplot_kwargs):
     '''
     Boxplot of volumes for each cell cycle phase.
 
@@ -370,6 +371,7 @@ def cell_cycle_boxplot(volumes, labels, ax=None, colors=['g','r','orange'], ctrl
     '''
 
     if not ax: ax=plt.gca()
+    if labels is None: labels=['' for _ in volumes]
 
     if isinstance(volumes, dict):
         volumes=[volumes[label] for label in labels]
@@ -379,14 +381,29 @@ def cell_cycle_boxplot(volumes, labels, ax=None, colors=['g','r','orange'], ctrl
 
     all_bps=[]
     for i, vol, label in zip(range(len(labels)), volumes, labels):
+        if hide_NS:
+            vol=vol[-3:]
+        has_NS=not hide_NS and len(vol)==4
+        if colors is None:
+            colors=['g','r','orange']
+            if has_NS:
+                colors=['k']+colors
+
+        if has_NS:
+            positions=np.arange(i*5, i*5+4)
+        else:
+            positions=np.arange(i*4, i*4+3)
+        
         if xticks=='n':
             box_labels=[f'n={len(v)}' for v in vol]
         elif xticks=='cycle':
             box_labels=['G1','S','G2']
+            if has_NS:
+                box_labels=['NS']+box_labels
         else:
             box_labels=['' for _ in range(len(vol))]
 
-        bp=ax.boxplot(vol, positions=np.arange(i*4, i*4+3), patch_artist=True, labels=box_labels, **boxplot_kwargs)
+        bp=ax.boxplot(vol, positions=positions, patch_artist=True, labels=box_labels, **boxplot_kwargs)
 
         for patch, color in zip(bp['boxes'], colors):
             patch.set_facecolor(color)
@@ -417,7 +434,7 @@ def cell_cycle_boxplot(volumes, labels, ax=None, colors=['g','r','orange'], ctrl
 
     return all_bps
 
-def cell_cycle_occupancy_barplot(volumes, labels, ax=None, xticks='n', colors=['g','r','orange'], edge_color='k', **barplot_kwargs):
+def cell_cycle_occupancy_barplot(volumes, labels=None, hide_NS=True, ax=None, xticks='n', colors=None, edge_color='k', **barplot_kwargs):
     '''
     Barplot of occupancy for each cell cycle phase.
 
@@ -432,7 +449,10 @@ def cell_cycle_occupancy_barplot(volumes, labels, ax=None, xticks='n', colors=['
     barplot_kwargs (dict): Additional arguments for plt.bar.
     '''
     if not ax: ax=plt.gca()
-
+    if labels is None: labels=['' for _ in volumes]
+    
+    if hide_NS:
+        volumes=[vol[-3:] for vol in volumes]
     if isinstance(volumes, dict):
         volumes=[volumes[label] for label in labels]
 
@@ -440,18 +460,32 @@ def cell_cycle_occupancy_barplot(volumes, labels, ax=None, xticks='n', colors=['
     total_occupancies=[np.sum(o) for o in occupancies]
     percent_occupancies=np.concatenate([np.array(o)/np.sum(o) for o in occupancies])
 
-    bars=ax.bar(np.concatenate([np.arange(i*4, i*4+3) for i in range(len(labels))]), percent_occupancies, **barplot_kwargs)
+    has_NS=not hide_NS and len(volumes[0])==4
+    condition_spacing=5 if has_NS else 4
 
-    for i in range(3):
-        for bar in bars[i::3]: bar.set_color(colors[i])
+    if colors is None:
+        colors=['g','r','orange']
+        if has_NS:
+            colors=['k']+colors
+
+    positions=np.concatenate([np.arange(i*condition_spacing, (i+1)*condition_spacing-1) for i in range(len(labels))])
+
+    bars=ax.bar(positions, percent_occupancies, **barplot_kwargs)
+
+    for i in range(condition_spacing-1):
+        for bar in bars[i::condition_spacing-1]: bar.set_color(colors[i])
 
     for bar in bars: bar.set_edgecolor(edge_color)
     if xticks=='n':
-        ax.set_xticks(np.arange(len(labels))*4+1, [f'n={o}' for o in total_occupancies])
+        ax.set_xticks((np.arange(len(labels))+1/2)*(condition_spacing)-1, [f'n={o}' for o in total_occupancies])
     elif xticks=='cycle':
-        ax.set_xticks(np.concatenate([np.arange(i*4, i*4+3) for i in range(len(labels))]), ['G1','S','G2']*len(labels))
+        cc_labels=['G1','S','G2']
+        if has_NS:
+            cc_labels=['NS']+cc_labels
+        ax.set_xticks(positions, cc_labels*len(labels))
+    return bars
         
-def cell_cycle_plot(volumes, labels, axes=None, figsize=(6,6), gridspec_kw={'height_ratios':[6,1]}, sharex=True, boxplot_kwargs={}, barplot_kwargs={}, subplot_kwargs={}):
+def cell_cycle_plot(volumes, labels=None, axes=None, figsize=(6,6), hide_NS=True, gridspec_kw={'height_ratios':[6,1]}, sharex=True, boxplot_kwargs={}, barplot_kwargs={}, subplot_kwargs={}):
     '''
     Wrapper function for plotting cell cycle data. Plots volume boxplot and occupancy barplot.
 
@@ -470,18 +504,20 @@ def cell_cycle_plot(volumes, labels, axes=None, figsize=(6,6), gridspec_kw={'hei
     if not axes:
         fig, axes=plt.subplots(2, 1, figsize=figsize, sharex=sharex, gridspec_kw=gridspec_kw, **subplot_kwargs)
     
-    cell_cycle_boxplot(volumes, labels, ax=axes[0], **boxplot_kwargs)
-    cell_cycle_occupancy_barplot(volumes, labels, ax=axes[1], **barplot_kwargs)
+    bps=cell_cycle_boxplot(volumes, labels, ax=axes[0], hide_NS=hide_NS, **boxplot_kwargs)
+    bars=cell_cycle_occupancy_barplot(volumes, labels, ax=axes[1], hide_NS=hide_NS, **barplot_kwargs)
 
-def hist_median(v, histtype='step', weights='default', ax=None, bins=30, range=(0,6000), linewidth=1.4, alpha=1, **kwargs):
+    return fig, axes, bps, bars
+
+def hist_median(v, histtype='step', weights='default', zorder=None, ax=None, bins=30, range=(0,6000), linewidth=1.4, alpha=1, **kwargs):
     if not ax:
         ax=plt.gca()
     if weights=='default':
         hist_weights=np.ones_like(v)/len(v)
     else:
         hist_weights=weights
-    n, bins, patch=ax.hist(v, bins=bins, range=range, histtype=histtype, weights=hist_weights, linewidth=linewidth, alpha=alpha, **kwargs)
-    median=np.median(v)
+    n, bins, patch=ax.hist(v, bins=bins, range=range, zorder=zorder, histtype=histtype, weights=hist_weights, linewidth=linewidth, alpha=alpha, **kwargs)
+    median=np.nanmedian(v)
     
     bin_idx=np.digitize(median, bins)-1 # find which bin the median is in
-    ax.plot([median, median], [0, n[bin_idx]], color=patch[0].get_edgecolor(), linestyle='--', linewidth=linewidth,  alpha=alpha) # draw a line at the median up to the height of the bin
+    ax.plot([median, median], [0, n[bin_idx]], color=patch[0].get_edgecolor(), zorder=zorder, linestyle='--', linewidth=linewidth,  alpha=alpha) # draw a line at the median up to the height of the bin

@@ -1,10 +1,9 @@
 import numpy as np
 from scipy import ndimage
 import cellpose.utils as cp_utils
-import cv2
-import pickle
 from multiprocessing import Pool
 from functools import partial
+from skimage import io
 
 def read_height_tif(file_path, z_scale=1, zero_to_nan=True):
     height_img=io.imread(file_path).astype(bool) # binary image
@@ -73,7 +72,7 @@ def normalize(image, dtype='float32', quantile=(0.01, 0.99), **kwargs):
             image=np.array([normalize_grayscale(page, dtype, quantile, **kwargs) for page in image])
     else: # grayscale
         if image.ndim!=2:
-            print('Warning: image has more than 3 dimensions. Normalizing in grayscale.')
+            print('Warning: image has 3 or more dimensions and is not RGB. Normalizing in grayscale.')
         image=normalize_grayscale(image, dtype, quantile, **kwargs)
 
     return image
@@ -82,7 +81,7 @@ def normalize_RGB(color_img, dtype='float32', quantile=(0,1), **kwargs):
     ''' normalize each channel of a color image separately '''
     image=color_img.astype(dtype)
     for n, color_channel in enumerate(np.transpose(image, axes=[2,0,1])):
-        image[:,:,n]=normalize_grayscale(color_channel, dtype, quantile)
+        image[:,:,n]=normalize_grayscale(color_channel, dtype, **kwargs)
     return image
 
 def normalize_grayscale(image, dtype='float32', quantile=(0,1), mask_zeros=True):

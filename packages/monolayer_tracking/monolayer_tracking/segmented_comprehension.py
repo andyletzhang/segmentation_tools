@@ -1,20 +1,12 @@
 import numpy as np
 import pandas as pd
-import trackpy as tp
-import cellpose.utils as cp_utils
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Polygon
 from scipy import ndimage
-from scipy.signal import convolve2d
 from natsort import natsorted
-import os
 from glob import glob
-from skimage.measure import EllipseModel
-from scipy import sparse
 from pathlib import Path
 from . import preprocessing # from my module
-
-tp.quiet() # turn off trackpy log messages
 
 '''
     Stacks are collections of time lapse images on a single stage.
@@ -57,6 +49,8 @@ class TimeSeries:
             2. a second, more discerning tracking with a search range based on the maximum cell speed.
         **kwargs go to tp.link(): 'search_range' depends on cell diameter, and 'memory' can account for the disappearance of a centroid for a certain number of frames (default 0). 
         '''
+        import trackpy as tp
+        tp.quiet()
         # preliminary search radius for the first pass at tracking. This doesn't have to be perfect, just in the right ballpark (too high better than too low).
         # shifts in the FOV which I've observed are up to ~16 pixels large. Any tracking that wants to accomodate for these must be >16.
         max_search_range=int(np.nanmean([np.sqrt(np.quantile(frame.cell_areas(scaled=False), 0.9)) for frame in self.frames])*2/3) # 2/3 a large cell: overshoot the largest tracking range by a bit.
@@ -165,8 +159,8 @@ class TimeSeries:
         # Save velocities to CSV if requested
         if to_csv:
             print('Writing velocity data to {}.'.format(self.name.replace('segmented','tracking')[:-1]+'.csv'))
-            if not os.path.exists(self.name.split('/segmented/')[0]+'/tracking/'):
-                os.makedirs(self.name.split('/segmented/')[0]+'/tracking/')
+            csv_path=Path(self.name.split('/segmented/')[0]+'/tracking/')
+            csv_path.makedir(exist_ok=True, parents=True)
             self.velocities.to_csv(self.name.replace('segmented','tracking')[:-1]+'.csv')
         
         return self.velocities
@@ -225,8 +219,8 @@ class TimeSeries:
         Returns:
             list: List of mitotic events, where each event is represented as a DataFrame containing information about mother and daughter cells.
         """
-            
-        mitoses_path=os.path.dirname(self.name.replace('segmented','mitoses'))+'.txt'
+        
+        mitoses_path=str(Path(self.name.replace('segmented','mitoses')).parent)+'.txt'
         mitoses=pd.read_csv(mitoses_path)
         self.mitoses=np.split(mitoses, len(mitoses)/3)
         return self.mitoses
@@ -410,6 +404,7 @@ class Image:
         load_img=True loads the image into the img attribute. Defaults to False to save memory.
         Normalize=True sets the maximum img value to 1.
         '''
+        import cellpose.utils as cp_utils
 
         # Set pixel units and scale
         self.units = units  # Units for measurements
@@ -462,6 +457,7 @@ class Image:
         for attr in set(data.keys()).difference(['img', 'masks', 'outlines', 'outlines_list']):
             setattr(self, attr, data[attr])  # Set additional attributes
         
+        
         # Overwrite file if specified
         if overwrite:
             export = {'img': data['img'], 'masks': self.masks, 'outlines': self.outlines, 'outlines_list': outlines_list}
@@ -473,11 +469,10 @@ class Image:
             np.save(file_path, export)
         
         # Instantiate Cell objects for each cell labeled in the image
-        try:
-            self.cells = np.array([Cell(n, outlines_list[n], frame_number=frame_number) for n in range(self.n)])
-        except IndexError:  # Handle index errors
-            print(self.name)  # Print file name
-            raise  # Raise an error
+        self.cells = np.array([Cell(n, outlines_list[n], frame_number=frame_number) for n in range(self.n)])
+        
+        if hasattr(self, 'cell_cycles'):
+            self.write_cell_cycle(self.cell_cycles)
 
     
      # -------------Image Processing-------------    
@@ -486,19 +481,24 @@ class Image:
         if normalize:
             self.img=preprocessing.normalize(self.img, dtype=np.float32) # normalize
 
-    def to_seg_npy(self, export_path=None, overwrite_img=False):
+    def to_seg_npy(self, export_path=None, overwrite_img=False, write_attrs=[]):
         data=np.load(self.name, allow_pickle=True).item()
         if 'outlines_list' in data.keys():
             outlines_list=data['outlines_list']
         else:
+            import cellpose.utils as cp_utils
             outlines_list=cp_utils.outlines_list_multi(self.masks)
 
         if not overwrite_img:
             img=data['img']
         else:
             img=self.img
+
             
         export={'img':img, 'masks':self.masks, 'outlines':self.outlines, 'outlines_list':outlines_list}
+        for attr in write_attrs:
+            export[attr]=getattr(self, attr)
+
         if hasattr(self, 'FUCCI'): # export FUCCI channels if present
             export['FUCCI']=self.FUCCI
 
@@ -664,6 +664,7 @@ class Image:
     # -------------Vertex Reconstruction-------------
     def get_TCJs(self):
         '''set Cell.vertices attribute for all cells with complete set of neighbors.'''
+        from scipy.signal import convolve2d
         # find good cells
         self.bad_cell_indices=np.unique(self.masks[np.where(convolve2d(self.masks!=0,[[0,1,0],[1,1,1],[0,1,0]])[1:-1,1:-1]<5)])[1:]-1 # indices of cells without full set of neighbors
         self.good_cell_indices=np.delete(np.arange(self.n),self.bad_cell_indices) # indices of cells with full set of neighbors (can reconstruct vertices from TCJs)
@@ -743,6 +744,7 @@ class HeightMap(Image):
             self.read_NORI()
     
     def read_NORI(self, file_path=None, mask_nan_z=True):
+        from skimage import io
         if file_path is None:
             file_path=self.name.replace('segmented','NORI').replace('seg.npy', 'NORI.tif')
         self.NORI=io.imread(file_path).astype(float)
@@ -932,6 +934,7 @@ class Cell:
         '''
         uses skimage's EllipseModel to fit an ellipse to the outline of the cell.
         '''
+        from skimage.measure import EllipseModel
         ellipse_model=EllipseModel()
         
         ellipse_model.estimate(self.outline)

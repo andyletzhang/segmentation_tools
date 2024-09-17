@@ -1,0 +1,16 @@
+[project]
+name = "monolayer_tracking"
+version = "0.0.1"
+authors = [
+  { name="Andy Zhang", email="andyletzhang@uchicago.edu" },
+]
+description = "Scripts for segmentation, tracking, and image processing. Description edited 20240304."
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[build-system]
+requires = ["flit_core >= 3.4"]
+build-backend = "flit_core.buildapi"

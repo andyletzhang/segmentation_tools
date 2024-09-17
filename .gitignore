@@ -10,14 +10,8 @@ cellmask_3d/
 
 # other repositories #
 ######################
-packages/aics-ml-segmentation/
-packages/aics-segmentation/
-packages/cellpose-napari/
-packages/cellstitch/
-packages/cupy/
-packages/mgx/
-packages/mgxsource/
-packages/celltool/
+packages/
+celltool/
 
 # Compiled source #
 ###################

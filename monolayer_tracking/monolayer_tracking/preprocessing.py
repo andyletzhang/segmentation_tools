@@ -95,13 +95,18 @@ def normalize_grayscale(image, dtype='float32', quantile=(0,1), bounds=None, mas
         else:
             bounds=np.quantile(image, quantile)
 
-    bounds=np.array(bounds, dtype=dtype)
+    bounds=np.array(bounds, dtype=dtype).flatten() # just flatten it?? very trashy
     image=image.astype(dtype)
     if not np.array_equal(bounds, (0,0)):
         image=(image-bounds[0])/(bounds[1]-bounds[0])
         image=np.clip(image, a_min=0, a_max=1)
     return image
 
+def renumber_masks(masks):
+    ''' renumber masks from 1 to n, where n is the number of unique labels in the image '''
+    unique_labels=np.unique(masks)
+    renumbered_masks = np.searchsorted(unique_labels, masks)
+    return renumbered_masks
 
 
 from scipy.optimize import minimize_scalar
@@ -142,50 +147,3 @@ def parallel_frame_FUCCI(args, percent_threshold=0.15, progress_bar=lambda x, **
     results=[x for x in progress_bar(p.imap(partial(frame_FUCCI, percent_threshold=percent_threshold), args), total=len(args), desc='Processing frames')]
 
     return results
-
-# deprecated, I think-----------------------------------
-#
-#def denoise_FUCCI(img_channel, auto_denoise=True, denoise_cutoff=21, denoise_h=4, norm_range=None):
-#    if norm_range is None:
-#        norm_range=np.quantile(img_channel, (0.001, 0.999))
-#    img_8bit=((img_channel-norm_range[0])*255/(norm_range[1]-norm_range[0]))
-#    img_8bit=np.clip(img_8bit, a_min=0, a_max=255).astype('uint8')
-#
-#    if auto_denoise:
-#        noise_metric=[]
-#        for h in np.arange(1,denoise_cutoff):
-#            denoised=cv2.fastNlMeansDenoising(img_8bit, h=int(h))
-#            noise_metric.append(np.abs(denoised-cv2.medianBlur(denoised, ksize=3)).std())
-#
-#            if len(noise_metric)<4:
-#                continue
-#            else:
-#                try: # point where noise metric begins monotonic descent
-#                    hump=np.where(np.diff(noise_metric)>0)[0].max()
-#                except ValueError:
-#                    hump=0
-#                if np.array_equal((np.diff(np.diff(noise_metric[-4:]))>0).astype(int),[0,1]):
-#                    if h-4>hump:
-#                        break
-#        denoise_h=h
-#
-#    denoised=cv2.fastNlMeansDenoising(img_8bit, h=int(denoise_h))
-#    return denoised, denoise_h
-#
-#def subtract_background(img_channel, gaussian_sigma=250):
-#    blur_bg=ndimage.gaussian_filter(img_channel.astype('float'), sigma=gaussian_sigma, truncate=3) # finding the background via large gaussian blur is the time bottleneck
-#    img_subtracted=img_channel-blur_bg
-#    img_subtracted=np.clip((img_subtracted-img_subtracted.min())*255, a_min=None, a_max=255**2).astype('uint16')
-#    return img_subtracted, blur_bg
-#
-#def normalize_FUCCI_fluorescence(img, masks=None):
-#    # NB: this should eventually be done at a stack level rather than image by image? maintain relative fluorescences as best we can.
-#    if masks is not None:
-#        img_data=img[masks!=0]
-#    else:
-#        img_data=img.flatten()
-#
-#    lower_bound=np.exp(np.log(img_data.astype('float64')+1).mean())
-#    std=img_data.std()
-#
-#    return np.clip((img-lower_bound)/std, a_min=0, a_max=None)

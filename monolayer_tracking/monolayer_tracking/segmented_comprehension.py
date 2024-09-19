@@ -446,6 +446,12 @@ class Image:
         else:
             self.outlines = data['outlines']  # Load outlines from data file
         
+        try:
+            self.outlines=self.outlines.todense()
+        except AttributeError:
+            pass
+        self.outlines=self.outlines!=0
+        
         # Generate outlines_list or load from file
         if mended or 'outlines_list' not in data.keys():
             self.vprint('creating new outlines_list from masks')
@@ -483,11 +489,7 @@ class Image:
 
     def to_seg_npy(self, export_path=None, overwrite_img=False, write_attrs=[]):
         data=np.load(self.name, allow_pickle=True).item()
-        if 'outlines_list' in data.keys():
-            outlines_list=data['outlines_list']
-        else:
-            import cellpose.utils as cp_utils
-            outlines_list=cp_utils.outlines_list_multi(self.masks)
+        outlines_list=[cell.outline for cell in self.cells]
 
         if not overwrite_img:
             img=data['img']
@@ -677,7 +679,7 @@ class Image:
             self.get_centroids() # need centroids to order vertices
 
         # get bottom-right corners of every non-zero square of pixels
-        cc_junctions=np.column_stack(np.where(convolve2d(self.outlines!=0,np.array([[1,1],[1,1]]))==4))
+        cc_junctions=np.column_stack(np.where(convolve2d(self.outlines,np.array([[1,1],[1,1]]))==4))
         
         # find 2x2 boxes with three or four cells in them (our metric for TCJs)
         is_TCJ=lambda x,y: len(np.unique(self.masks[x-1:x+1,y-1:y+1]))>=3 # very rare cases will have four-cell junctions, generally three
@@ -782,10 +784,13 @@ class HeightMap(Image):
 
 class Cell:
     '''class for each labeled cell membrane.'''
-    def __init__(self, n, outline, frame_number=None):
+    def __init__(self, n, outline, frame_number=None, **kwargs):
         self.frame=frame_number
         self.n=n
         self.outline=outline
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     def get_area(self):
         self.area=0.5*np.abs(np.dot(self.outline.T[0],np.roll(self.outline.T[1],1))-np.dot(self.outline.T[1],np.roll(self.outline.T[0],1)))

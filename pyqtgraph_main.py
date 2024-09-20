@@ -7,17 +7,17 @@ from PyQt6.QtWidgets import (
     QLineEdit, QTextEdit, QTabWidget, QSlider, QGraphicsPolygonItem
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QPointF
-from PyQt6.QtGui import QIntValidator, QPolygonF, QPen, QColor, QBrush
+from PyQt6.QtGui import QIntValidator, QPolygonF, QPen, QColor, QBrush, QIcon
 import pyqtgraph as pg
 
-from monolayer_tracking.segmented_comprehension import Image, TimeSeries, Cell
+from monolayer_tracking.segmented_comprehension import TimeSeries, Cell
 from monolayer_tracking import preprocessing
 
 from shapely.geometry import Polygon, Point
 
 from tqdm import tqdm
-# TODO: playback speed
-# Later TODO: merge masks
+
+# TODO: RGB checks should change for grayscale images
 
 dark_mode_style = """
     QWidget {
@@ -99,10 +99,32 @@ dark_mode_style = """
         background-color: #6d6d6d;  /* Hovered tab - lighter gray */
     }
 """
+
+class SegPlot(pg.PlotWidget):
+    def __init__(self, parent=None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.parent = parent
+        self.setMenuEnabled(False)
+        self.getViewBox().invertY(True)
+        self.setAspectLocked(True)
+        self.setContentsMargins(0, 0, 0, 0)
+
+    def wheelEvent(self, event):
+        # ctrl+wheel zooms like normal, otherwise send it up to the main window
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
 class PyQtGraphCanvas(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, cell_n_colors=10, cell_cmap='tab10'):
+        from matplotlib import colormaps
         super().__init__(parent)
         self.parent = parent
+
+        # cell mask colors
+        self.cell_n_colors=cell_n_colors
+        self.cell_cmap=colormaps.get_cmap(cell_cmap)
         
         # Create a layout for the widget
         plot_layout = QHBoxLayout(self)
@@ -110,20 +132,11 @@ class PyQtGraphCanvas(QWidget):
         plot_layout.setContentsMargins(0, 0, 0, 0)
 
         # Create a PlotWidget for the image and segmentation views
-        self.img_plot = pg.PlotWidget(title="Image", border="w")
-        self.seg_plot = pg.PlotWidget(title="Segmentation", border="w")
+        self.img_plot = SegPlot(title="Image", border="w")
+        self.seg_plot = SegPlot(title="Segmentation", border="w")
 
-        self.img_plot.getViewBox().invertY(True)
-        self.seg_plot.getViewBox().invertY(True)
-        for plot_widget in [self.img_plot, self.seg_plot]:
-            plot_widget.setMenuEnabled(False)
-        # Add the plots to the layout
         plot_layout.addWidget(self.img_plot)
         plot_layout.addWidget(self.seg_plot)
-
-        # Reduce margins around the plots
-        self.img_plot.setContentsMargins(0, 0, 0, 0)
-        self.seg_plot.setContentsMargins(0, 0, 0, 0)
 
         # Initialize data - 512x512 with white outline
         self.img_data = np.ones((512, 512, 3), dtype=np.uint8)
@@ -138,10 +151,8 @@ class PyQtGraphCanvas(QWidget):
         self.mask_overlay=[pg.ImageItem(), pg.ImageItem()]
         self.selection_overlay=[pg.ImageItem(), pg.ImageItem()]
 
+        # add images to the plots
         self.img_plot.addItem(self.img)
-        self.seg_plot.addItem(self.seg)
-
-        # Add overlays to plots
         self.img_plot.addItem(self.img_outline_overlay)
 
         self.img_plot.addItem(self.mask_overlay[0])
@@ -150,9 +161,11 @@ class PyQtGraphCanvas(QWidget):
         self.img_plot.addItem(self.selection_overlay[0])
         self.seg_plot.addItem(self.selection_overlay[1])
 
+        self.seg_plot.addItem(self.seg)
 
-        self.img_plot.setAspectLocked(True)
-        self.seg_plot.setAspectLocked(True)
+        # Set initial zoom levels
+        self.img_plot.setRange(xRange=[0, self.img_data.shape[1]], yRange=[0, self.img_data.shape[0]], padding=0)
+        self.seg_plot.setRange(xRange=[0, self.seg_data.shape[1]], yRange=[0, self.seg_data.shape[0]], padding=0)
 
         # Connect the range change signals to the custom slots
         self.img_plot.sigRangeChanged.connect(self.sync_seg_plot)
@@ -172,11 +185,8 @@ class PyQtGraphCanvas(QWidget):
         self.seg_plot.addItem(self.seg_vline, ignoreBounds=True)
         self.seg_plot.addItem(self.seg_hline, ignoreBounds=True)
 
-        # Set initial zoom levels
-        self.img_plot.setRange(xRange=[0, self.img_data.shape[1]], yRange=[0, self.img_data.shape[0]], padding=0)
-        self.seg_plot.setRange(xRange=[0, self.seg_data.shape[1]], yRange=[0, self.seg_data.shape[0]], padding=0)
-
     def overlay_outlines(self, event=None, color='white', alpha=0.5):
+        ''' Overlay the outlines of the masks on the image plot. '''
         if not self.parent.outlines_checkbox.isChecked():
             self.img_outline_overlay.clear()
             return
@@ -190,27 +200,29 @@ class PyQtGraphCanvas(QWidget):
         overlay=np.fliplr(overlay)
         self.img_outline_overlay.setImage(overlay)
 
-    def overlay_masks(self, event=None, cmap='tab10', alpha=0.5):
+    def overlay_masks(self, event=None, alpha=0.5):
+        ''' Overlay the masks on both plots. '''
         if not self.parent.masks_checkbox.isChecked():
             # masks are not visible, clear the overlay
             self.mask_overlay[0].clear()
             self.mask_overlay[1].clear()
             return
         
+        # get cell colors
         try:
-            cell_colors=self.parent.frame.get_cell_attr('color_ID')
+            cell_colors=self.parent.frame.get_cell_attr('color_ID') # retrieve the stored colors for each cell
         except AttributeError:
-            from matplotlib import colormaps
-            #from monolayer_tracking.networks import color_masks, greedy_color
-            cmap=colormaps.get_cmap(cmap)
+            #from monolayer_tracking.networks import color_masks, greedy_color # generate pseudo-random colors
             #random_colors=color_masks(self.parent.frame.masks)
-            random_colors=np.random.randint(0, 10, size=self.parent.frame.masks.max())
-            cell_colors=cmap(random_colors)[..., :3]
+            random_colors=np.random.randint(0, self.cell_n_colors, size=self.parent.frame.masks.max())
+            cell_colors=self.cell_cmap(random_colors)[..., :3]
             self.parent.frame.set_cell_attr('color_ID', cell_colors)
 
+        # highlight all cells with the specified colors
         cell_indices=np.unique(self.parent.frame.masks)[1:]-1
         img_masks, seg_masks=self.highlight_cells(cell_indices, alpha=alpha, cell_colors=cell_colors, layer='mask')
-        self.parent.frame.mask_overlay=[img_masks, seg_masks]
+
+        self.parent.frame.mask_overlay=[img_masks, seg_masks] # store the overlay for reuse
 
     def highlight_cells(self, cell_indices, layer='selection', alpha=0.3, color='white', cell_colors=None):
         from matplotlib.colors import to_rgb
@@ -294,7 +306,7 @@ class PyQtGraphCanvas(QWidget):
                 self.img_data[..., i] = 0
             
         # Grayscale checkbox
-        if self.parent.grayscale.isChecked():
+        if self.parent.show_grayscale.isChecked():
             self.img_data = np.mean(self.img_data, axis=-1)
 
         # update segmentation overlay
@@ -308,24 +320,14 @@ class PyQtGraphCanvas(QWidget):
         else:
             self.overlay_masks()
 
+        # turn seg_data from grayscale to RGBA
+        self.seg_data=np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1)
+
         self.img.setImage(self.img_data)
         self.seg.setImage(self.seg_data)
 
-    def rescale_handles(self, view_box):
-        """Rescale the mask overlay when the view box changes."""
-        if self.parent.file_loaded:
-            from PyQt6.QtCore import QPointF
-            point_scaling=self.img_plot.plotItem.vb.mapViewToScene(QPointF(1, 0))-self.img_plot.plotItem.vb.mapViewToScene(QPointF(0, 0))
-            pixel_size = point_scaling.x()
-
-            #for handle in self.parent.cell_roi.getHandles():
-                #handle.radius = self.parent.cell_roi.handle_size*pixel_size
-                #handle.buildPath()
-                #handle.update()
-
     def sync_img_plot(self, view_box):
         """Sync the image plot view range with the segmentation plot."""
-        self.rescale_handles(view_box)
 
         self.img_plot.blockSignals(True)
         self.img_plot.setRange(xRange=self.seg_plot.viewRange()[0], yRange=self.seg_plot.viewRange()[1], padding=0)
@@ -333,7 +335,6 @@ class PyQtGraphCanvas(QWidget):
 
     def sync_seg_plot(self, view_box):
         """Sync the segmentation plot view range with the image plot."""
-        self.rescale_handles(view_box)
 
         self.seg_plot.blockSignals(True)
         self.seg_plot.setRange(xRange=self.img_plot.viewRange()[0], yRange=self.img_plot.viewRange()[1], padding=0)
@@ -351,10 +352,11 @@ class PyQtGraphCanvas(QWidget):
             checkbox.setChecked(state)
 
 class CellMaskPolygon(QGraphicsPolygonItem):
+    ''' Polygonal indicator for cell mask creation. '''
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.setPen(QPen(QColor(255, 255, 255, 100)))
-        self.setBrush(QBrush(QColor(0, 255, 0, 100)))
+        self.setPen(QPen(QColor(255, 255, 255, 50)))
+        self.setBrush(QBrush(QColor(120, 120, 120, 50)))
         self.points=[]
 
     def clearPoints(self):
@@ -365,15 +367,16 @@ class CellMaskPolygon(QGraphicsPolygonItem):
         polygon=QPolygonF(self.points)
         self.setPolygon(polygon)
 
-    def add_handle(self, y, x):
+    def add_vertex(self, y, x):
         y, x = y+0.5, x+0.5
         self.points.append(QPointF(y, x))
         self.update_polygon()
         self.last_handle_pos = (y, x)
 
     def get_enclosed_pixels(self):
-        points=[(p.y(), p.x()) for p in self.points]
-        shapely_polygon=Polygon(points).buffer(0.6)
+        ''' Return all pixels enclosed by the polygon. '''
+        points=[(p.y()-0.5, p.x()-0.5) for p in self.points]
+        shapely_polygon=Polygon(points).buffer(0.1)
         xmin, ymin, xmax, ymax=shapely_polygon.bounds
         x, y = np.meshgrid(np.arange(int(xmin), int(xmax)+1), np.arange(int(ymin), int(ymax)+1))
 
@@ -385,8 +388,8 @@ class CellMaskPolygon(QGraphicsPolygonItem):
 class MainWidget(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.file_loaded = False
         self.setWindowTitle("PyQtGraph Segmentation Viewer")
+        self.setWindowIcon(QIcon('monolayer_tracking/monolayer_tracking/assets/icon.png'))
         self.resize(1080, 540)
 
         self.file_loaded = False
@@ -401,7 +404,7 @@ class MainWidget(QMainWindow):
         for checkbox in self.RGB_checkboxes:
             checkbox.setChecked(True)
             self.RGB_layout.addWidget(checkbox)
-        self.grayscale=QCheckBox("Grayscale", self)
+        self.show_grayscale=QCheckBox("Grayscale", self)
 
         # Segmentation Overlay
         segmentation_overlay_widget = QWidget()
@@ -443,12 +446,12 @@ class MainWidget(QMainWindow):
         self.save_stack = QCheckBox("Save Stack", self)
 
         # Status bar
-        self.status_coordinates=QLabel("Cursor: (x, y)", self)
         self.status_cell=QLabel("Selected Cell: None", self)
         self.status_frame_number=QLabel("Frame: None", self)
-        self.statusBar().addWidget(self.status_coordinates)
+        self.status_coordinates=QLabel("Cursor: (x, y)", self)
         self.statusBar().addWidget(self.status_cell)
         self.statusBar().addWidget(self.status_frame_number)
+        self.statusBar().addPermanentWidget(self.status_coordinates)
 
         #----------------Frame Slider----------------
         self.frame_slider=QSlider(Qt.Orientation.Horizontal, self)
@@ -509,7 +512,7 @@ class MainWidget(QMainWindow):
 
         # Toolbar layout
         toolbar_layout.addWidget(RGB_checkbox_widget)
-        toolbar_layout.addWidget(self.grayscale)
+        toolbar_layout.addWidget(self.show_grayscale)
 
         toolbar_layout.addItem(self.spacer)
 
@@ -543,7 +546,7 @@ class MainWidget(QMainWindow):
         # RGB
         for checkbox in self.RGB_checkboxes:
             checkbox.stateChanged.connect(self.update_display)
-        self.grayscale.stateChanged.connect(self.update_display)
+        self.show_grayscale.stateChanged.connect(self.update_display)
         # normalize
         self.normalize_frame_button.toggled.connect(self.update_normalize_frame)
         self.command_line_button.clicked.connect(self.open_command_line)
@@ -560,6 +563,15 @@ class MainWidget(QMainWindow):
         self.save_button.clicked.connect(self.save_segmentation)
         self.save_as_button.clicked.connect(self.save_as_segmentation)
     
+    def wheelEvent(self, event):
+        if not self.file_loaded:
+            return
+        if event.angleDelta().y() < 0: # scroll down = next frame
+            self.frame_number = min(self.frame_number + 1, len(self.stack.frames) - 1)
+        else: # scroll up = previous frame
+            self.frame_number = max(self.frame_number - 1, 0)
+        self.frame_slider.setValue(self.frame_number)
+
     def update_frame_number(self, frame_number):
         if not self.file_loaded:
             return
@@ -611,8 +623,15 @@ class MainWidget(QMainWindow):
         if tracking_range == '':
             return
         
-        self.stack.track_centroids(search_range=int(tracking_range))
+        self.statusBar().showMessage(f'Tracking centroids...')
+        try:
+            self.stack.track_centroids(search_range=int(tracking_range))
+        except Exception as e:
+            print(e)
+            self.statusBar().showMessage(f'Error tracking centroids: {e}', 4000)
+            return
         print(f'Tracked centroids for stack {self.stack.name}')
+        self.statusBar().showMessage(f'Tracked centroids for stack {self.stack.name}.', 2000)
 
         # recolor cells so each particle has one color over time
         for frame in self.stack.frames:
@@ -620,15 +639,12 @@ class MainWidget(QMainWindow):
                 del frame.mask_overlay # remove the mask_overlay attribute to force recoloring
             
         t=self.stack.tracked_centroids
-        colors=np.random.randint(10, size=t['particle'].nunique())
-        # create a t['color'] column
+        colors=np.random.randint(0, self.canvas.cell_n_colors, size=t['particle'].nunique())
         t['color']=colors[t['particle']]
 
-        from matplotlib import colormaps
-        cmap=colormaps.get_cmap('tab10')
         for frame in self.stack.frames:
             tracked_frame=t[t.frame==frame.frame_number].sort_values('cell_number')
-            frame.set_cell_attr('color_ID', cmap(tracked_frame['color']))
+            frame.set_cell_attr('color_ID', self.canvas.cell_cmap(tracked_frame['color']))
 
         self.canvas.overlay_masks()
 
@@ -652,6 +668,10 @@ class MainWidget(QMainWindow):
                 bounds=self.stack.bounds
             else:
                 all_imgs=np.array([frame.img for frame in self.stack.frames]).reshape(-1, colors)
+                if all_imgs.size>1e6:
+                    # downsample to speed up calculation
+                    random_pixels=np.random.choice(all_imgs.shape[0], size=int(1e6), replace=True)
+                    all_imgs=all_imgs[random_pixels]
                 bounds=np.quantile(all_imgs, (0.01, 0.99), axis=0).T
                 self.stack.bounds=bounds
 
@@ -669,6 +689,7 @@ class MainWidget(QMainWindow):
     def open_command_line(self):
         # Create a separate window for the command line interface
         self.cli_window = QMainWindow()
+        self.cli_window.setWindowIcon(QIcon('monolayer_tracking/monolayer_tracking/assets/terminal_icon.png'))
         self.cli_window.setWindowTitle("Command Line Interface")
 
         # Add the CommandLineWidget to the new window
@@ -695,8 +716,7 @@ class MainWidget(QMainWindow):
 
                 x, y = self.canvas.get_plot_coords(event.scenePos(), pixels=True)
                 # Add the first handle
-                self.cell_roi.add_handle(y, x)
-                self.canvas.rescale_handles(self.canvas.img_plot.getViewBox())
+                self.cell_roi.add_vertex(y, x)
                 self.cell_roi.first_handle_pos=np.array((y, x))
                 self.cell_roi.last_handle_pos=np.array((y, x))
 
@@ -709,11 +729,17 @@ class MainWidget(QMainWindow):
             if overlay_color=='none': # basic selection
                 if event.button() == Qt.MouseButton.LeftButton:
                     if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-                        # ctrl click deletes if a mask overlay is enabled
-                        if self.masks_checkbox.isChecked() or self.outlines_checkbox.isChecked():
-                            self.delete_cell_mask(current_cell_n)
-                            self.selected_cell=None
-                            self.selected_particle=None
+                        # ctrl click deletes cells
+                        self.delete_cell_mask(current_cell_n)
+                        self.selected_cell=None
+                        self.selected_particle=None
+                    elif event.modifiers() == Qt.KeyboardModifier.AltModifier:
+                        # alt click merges cells
+                        if self.selected_cell is not None:
+                            self.merge_cell_masks(self.selected_cell, current_cell_n)
+                        else:
+                            self.selected_cell=current_cell_n
+
                     elif current_cell_n==self.selected_cell:
                         # clicking the same cell again deselects it
                         self.selected_cell=None
@@ -751,7 +777,7 @@ class MainWidget(QMainWindow):
             elif len(self.selected_particle)==1:
                 self.selected_particle=self.selected_particle.item()
             else:
-                raise ValueError(f'Multiple particles found for cell {self.selected_cell} in frame {self.frame.frame_number}')
+                raise ValueError(f'Multiple particles found for cell {self.selected_cell} in frame {self.frame.frame_number}') # shouldn't happen unless tracking data is broken
 
         self.update_cell_label(self.selected_cell)
 
@@ -762,7 +788,7 @@ class MainWidget(QMainWindow):
             if np.array_equal((y, x), self.cell_roi.last_handle_pos):
                 return
             else:
-                self.cell_roi.add_handle(y, x)
+                self.cell_roi.add_vertex(y, x)
                 if self.roi_is_closeable:
                     if np.linalg.norm(np.array((y, x))-self.cell_roi.first_handle_pos)<3:
                         self.close_roi()
@@ -770,8 +796,6 @@ class MainWidget(QMainWindow):
                 else:
                     if np.linalg.norm(np.array((y, x))-self.cell_roi.first_handle_pos)>3:
                         self.roi_is_closeable=True
-                    
-                self.canvas.rescale_handles(self.canvas.img_plot.getViewBox())
         
     def get_cell(self, x, y):
         if x < 0 or y < 0 or x >= self.canvas.img_data.shape[1] or y >= self.canvas.img_data.shape[0]:
@@ -782,15 +806,18 @@ class MainWidget(QMainWindow):
     def close_roi(self):
         self.drawing_cell_roi=False
         enclosed_pixels=self.cell_roi.get_enclosed_pixels()
+        # remove pixels outside the image bounds
+        enclosed_pixels=enclosed_pixels[(enclosed_pixels[:,0]>=0)&
+                                        (enclosed_pixels[:,0]<self.frame.masks.shape[0])&
+                                        (enclosed_pixels[:,1]>=0)&
+                                        (enclosed_pixels[:,1]<self.frame.masks.shape[1])]
         self.add_cell_mask(enclosed_pixels)
         self.cell_roi.clearPoints()
         self.update_display()
 
-    def random_color(self, n_samples=None, cmap='tab10', n_colors=10):
-        from matplotlib import colormaps
-        random_colors=np.random.randint(0, n_colors, size=n_samples)
-        cmap=colormaps.get_cmap(cmap)
-        colors=np.array(cmap(random_colors))[...,:3]
+    def random_color(self, n_samples=None):
+        random_colors=np.random.randint(0, self.canvas.cell_n_colors, size=n_samples)
+        colors=np.array(self.canvas.cell_cmap(random_colors))[...,:3]
 
         return colors
         
@@ -805,7 +832,6 @@ class MainWidget(QMainWindow):
             self.frame.masks[new_mask]=new_mask_n
             self.frame.n=new_mask_n
             print(f'Added cell {new_mask_n}')
-            print(f'added {new_mask.sum()} pixels')
 
             cell_color=self.random_color()
             outline=utils.outlines_list(new_mask)[0]
@@ -818,22 +844,43 @@ class MainWidget(QMainWindow):
             return True
         else:
             return False
+        
+    def add_cell(self, n, outline, color_ID=None, red=False, green=False, frame_number=None):
+        if frame_number is None: frame_number=self.frame.frame_number
+        self.frame.cells=np.append(self.frame.cells, Cell(n, outline, color_ID=color_ID, red=red, green=green, frame_number=frame_number))
     
+    def add_outline(self, mask):
+        from cellpose import utils
+        outline=utils.outlines_list(mask)[0]
+        self.frame.outlines[outline[:,1], outline[:,0]]=True
+
+        return outline
+
+    def merge_cell_masks(self, cell_n1, cell_n2):
+        ''' merges cell_n2 into cell_n1. '''
+        from cellpose import utils
+
+        if cell_n1==cell_n2:
+            return
+
+        self.frame.masks[self.frame.masks==cell_n2+1]=cell_n1+1
+        self.frame.outlines[self.frame.masks==cell_n1+1]=False
+        
+        self.add_outline(self.frame.masks==cell_n1+1)
+        self.frame.delete_cell(cell_n2)
+        print(f'Merged cell {cell_n2} into cell {cell_n1}')
+
+        self.canvas.overlay_masks()
+        self.canvas.overlay_outlines()
+        self.update_display()
+        
     def delete_cell_mask(self, cell_n):
-        from monolayer_tracking.preprocessing import renumber_masks
         to_clear=self.frame.masks==cell_n+1
         self.frame.masks[to_clear]=0
         self.frame.outlines[to_clear]=False
         print(f'Deleted cell {cell_n}')
-        print(f'deleted {to_clear.sum()} pixels')
         
-        self.frame.cells=np.delete(self.frame.cells, cell_n)
-
-        self.frame.masks=renumber_masks(self.frame.masks)
-        self.frame.n=self.frame.masks.max()
-
-        for n, cell in enumerate(self.frame.cells):
-            cell.n=n
+        self.frame.delete_cell(cell_n)
 
         self.canvas.overlay_masks()
         self.update_display()
@@ -924,7 +971,7 @@ class MainWidget(QMainWindow):
         self.update_cell_label(None)
         self.cc_overlay_dropdown.setCurrentIndex(0) # clear overlay
         self.canvas.set_RGB(True)
-        self.grayscale.setChecked(False)
+        self.show_grayscale.setChecked(False)
         self.canvas.clear_selection_overlay() # remove any overlays (highlighting, outlines)
         self.canvas.img_plot.autoRange()
 
@@ -1048,7 +1095,7 @@ class MainWidget(QMainWindow):
         
         elif event.key() == Qt.Key.Key_Tab:
             # toggle grayscale
-            self.grayscale.toggle()
+            self.show_grayscale.toggle()
 
         # segmentation overlay
         if event.key() == Qt.Key.Key_X:
@@ -1061,7 +1108,7 @@ class MainWidget(QMainWindow):
             self.cc_overlay_dropdown.setCurrentIndex(0)
             self.canvas.set_RGB(True)
             self.canvas.img_plot.autoRange()
-            self.grayscale.setChecked(False)
+            self.show_grayscale.setChecked(False)
 
         # Handle frame navigation with left and right arrow keys
         if event.key() == Qt.Key.Key_Left:
@@ -1087,8 +1134,12 @@ class MainWidget(QMainWindow):
             try: # maybe it's a folder of segmented files?
                 self.stack=TimeSeries(stack_path=files[0], verbose_load=True, progress_bar=tqdm, load_img=True)
             except FileNotFoundError: # nope, just reject it
-                print(f'ERROR: File {files[0]} is not a seg.npy file, cannot be loaded.')
+                self.statusBar().showMessage(f'ERROR: File {files[0]} is not a seg.npy file, cannot be loaded.', 4000)
                 self.file_loaded = False
+        
+        if self.file_loaded:
+            print(f'Loaded stack {self.stack.name} with {len(self.stack.frames)} frames.')
+            self.statusBar().showMessage(f'Loaded stack {self.stack.name} with {len(self.stack.frames)} frames.', 4000)
 
     def get_red_green(self):
         ''' Fetch or create red and green attributes for cells in the current frame. '''

@@ -1,0 +1,6 @@
+PyQt6
+PyOpenGL
+shapely
+numpy
+superqt
+monolayer_tracking

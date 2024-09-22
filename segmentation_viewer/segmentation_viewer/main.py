@@ -1,20 +1,20 @@
 import sys
 import numpy as np
-import io
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QComboBox, QPushButton, QRadioButton,
     QVBoxLayout, QHBoxLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog,
-    QLineEdit, QTextEdit, QTabWidget, QSlider, QGraphicsPolygonItem
+    QLineEdit, QTabWidget, QSlider
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QPointF
-from PyQt6.QtGui import QIntValidator, QPolygonF, QPen, QColor, QBrush, QIcon
-from superqt import QRangeSlider, QLabeledRangeSlider
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIntValidator, QIcon
+from superqt import QRangeSlider
 import pyqtgraph as pg
 
 from monolayer_tracking.segmented_comprehension import TimeSeries, Cell
+from segmentation_viewer.canvas import PyQtGraphCanvas, CellMaskPolygon
+from segmentation_viewer.command_line import CommandLineWindow
 
-from shapely.geometry import Polygon, Point
-
+import importlib.resources
 from tqdm import tqdm
 
 # TODO: RGB checks should change for grayscale images
@@ -116,8 +116,9 @@ darktheme_stylesheet = """
 class MainWidget(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PyQtGraph Segmentation Viewer")
-        self.setWindowIcon(QIcon('monolayer_tracking/monolayer_tracking/assets/icon.png'))
+        self.setWindowTitle("Segmentation Viewer")
+        with importlib.resources.path('segmentation_viewer.assets', 'icon.png') as image_path:
+            self.setWindowIcon(QIcon(str(image_path)))
         self.resize(1080, 540)
 
         self.file_loaded = False
@@ -325,21 +326,6 @@ class MainWidget(QMainWindow):
         # open
         self.open_button.clicked.connect(self.open_files)
         self.open_folder.clicked.connect(self.open_folder_dialog)
-    
-    def wheelEvent(self, event):
-        if not self.file_loaded:
-            return
-        if event.angleDelta().y() < 0: # scroll down = next frame
-            self.frame_number = min(self.frame_number + 1, len(self.stack.frames) - 1)
-        else: # scroll up = previous frame
-            self.frame_number = max(self.frame_number - 1, 0)
-        self.frame_slider.setValue(self.frame_number)
-
-    def update_frame_number(self, frame_number):
-        if not self.file_loaded:
-            return
-        self.frame_number = frame_number
-        self.imshow(self.stack.frames[self.frame_number], reset=False)
 
     def get_FUCCI_tab(self):
         FUCCI_tab = QWidget()
@@ -369,16 +355,34 @@ class MainWidget(QMainWindow):
         tracking_layout.addWidget(self.track_centroids_button)
         return tracking_tab
 
+    def wheelEvent(self, event):
+        if not self.file_loaded:
+            return
+        if event.angleDelta().y() < 0: # scroll down = next frame
+            self.frame_number = min(self.frame_number + 1, len(self.stack.frames) - 1)
+        else: # scroll up = previous frame
+            self.frame_number = max(self.frame_number - 1, 0)
+        self.frame_slider.setValue(self.frame_number)
+
+    def update_frame_number(self, frame_number):
+        if not self.file_loaded:
+            return
+        self.frame_number = frame_number
+        self.imshow(self.stack.frames[self.frame_number], reset=False)
+
     def update_coordinate_label(self, x, y):
+        ''' Update the status bar with the current cursor coordinates. '''
         self.status_coordinates.setText(f"Coordinates: ({x}, {y})")
     
     def update_cell_label(self, cell_n):
+        ''' Update the status bar with the selected cell number. '''
         if cell_n is None:
             self.status_cell.setText("Selected Cell: None")
         else:
             self.status_cell.setText(f"Selected Cell: {cell_n}")
 
     def track_centroids(self):
+        ''' Track centroids for the current stack. '''
         if not self.file_loaded:
             return
 
@@ -412,17 +416,20 @@ class MainWidget(QMainWindow):
         self.canvas.overlay_masks()
 
     def LUT_slider_changed(self, event):
+        ''' Update the LUTs when the sliders are moved. '''
         if not self.file_loaded:
             return
         self.normalize_custom_button.setChecked(True)
         self.set_LUTs()
 
     def set_LUTs(self):
+        ''' Set the LUTs for the image display based on the current slider values. '''
         bounds=self.get_LUT_slider_values()
         self.canvas.img.setLevels(bounds)
         self.update_LUT_labels()
 
     def update_LUT_labels(self):
+        ''' Update the labels next to the LUT sliders with the current values. '''
         for slider, labels in zip(self.RGB_range_sliders, self.RGB_range_labels):
             labels[0].setText(str(slider.value()[0]))
             labels[1].setText(str(slider.value()[1]))
@@ -435,9 +442,13 @@ class MainWidget(QMainWindow):
         self.normalize()
     
     def get_normalize_buttons(self):
-        return [self.normalize_frame_button.isChecked(), self.normalize_stack_button.isChecked(), self.normalize_custom_button.isChecked()]
+        ''' Get the state of the normalize buttons. Returns the selected button as a string. '''
+        button_status=[self.normalize_frame_button.isChecked(), self.normalize_stack_button.isChecked(), self.normalize_custom_button.isChecked()]
+        button_names=np.array(['frame', 'stack', 'custom'])
+        return button_names[button_status][0]
     
     def get_LUT_slider_values(self):
+        ''' Get the current values of the LUT sliders. '''
         slider_values=[slider.value() for slider in self.RGB_range_sliders]
         if self.is_grayscale:
             slider_values=slider_values[0]
@@ -458,7 +469,7 @@ class MainWidget(QMainWindow):
     def update_normalize_frame(self):
         if not self.file_loaded:
             return
-        self.normalize_type=np.array(['frame', 'stack', 'custom'])[self.get_normalize_buttons()][0]
+        self.normalize_type=self.get_normalize_buttons()
         self.normalize()
 
     def normalize(self):
@@ -486,7 +497,7 @@ class MainWidget(QMainWindow):
                 bounds=np.quantile(all_imgs, (0.01, 0.99), axis=0).T
                 self.stack.bounds=bounds
         
-        else: # custom: use the sliders
+        else: # custom: use the slider values
             bounds=np.array([slider.value() for slider in self.RGB_range_sliders])
         
         self.set_LUT_slider_values(bounds)
@@ -495,18 +506,8 @@ class MainWidget(QMainWindow):
     
     def open_command_line(self):
         # Create a separate window for the command line interface
-        self.cli_window = QMainWindow()
-        self.cli_window.setWindowIcon(QIcon('monolayer_tracking/monolayer_tracking/assets/terminal_icon.png'))
-        self.cli_window.setWindowTitle("Command Line Interface")
-
-        # Add the CommandLineWidget to the new window
-        self.cli_widget = CommandLineWidget(parent=self, globals_dict=self.globals_dict, locals_dict=self.locals_dict)
-        self.globals_dict['cli'] = self.cli_widget
-        self.cli_window.setCentralWidget(self.cli_widget)
-
-        # Set the window size and show the window
-        self.cli_window.resize(700, 400)
-        self.cli_window.show()
+        self.cli_window = CommandLineWindow(self, self.globals_dict, self.locals_dict)
+        self.globals_dict['cli'] = self.cli
 
     def on_click(self, event):
         if not self.file_loaded:
@@ -999,415 +1000,7 @@ class MainWidget(QMainWindow):
             self.cli_window.close()
         event.accept()
 
-class SegPlot(pg.PlotWidget):
-    '''
-    Custom PlotWidget for the segmentation viewer. 
-    Only functional difference is to redirect mouse wheel events to the main window.
-    '''
-    def __init__(self, parent=None, **kwargs):
-        super().__init__(parent, **kwargs)
-        self.parent = parent
-        self.setMenuEnabled(False)
-        self.getViewBox().invertY(True)
-        self.setAspectLocked(True)
-        self.setContentsMargins(0, 0, 0, 0)
-
-    def wheelEvent(self, event):
-        # ctrl+wheel zooms like normal, otherwise send it up to the main window
-        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            super().wheelEvent(event)
-        else:
-            event.ignore()
-
-class PyQtGraphCanvas(QWidget):
-    def __init__(self, parent=None, cell_n_colors=10, cell_cmap='tab10'):
-        from matplotlib import colormaps
-        super().__init__(parent)
-        self.parent = parent
-
-        # cell mask colors
-        self.cell_n_colors=cell_n_colors
-        self.cell_cmap=colormaps.get_cmap(cell_cmap)
-        
-        # Create a layout for the widget
-        plot_layout = QHBoxLayout(self)
-        plot_layout.setSpacing(5)
-        plot_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Create a PlotWidget for the image and segmentation views
-        self.img_plot = SegPlot(title="Image", border="w")
-        self.seg_plot = SegPlot(title="Segmentation", border="w")
-
-        plot_layout.addWidget(self.img_plot)
-        plot_layout.addWidget(self.seg_plot)
-
-        # Initialize data - 512x512 with white outline
-        self.img_data = np.ones((512, 512, 3), dtype=np.uint8)
-        self.img_data[5:-5, 5:-5] = 0 # white border
-        self.seg_data = self.img_data.copy()
-
-
-        # Plot the data
-        self.img = pg.ImageItem(self.img_data)
-        self.seg = pg.ImageItem(self.seg_data)
-        self.img_outline_overlay=pg.ImageItem()
-        self.mask_overlay=[pg.ImageItem(), pg.ImageItem()]
-        self.selection_overlay=[pg.ImageItem(), pg.ImageItem()]
-
-        # add images to the plots
-        self.img_plot.addItem(self.img)
-        self.img_plot.addItem(self.img_outline_overlay)
-
-        self.img_plot.addItem(self.mask_overlay[0])
-        self.seg_plot.addItem(self.mask_overlay[1])
-
-        self.img_plot.addItem(self.selection_overlay[0])
-        self.seg_plot.addItem(self.selection_overlay[1])
-
-        self.seg_plot.addItem(self.seg)
-
-        # Set initial zoom levels
-        self.img_plot.setRange(xRange=[0, self.img_data.shape[1]], yRange=[0, self.img_data.shape[0]], padding=0)
-        self.seg_plot.setRange(xRange=[0, self.seg_data.shape[1]], yRange=[0, self.seg_data.shape[0]], padding=0)
-
-        # Connect the range change signals to the custom slots
-        self.img_plot.sigRangeChanged.connect(self.sync_seg_plot)
-        self.seg_plot.sigRangeChanged.connect(self.sync_img_plot)
-
-        # Connect the mouse move signals to the custom slots
-        self.img_plot.scene().sigMouseMoved.connect(self.mouse_moved)
-        self.seg_plot.scene().sigMouseMoved.connect(self.mouse_moved)
-
-        # Create crosshair lines
-        self.img_vline = pg.InfiniteLine(angle=90, movable=False)
-        self.img_hline = pg.InfiniteLine(angle=0, movable=False)
-        self.seg_vline = pg.InfiniteLine(angle=90, movable=False)
-        self.seg_hline = pg.InfiniteLine(angle=0, movable=False)
-        self.img_plot.addItem(self.img_vline, ignoreBounds=True)
-        self.img_plot.addItem(self.img_hline, ignoreBounds=True)
-        self.seg_plot.addItem(self.seg_vline, ignoreBounds=True)
-        self.seg_plot.addItem(self.seg_hline, ignoreBounds=True)
-
-    def overlay_outlines(self, event=None, color='white', alpha=0.5):
-        ''' Overlay the outlines of the masks on the image plot. '''
-        if not self.parent.outlines_checkbox.isChecked():
-            self.img_outline_overlay.clear()
-            return
-        from matplotlib.colors import to_rgb
-        color=[*to_rgb(color), alpha]
-
-        overlay=np.zeros((*self.parent.frame.masks.shape, 4))
-        overlay[self.parent.frame.outlines]=color
-
-        overlay=np.rot90(overlay, 3)
-        overlay=np.fliplr(overlay)
-        self.img_outline_overlay.setImage(overlay)
-
-    def overlay_masks(self, event=None, alpha=0.5):
-        ''' Overlay the masks on both plots. '''
-        if not self.parent.masks_checkbox.isChecked():
-            # masks are not visible, clear the overlay
-            self.mask_overlay[0].clear()
-            self.mask_overlay[1].clear()
-            return
-        
-        # get cell colors
-        try:
-            cell_colors=self.parent.frame.get_cell_attr('color_ID') # retrieve the stored colors for each cell
-        except AttributeError:
-            #from monolayer_tracking.networks import color_masks, greedy_color # generate pseudo-random colors
-            #random_colors=color_masks(self.parent.frame.masks)
-            random_colors=np.random.randint(0, self.cell_n_colors, size=self.parent.frame.masks.max())
-            cell_colors=self.cell_cmap(random_colors)[..., :3]
-            self.parent.frame.set_cell_attr('color_ID', cell_colors)
-
-        # highlight all cells with the specified colors
-        cell_indices=np.unique(self.parent.frame.masks)[1:]-1
-        img_masks, seg_masks=self.highlight_cells(cell_indices, alpha=alpha, cell_colors=cell_colors, layer='mask')
-
-        self.parent.frame.mask_overlay=[img_masks, seg_masks] # store the overlay for reuse
-
-    def highlight_cells(self, cell_indices, layer='selection', alpha=0.3, color='white', cell_colors=None):
-        from matplotlib.colors import to_rgb
-        masks=self.parent.frame.masks
-
-        layer=getattr(self, f'{layer}_overlay') # get the specified overlay layer: selection for highlighting, mask for colored masks
-
-        if cell_colors is None: # single color mode
-            color=[*to_rgb(color), alpha] # convert color to RGBA
-            mask_overlay=np.isin(masks-1, cell_indices)[..., np.newaxis]*color
-
-        else: # multi-color mode
-            num_labels=masks.max()+1 # number of unique labels (including background)
-            mask_overlay=np.zeros((*masks.shape, 4))
-            cell_colors=np.array([[*to_rgb(c), alpha] for c in cell_colors])
-            color_map=np.zeros((num_labels, 4))
-            for i, cell_index in enumerate(cell_indices):
-                color_map[cell_index+1]=cell_colors[i]
-            mask_overlay=color_map[masks]
-        
-        mask_overlay=np.rot90(mask_overlay, 3)
-        mask_overlay=np.fliplr(mask_overlay)
-
-        opaque_mask=mask_overlay.copy()
-        opaque_mask[mask_overlay[...,-1]!=0, -1]=1
-
-        layer[0].setImage(mask_overlay)
-        layer[1].setImage(opaque_mask)
-        return mask_overlay, opaque_mask
-
-    def clear_selection_overlay(self):
-        self.selection_overlay[0].clear()
-        self.selection_overlay[1].clear()
-
-    def clear_mask_overlay(self):
-        self.mask_overlay[0].clear()
-        self.mask_overlay[1].clear()
-
-
-    def get_plot_coords(self, pos, pixels=True):
-        """Get the pixel coordinates of the mouse cursor."""
-        mouse_point = self.img_plot.plotItem.vb.mapSceneToView(pos) # axes are the same for both plots so we can use either to transform
-        x, y = mouse_point.x(), mouse_point.y()
-        if pixels:
-            x, y = int(y), int(x)
-        return x, y
-    
-    def mouse_moved(self, pos):
-        x,y=self.get_plot_coords(pos, pixels=False)
-        self.update_cursor(x, y)
-
-        self.parent.mouse_moved(pos)
-
-    def update_cursor(self, x, y):
-        """Update the segmentation plot cursor based on the image plot cursor."""
-        #if self.img_plot.sceneBoundingRect().contains(pos):
-        #    mouse_point = self.img_plot.plotItem.vb.mapSceneToView(pos)
-        #elif self.seg_plot.sceneBoundingRect().contains(pos):
-        #    mouse_point = self.seg_plot.plotItem.vb.mapSceneToView(pos)
-        self.seg_vline.setPos(x)
-        self.seg_hline.setPos(y)
-        self.img_vline.setPos(x)
-        self.img_hline.setPos(y)
-        self.parent.update_coordinate_label(int(x), int(y))
-
-    def update_display(self, img_data=None, seg_data=None):
-        """Update the display when checkboxes change."""
-        if img_data is not None:
-            self.img_data = np.rot90(img_data, 3)
-            # invert y axis
-            self.img_data = np.fliplr(self.img_data)
-        if seg_data is not None:
-            self.seg_data = np.rot90(seg_data, 3)
-            # invert y axis
-            self.seg_data = np.fliplr(self.seg_data)
-
-        # RGB checkboxes
-        RGB_checks = self.get_RGB()
-        for i, check in enumerate(RGB_checks):
-            if not check:
-                self.img_data[..., i] = 0
-            
-        # Grayscale checkbox
-        if self.parent.show_grayscale.isChecked():
-            self.img_data = np.mean(self.img_data, axis=-1)
-
-        # update segmentation overlay
-        self.overlay_outlines()
-
-        # update masks overlay, use the stored overlay if available
-        if hasattr(self.parent.frame, 'mask_overlay') and self.parent.masks_checkbox.isChecked():
-            img_masks, seg_masks=self.parent.frame.mask_overlay
-            self.mask_overlay[0].setImage(img_masks)
-            self.mask_overlay[1].setImage(seg_masks)
-        else:
-            self.overlay_masks()
-
-        # turn seg_data from grayscale to RGBA
-        self.seg_data=np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1)
-
-        self.img.setImage(self.img_data)
-        self.seg.setImage(self.seg_data)
-
-    def sync_img_plot(self, view_box):
-        """Sync the image plot view range with the segmentation plot."""
-
-        self.img_plot.blockSignals(True)
-        self.img_plot.setRange(xRange=self.seg_plot.viewRange()[0], yRange=self.seg_plot.viewRange()[1], padding=0)
-        self.img_plot.blockSignals(False)
-
-    def sync_seg_plot(self, view_box):
-        """Sync the segmentation plot view range with the image plot."""
-
-        self.seg_plot.blockSignals(True)
-        self.seg_plot.setRange(xRange=self.img_plot.viewRange()[0], yRange=self.img_plot.viewRange()[1], padding=0)
-        self.seg_plot.blockSignals(False)
-
-    def get_RGB(self):
-        return [checkbox.isChecked() for checkbox in self.parent.RGB_checkboxes]
-
-    def set_RGB(self, RGB):
-        if isinstance(RGB, bool):
-            RGB=[RGB]*3
-        elif len(RGB)!=3:
-            raise ValueError('RGB must be a bool or boolean array of length 3.')
-        for checkbox, state in zip(self.parent.RGB_checkboxes, RGB):
-            checkbox.setChecked(state)
-
-class CellMaskPolygon(QGraphicsPolygonItem):
-    ''' Polygonal overlay for drawing the current mask. '''
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.setPen(QPen(QColor(255, 255, 255, 50)))
-        self.setBrush(QBrush(QColor(120, 120, 120, 50)))
-        self.points=[]
-
-    def clearPoints(self):
-        self.points=[]
-        self.update_polygon()
-
-    def update_polygon(self):
-        polygon=QPolygonF(self.points)
-        self.setPolygon(polygon)
-
-    def add_vertex(self, y, x):
-        y, x = y+0.5, x+0.5
-        self.points.append(QPointF(y, x))
-        self.update_polygon()
-        self.last_handle_pos = (y, x)
-
-    def get_enclosed_pixels(self):
-        ''' Return all pixels enclosed by the polygon. '''
-        points=[(p.y()-0.5, p.x()-0.5) for p in self.points]
-        shapely_polygon=Polygon(points).buffer(0.1)
-        xmin, ymin, xmax, ymax=shapely_polygon.bounds
-        x, y = np.meshgrid(np.arange(int(xmin), int(xmax)+1), np.arange(int(ymin), int(ymax)+1))
-
-        bbox_grid=np.vstack((x.flatten(), y.flatten())).T
-        enclosed_pixels=np.array([tuple(p) for p in bbox_grid if shapely_polygon.contains(Point(p))])
-        
-        return enclosed_pixels
-
-class CommandLineWidget(QWidget):
-    def __init__(self, parent=None, globals_dict={}, locals_dict={}):
-        super().__init__(parent)
-
-        # Set up the layout
-        layout = QVBoxLayout(self)
-        
-        # Terminal-style output display area (Read-Only)
-        self.terminal_display = QTextEdit(self)
-        self.terminal_display.setStyleSheet("""
-            background-color: black;
-            color: white;
-            font-family: "Courier";
-            font-size: 10pt;
-        """)
-
-        self.terminal_display.setReadOnly(True)
-        layout.addWidget(self.terminal_display)
-        
-        # Command input area
-        self.command_input = QLineEdit(self)
-        self.command_input.setStyleSheet("""
-            background-color: black;
-            color: white;
-            font-family: "Courier";
-            font-size: 12pt;
-        """)
-
-        layout.addWidget(self.command_input)
-
-        # Command history
-        self.command_history = []
-        self.history_index = -1
-
-        # Connect Enter key press to command execution
-        self.command_input.returnPressed.connect(self.execute_command)
-
-        self.globals_dict = globals_dict
-        self.locals_dict = locals_dict
-
-        # Prompt for commands
-        self.prompt = ">>> "
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        # Set the focus to the command input box when the window is shown
-        self.command_input.setFocus()
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Up:
-            # Navigate through command history (up)
-            if self.history_index > 0:
-                self.history_index -= 1
-                self.command_input.setText(self.command_history[self.history_index])
-        elif event.key() == Qt.Key_Down:
-            # Navigate through command history (down)
-            if self.history_index < len(self.command_history) - 1:
-                self.history_index += 1
-                self.command_input.setText(self.command_history[self.history_index])
-            else:
-                self.history_index = len(self.command_history)  # Reset to allow new input
-                self.command_input.clear()
-        else:
-            # Call base class keyPressEvent for default handling
-            super().keyPressEvent(event)
-    
-    def execute_command(self):
-        # Get the command from the input box
-        command = self.command_input.text()
-        self.command_input.clear()
-        
-        if command:
-            self.command_history.append(command)
-            self.history_index = len(self.command_history)  # Reset index to point to the latest command
-            # Display the command in the terminal display
-            self.terminal_display.append(self.prompt + command)
-            
-            # Execute the command and show the result
-            self.worker = CodeExecutionWorker(command, self.globals_dict, self.locals_dict)
-            self.worker.execution_done.connect(self.on_code_execution_done)
-            self.worker.start()
-
-    @pyqtSlot(str, str) # Decorator to specify the type of the signal
-    def on_code_execution_done(self, output, error):
-        if output:
-            self.terminal_display.append(output)
-        if error:
-            self.terminal_display.append(f"Error: {error}")
-
-class CodeExecutionWorker(QThread):
-    execution_done = pyqtSignal(str, str)  # Signal to emit output and error
-
-    def __init__(self, code, globals_dict, locals_dict):
-        super().__init__()
-        self.code = code
-        self.globals_dict = globals_dict
-        self.locals_dict = locals_dict
-
-    def run(self):
-        try:
-            # First attempt eval (for expressions)
-            output = str(eval(self.code, self.globals_dict, self.locals_dict))
-            error = ""
-        except SyntaxError:
-            # If it’s not an expression, run it as a statement using exec
-            try:
-                exec(self.code, self.globals_dict, self.locals_dict)
-                output = ""
-                error = ""
-            except Exception as e:
-                output = ""
-                error = str(e)
-        except Exception as e:
-            output = ""
-            error = str(e)
-
-        # Emit the result and any error message back to the main thread
-        self.execution_done.emit(output, error)
-
-if __name__ == '__main__':
+def main():
     pg.setConfigOptions(useOpenGL=True)
     pg.setConfigOptions(enableExperimental=True)
 
@@ -1421,3 +1014,6 @@ if __name__ == '__main__':
     ui = MainWidget()
     ui.show()
     app.exec()
+
+if __name__ == '__main__':
+    main()

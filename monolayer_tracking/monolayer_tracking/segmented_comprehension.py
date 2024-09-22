@@ -510,6 +510,15 @@ class Image:
         Path(export_path).parent.mkdir(parents=True, exist_ok=True) # make sure the directory exists
         np.save(export_path, export) # write segmentation file
     
+    def delete_cell(self, cell_number):
+        '''deletes a cell from the image.'''
+        self.cells=np.delete(self.cells, cell_number)
+
+        self.masks=preprocessing.renumber_masks(self.masks)
+        self.n=self.masks.max()
+
+        for n, cell in enumerate(self.cells):
+            cell.n=n
     # ------------FUCCI----------------        
     def measure_FUCCI(self, percent_threshold=0.15, red_fluor_threshold=None, green_fluor_threshold=None, orange_brightness=1.5, threshold_offset=0, noise_score=0.02):
         """

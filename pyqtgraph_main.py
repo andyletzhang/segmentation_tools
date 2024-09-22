@@ -11,7 +11,7 @@ from PyQt6.QtGui import QIntValidator, QPolygonF, QPen, QColor, QBrush, QIcon
 from superqt import QRangeSlider, QLabeledRangeSlider
 import pyqtgraph as pg
 
-from monolayer_tracking.segmented_comprehension import TimeSeries
+from monolayer_tracking.segmented_comprehension import TimeSeries, Cell
 
 from shapely.geometry import Polygon, Point
 

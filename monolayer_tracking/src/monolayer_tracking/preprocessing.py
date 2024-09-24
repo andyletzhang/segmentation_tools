@@ -1,6 +1,5 @@
 import numpy as np
 from scipy import ndimage
-import cellpose.utils as cp_utils
 from multiprocessing import Pool
 from functools import partial
 from skimage import io
@@ -45,11 +44,12 @@ def mend_gaps(masks, max_gap_size):
     return masks, mended
 
 def masks_to_outlines(masks):
-        from scipy.sparse import csc_matrix
-        boundaries=cp_utils.masks_to_outlines(masks) # have cellpose find new outlines
-        mended_outlines=np.zeros(masks.shape, dtype=np.uint16)
-        mended_outlines[boundaries]=masks[boundaries] # attach labels to outlines
-        return csc_matrix(mended_outlines)
+    from cellpose.utils import masks_to_outlines
+    from scipy.sparse import csc_matrix
+    boundaries=masks_to_outlines(masks) # have cellpose find new outlines
+    mended_outlines=np.zeros(masks.shape, dtype=np.uint16)
+    mended_outlines[boundaries]=masks[boundaries] # attach labels to outlines
+    return csc_matrix(mended_outlines)
 
 def gaussian_parallel(imgs, n_processes=8, progress_bar=None, sigma=5, **kwargs):
     p=Pool(processes=n_processes)

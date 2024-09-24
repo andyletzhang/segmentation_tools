@@ -1,12 +1,10 @@
 import numpy as np
 import pandas as pd
-from matplotlib.collections import PatchCollection
-from matplotlib.patches import Polygon
 from scipy import ndimage
 from natsort import natsorted
 from glob import glob
 from pathlib import Path
-from . import preprocessing # from my module
+from monolayer_tracking import preprocessing # from my module
 
 '''
     Stacks are collections of time lapse images on a single stage.
@@ -61,7 +59,7 @@ class TimeSeries:
         drift_firstpass=tp.compute_drift(t_firstpass)
         t_corrected=tp.subtract_drift(t_firstpass,drift_firstpass).reset_index(drop=True) # subtract drift in the stage. NB: will also catch any collective migration.
     
-        if 'search_range' in kwargs: # user can specify a search range if they want. Otherwise one is deduced from the velocity distribution.
+        if 'search_range' in kwargs and kwargs['search_range'] is not None: # user can specify a search range if they want. Otherwise one is deduced from the velocity distribution.
             self.tracking_range=kwargs['search_range']
             kwargs.pop('search_range')
 
@@ -733,6 +731,8 @@ class Image:
 
     def cell_polygons(self,ec='k',fc='lightsteelblue',linewidths=0.8,**kwargs):
         '''returns a matplotlib PatchCollection of vertex-reconstructed cells for efficient plotting.'''
+        from matplotlib.patches import Polygon
+        from matplotlib.collections import PatchCollection
         cell_polygons=[]
         for cell in self.good_cells():
             vertices=cell.sorted_vertices

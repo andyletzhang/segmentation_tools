@@ -1,9 +1,12 @@
 [project]
 name = "monolayer_tracking"
+
 version = "0.0.1"
+
 authors = [
   { name="Andy Zhang", email="andyletzhang@uchicago.edu" },
 ]
+
 description = "Scripts for segmentation, tracking, and image processing. Description edited 20240304."
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -11,6 +14,21 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
+dependencies = [
+    "numpy",
+    "cellpose",
+    "pandas",
+    "trackpy",
+    "matplotlib",
+    "scipy",
+    "scikit-image",
+    "networkx",
+    "natsort",
+]
+
 [build-system]
-requires = ["flit_core >= 3.4"]
-build-backend = "flit_core.buildapi"
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

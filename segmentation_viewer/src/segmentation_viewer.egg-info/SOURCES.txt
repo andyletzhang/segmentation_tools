@@ -1,0 +1,14 @@
+pyproject.toml
+src/segmentation_viewer/__init__.py
+src/segmentation_viewer/canvas.py
+src/segmentation_viewer/command_line.py
+src/segmentation_viewer/main-ANDY-DESKTOP.py
+src/segmentation_viewer/main.py
+src/segmentation_viewer.egg-info/PKG-INFO
+src/segmentation_viewer.egg-info/SOURCES.txt
+src/segmentation_viewer.egg-info/dependency_links.txt
+src/segmentation_viewer.egg-info/entry_points.txt
+src/segmentation_viewer.egg-info/requires.txt
+src/segmentation_viewer.egg-info/top_level.txt
+src/segmentation_viewer/assets/icon.png
+src/segmentation_viewer/assets/terminal_icon.png

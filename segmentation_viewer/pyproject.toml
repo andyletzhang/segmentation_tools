@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "segmentation_viewer"
+version = "0.0.1"
+dependencies = [
+    "PyQt6",
+    "PyOpenGL",
+    "shapely",
+    "numpy",
+    "cellpose",
+    "superqt",
+    "monolayer_tracking", # You may need to manually install this since it's local.
+]
+
+[project.scripts]
+segmentation-viewer = "segmentation_viewer.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"segmentation_viewer" = ["assets/*"]

@@ -1,0 +1,7 @@
+pyproject.toml
+src/segmentation_viewer.egg-info/PKG-INFO
+src/segmentation_viewer.egg-info/SOURCES.txt
+src/segmentation_viewer.egg-info/dependency_links.txt
+src/segmentation_viewer.egg-info/entry_points.txt
+src/segmentation_viewer.egg-info/requires.txt
+src/segmentation_viewer.egg-info/top_level.txt

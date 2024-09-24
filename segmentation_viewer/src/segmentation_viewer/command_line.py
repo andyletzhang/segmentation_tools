@@ -7,8 +7,8 @@ import importlib.resources
 class CommandLineWindow(QMainWindow):
     def __init__(self, parent=None, globals_dict={}, locals_dict={}):
         super().__init__(parent)
-        with importlib.resources.path('segmentation_viewer.assets', 'terminal_icon.png') as image_path:
-            self.setWindowIcon(QIcon(str(image_path)))
+        icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('terminal_icon.png')
+        self.setWindowIcon(QIcon(str(icon_path)))
         self.setWindowTitle("Command Line")
 
         # Add the CommandLineWidget to the new window

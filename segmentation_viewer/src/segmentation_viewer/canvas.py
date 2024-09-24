@@ -33,7 +33,6 @@ class PyQtGraphCanvas(QWidget):
         self.img_data[5:-5, 5:-5] = 0 # white border
         self.seg_data = self.img_data.copy()
 
-
         # Plot the data
         self.img = pg.ImageItem(self.img_data)
         self.seg = pg.ImageItem(self.seg_data)
@@ -77,10 +76,11 @@ class PyQtGraphCanvas(QWidget):
 
     def overlay_outlines(self, event=None, color='white', alpha=0.5):
         ''' Overlay the outlines of the masks on the image plot. '''
+        from matplotlib.colors import to_rgb
+        
         if not self.parent.outlines_checkbox.isChecked():
             self.img_outline_overlay.clear()
             return
-        from matplotlib.colors import to_rgb
         color=[*to_rgb(color), alpha]
 
         overlay=np.zeros((*self.parent.frame.masks.shape, 4))
@@ -178,26 +178,26 @@ class PyQtGraphCanvas(QWidget):
         self.img_hline.setPos(y)
         self.parent.update_coordinate_label(int(x), int(y))
 
-    def update_display(self, img_data=None, seg_data=None):
+    def update_display(self, img_data=None, seg_data=None, RGB_checks=None):
         """Update the display when checkboxes change."""
         if img_data is not None:
-            self.img_data = np.rot90(img_data, 3)
+            self.img_data = np.rot90(img_data, 3).copy()
             # invert y axis
             self.img_data = np.fliplr(self.img_data)
         if seg_data is not None:
-            self.seg_data = np.rot90(seg_data, 3)
+            self.seg_data = np.rot90(seg_data, 3).copy()
             # invert y axis
             self.seg_data = np.fliplr(self.seg_data)
 
         # RGB checkboxes
-        RGB_checks = self.get_RGB()
-        for i, check in enumerate(RGB_checks):
-            if not check:
-                self.img_data[..., i] = 0
+        if RGB_checks is not None:
+            for i, check in enumerate(RGB_checks):
+                if not check:
+                    self.img_data[..., i] = 0
             
         # Grayscale checkbox
-        if self.parent.show_grayscale.isChecked():
-            self.img_data = np.mean(self.img_data, axis=-1)
+        if not self.parent.is_grayscale and self.parent.show_grayscale.isChecked():
+            self.img_data = np.mean(self.img_data, axis=-1) # TODO: incorporate LUTs?
 
         # update segmentation overlay
         self.overlay_outlines()
@@ -229,17 +229,6 @@ class PyQtGraphCanvas(QWidget):
         self.seg_plot.blockSignals(True)
         self.seg_plot.setRange(xRange=self.img_plot.viewRange()[0], yRange=self.img_plot.viewRange()[1], padding=0)
         self.seg_plot.blockSignals(False)
-
-    def get_RGB(self):
-        return [checkbox.isChecked() for checkbox in self.parent.RGB_checkboxes]
-
-    def set_RGB(self, RGB):
-        if isinstance(RGB, bool):
-            RGB=[RGB]*3
-        elif len(RGB)!=3:
-            raise ValueError('RGB must be a bool or boolean array of length 3.')
-        for checkbox, state in zip(self.parent.RGB_checkboxes, RGB):
-            checkbox.setChecked(state)
 
 class SegPlot(pg.PlotWidget):
     '''

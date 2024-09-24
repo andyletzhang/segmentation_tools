@@ -1,0 +1,10 @@
+Metadata-Version: 2.1
+Name: segmentation_viewer
+Version: 0.0.1
+Requires-Dist: PyQt6
+Requires-Dist: PyOpenGL
+Requires-Dist: shapely
+Requires-Dist: numpy
+Requires-Dist: cellpose
+Requires-Dist: superqt
+Requires-Dist: monolayer_tracking

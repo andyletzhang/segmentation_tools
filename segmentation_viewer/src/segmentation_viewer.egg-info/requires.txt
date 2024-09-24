@@ -2,5 +2,6 @@ PyQt6
 PyOpenGL
 shapely
 numpy
+cellpose
 superqt
 monolayer_tracking

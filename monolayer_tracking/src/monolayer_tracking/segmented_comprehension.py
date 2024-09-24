@@ -446,7 +446,7 @@ class Image:
         
         try:
             self.outlines=self.outlines.todense()
-        except AttributeError:
+        except AttributeError: # if it's already dense, carry on
             pass
         self.outlines=self.outlines!=0
         

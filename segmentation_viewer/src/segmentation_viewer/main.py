@@ -5,7 +5,7 @@ from cellpose import utils
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QComboBox, QPushButton, QRadioButton,
     QVBoxLayout, QHBoxLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog,
-    QLineEdit, QTabWidget, QSlider
+    QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics
@@ -19,8 +19,7 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
-# TODO: Measure FUCCI button, automatic/manual thresholds
-# TODO: Initial tab with basic segmentation tools, number of cells, etc.
+# TODO: channel 2 can just be "FUCCI" and will blend R and G channels
 # TODO: switching tabs changes modes? Think about what visuals and interactions at the base level
 # TODO: FUCCI tab - show cc occupancies as a stacked bar
 # TODO: modify tracking data: tracking mode
@@ -29,6 +28,8 @@ from tqdm import tqdm
 # TODO: export/import tracking data
 # TODO: get_mitoses, visualize mitoses, edit mitoses
 # TODO: expand/collapse segmentation plot
+# TODO: undo/redo
+# TODO: load TIFs
 
 darktheme_stylesheet = """
     QWidget {
@@ -317,8 +318,14 @@ class MainWidget(QMainWindow):
         segmentation_layout=QVBoxLayout(segmentation_tab)
         segmentation_layout.setSpacing(5)
         segmentation_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        self.cell_diameter=QLineEdit("30", self)
+        
+        utils_layout=QHBoxLayout()
+        self.mend_gaps_button=QPushButton("Mend Gaps", self)
+        self.remove_edge_masks_button=QPushButton("Remove Edge Masks", self)
+        utils_layout.addWidget(self.mend_gaps_button)
+        utils_layout.addWidget(self.remove_edge_masks_button)
+        self.cell_diameter=QLineEdit(self)
+        self.cell_diameter.setPlaceholderText('Auto')
         self.cell_diameter.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
         self.cell_diameter.setFixedWidth(40)
         self.cell_diameter_calibrate=QPushButton("Calibrate", self)
@@ -329,7 +336,7 @@ class MainWidget(QMainWindow):
         self.cell_diameter_layout.addWidget(self.cell_diameter)
         self.cell_diameter_layout.addWidget(self.cell_diameter_calibrate)
 
-        # channel selection # TODO: if image is grayscale, hide this
+        # channel selection # TODO: if image is grayscale, hide this. Will always be [0, 0]
         self.channel_layout=QVBoxLayout()
         self.membrane_channel=QComboBox(self)
         self.membrane_channel.addItems(["Gray", "Red", "Green", "Blue"])
@@ -358,45 +365,120 @@ class MainWidget(QMainWindow):
         segmentation_button_layout.addWidget(self.segment_frame_button)
         segmentation_button_layout.addWidget(self.segment_stack_button)
 
+        segmentation_layout.addLayout(utils_layout)
         segmentation_layout.addLayout(self.cell_diameter_layout)
         segmentation_layout.addLayout(self.channel_layout)
         segmentation_layout.addSpacerItem(self.vertical_spacer())
         segmentation_layout.addLayout(segmentation_button_layout)
 
         # TODO: create segmentation functionality
+        self.circle_mask=None
+        self.mend_gaps_button.clicked.connect(self.mend_gaps)
+        self.remove_edge_masks_button.clicked.connect(self.remove_edge_masks)
         self.cell_diameter.textChanged.connect(self.update_cell_diameter)
-        self.cell_diameter_calibrate.clicked.connect(self.calibrate_cell_diameter)
+        self.cell_diameter_calibrate.clicked.connect(self.calibrate_diameter_pressed)
         self.segment_frame_button.clicked.connect(self.segment_frame)
         self.segment_stack_button.clicked.connect(self.segment_stack)
 
         return segmentation_tab
     
+    def mend_gaps(self):
+        # TODO
+        print('Mending gaps... (not implemented)')
+        
+    def mend_gaps(self):
+        # TODO
+        print('Mending gaps... (not implemented)')
+
+    def remove_edge_masks(self):
+        # TODO
+        print('Removing edge masks... (not implemented)')
+    
     def update_cell_diameter(self, diameter):
-        self.cell_diameter.setText(diameter)
-        # TODO: draw a circle with the given diameter
+        self.draw_cell_diameter(diameter)
+    
+    def draw_cell_diameter(self, diameter):
+        if self.circle_mask is not None:
+            self.canvas.img_plot.removeItem(self.circle_mask)
 
+        if diameter=='':
+            return
+        
+        diameter=float(diameter)
+        padding=5
+        img_shape=self.canvas.img_data.shape[:2]
+        self.circle_mask=QGraphicsEllipseItem(padding, img_shape[1]+padding, diameter, diameter)
+        self.circle_mask.setPen(pg.mkPen(color='#CCCCCC', width=2))
+        self.circle_mask.setBrush(pg.mkBrush(color='#4A90E2'))
+        self.canvas.img_plot.addItem(self.circle_mask)
 
-    def calibrate_cell_diameter(self):
+    def calibrate_diameter_pressed(self):
+        channels=[self.membrane_channel.currentIndex(), self.nuclear_channel.currentIndex()]
+        diam=self.calibrate_cell_diameter(self.frame.img, channels)
+
+        print(f'Computed cell diameter {diam:.2f} with channels {channels}')
+        self.cell_diameter.setText(f'{diam:.2f}')
+
+    def calibrate_cell_diameter(self, img, channels):
         if not self.file_loaded:
             return
-        from cellpose import models
 
         if not hasattr(self, 'size_model'):
+            from cellpose import models
             model_type='cyto3'
             self.cellpose_model=models.CellposeModel(gpu=True, model_type=model_type)
             self.size_model_path=models.size_model_path(model_type)
             self.size_model=models.SizeModel(self.cellpose_model, pretrained_size=self.size_model_path)
 
-        channels=[self.membrane_channel.currentIndex(), self.nuclear_channel.currentIndex()]
-        diam, style_diam=self.size_model.eval(self.frame.img, channels=channels)
-        print(f'Computed cell diameter {diam} with channels {channels}')
-        self.cell_diameter.setText(f'{diam:.2f}')
+        diam, style_diam=self.size_model.eval(img, channels=channels)
+
+        return diam
 
     def segment_frame(self):
-        print('Segmenting frame (TODO)')
+        if not self.file_loaded:
+            return
+        self.segment([self.frame])
 
     def segment_stack(self):
-        print('Segmenting stack (TODO)')
+        if not self.file_loaded:
+            return
+        self.segment(self.stack.frames)
+
+    def segment(self, frames):
+        diameter=self.cell_diameter.text()
+        if diameter=='':
+            diameter=None
+        else:
+            diameter=float(diameter)
+        channels=[self.membrane_channel.currentIndex(), self.nuclear_channel.currentIndex()]
+
+        if not hasattr(self, 'cellpose_model'):
+            from cellpose import models
+            model_type='cyto3'
+            self.cellpose_model=models.CellposeModel(gpu=True, model_type=model_type)
+
+        for frame in tqdm(frames, desc='Segmenting frames'):
+            if diameter is None:
+                diameter=self.calibrate_cell_diameter(frame.img, channels)
+            frame.cell_diameter=diameter
+            masks, _, _=self.cellpose_model.eval(frame.img, channels=channels, diameter=diameter)
+            frame.masks=masks
+            self.replace_segmentation(frame)
+            if hasattr(frame, 'mask_overlay'):
+                del frame.mask_overlay # remove the stored mask_overlay to force redrawing
+
+        self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
+        self.masks_checkbox.setChecked(True)
+        self.canvas.overlay_masks()
+        self.update_display()
+        self.cc_overlay()
+
+    def replace_segmentation(self, frame):
+        ''' Regenerate the cell outlines and cell objects from the new segmentation masks. '''
+        frame.outlines=utils.masks_to_outlines(frame.masks)
+        outlines_list=utils.outlines_list_multi(frame.masks)
+        frame.n=np.max(frame.masks)
+        frame.cells = np.array([Cell(n, outlines_list[n], frame_number=frame.frame_number) for n in range(frame.n)])
 
     def get_FUCCI_tab(self):
         FUCCI_tab = QWidget()
@@ -404,10 +486,13 @@ class MainWidget(QMainWindow):
         FUCCI_layout.setSpacing(0)
         FUCCI_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        self.FUCCI_checkbox = QCheckBox("Show FUCCI Channel", self)
+        FUCCI_overlay_layout=QHBoxLayout()
+        overlay_label = QLabel("FUCCI overlay: ", self)
         self.cc_overlay_dropdown = QComboBox(self)
         self.cc_overlay_dropdown.addItems(["None", "Green", "Red", "All"])
-        overlay_label = QLabel("FUCCI overlay", self)
+        FUCCI_overlay_layout.addWidget(overlay_label)
+        FUCCI_overlay_layout.addWidget(self.cc_overlay_dropdown)
+        self.FUCCI_checkbox = QCheckBox("Show FUCCI Channel", self)
 
         red_threshold_layout=QHBoxLayout()
         red_threshold_label=QLabel("Red Threshold:", self)
@@ -434,10 +519,9 @@ class MainWidget(QMainWindow):
         FUCCI_button_layout.addWidget(self.FUCCI_frame_button)
         FUCCI_button_layout.addWidget(self.FUCCI_stack_button)
 
-        FUCCI_layout.addWidget(overlay_label)
-        FUCCI_layout.addWidget(self.cc_overlay_dropdown)
-        FUCCI_layout.addItem(self.vertical_spacer())
+        FUCCI_layout.addLayout(FUCCI_overlay_layout)
         FUCCI_layout.addWidget(self.FUCCI_checkbox)
+        FUCCI_layout.addItem(self.vertical_spacer())
         FUCCI_layout.addLayout(red_threshold_layout)
         FUCCI_layout.addLayout(green_threshold_layout)
         FUCCI_layout.addSpacerItem(self.vertical_spacer())
@@ -595,8 +679,6 @@ class MainWidget(QMainWindow):
     def set_LUTs(self):
         ''' Set the LUTs for the image display based on the current slider values. '''
         bounds=self.get_LUT_slider_values()
-        if self.is_grayscale:
-            bounds=bounds[0]
         self.canvas.img.setLevels(bounds)
         self.update_LUT_labels()
 
@@ -682,6 +764,7 @@ class MainWidget(QMainWindow):
         # Create a separate window for the command line interface
         self.cli_window = CommandLineWindow(self, self.globals_dict, self.locals_dict)
         self.globals_dict['cli'] = self.cli_window.cli
+        self.cli_window.show()
 
     def on_click(self, event):
         if not self.file_loaded:
@@ -994,6 +1077,9 @@ class MainWidget(QMainWindow):
         else:
             self.red_threshold.setText('')
             self.green_threshold.setText('')
+        
+        if hasattr(self.frame, 'cell_diameter'):
+            self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
 
         if self.cc_overlay_dropdown.currentIndex() != 0:
             self.cc_overlay()
@@ -1092,6 +1178,9 @@ class MainWidget(QMainWindow):
             self.masks_checkbox.toggle()
         elif event.key() == Qt.Key.Key_Z:
             self.outlines_checkbox.toggle()
+        elif event.key() == Qt.Key.Key_Delete:
+            if self.selected_cell is not None:
+                self.delete_cell_mask(self.selected_cell)
 
         # reset visuals
         if event.key() == Qt.Key.Key_Escape:
@@ -1212,6 +1301,7 @@ class MainWidget(QMainWindow):
         self.LUT_range_labels=[]
         
         layout.addLayout(self.labeled_LUT_slider())
+        #self.set_LUTs()
 
     # Drag and drop event
     def dragEnterEvent(self, event):

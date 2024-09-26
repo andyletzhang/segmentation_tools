@@ -51,10 +51,11 @@ class PyQtGraphCanvas(QWidget):
         self.img_plot.addItem(self.selection_overlay[0])
         self.seg_plot.addItem(self.selection_overlay[1])
 
-        self.seg_plot.addItem(self.seg)
         
         self.img_plot.addItem(self.tracking_overlay[0])
         self.seg_plot.addItem(self.tracking_overlay[1])
+        
+        self.seg_plot.addItem(self.seg)
 
         # Set initial zoom levels
         self.img_plot.setRange(xRange=[0, self.img_data.shape[1]], yRange=[0, self.img_data.shape[0]], padding=0)
@@ -122,13 +123,9 @@ class PyQtGraphCanvas(QWidget):
         self.tracking_overlay[0].clear()
         self.tracking_overlay[1].clear()
 
-    def highlight_cells(self, cell_indices, layer='selection', alpha=0.3, color='white', cell_colors=None, type='masks'):
+    def highlight_cells(self, cell_indices, layer='selection', alpha=0.3, color='white', cell_colors=None, img_type='masks', seg_type='masks'):
         from matplotlib.colors import to_rgb
-        if type=='masks':
-            masks=self.parent.frame.masks
-        elif type=='outlines':
-            masks=np.zeros_like(self.parent.frame.masks)
-            masks[self.parent.frame.outlines]=self.parent.frame.masks[self.parent.frame.outlines]
+        masks=self.parent.frame.masks
 
         layer=getattr(self, f'{layer}_overlay') # get the specified overlay layer: selection for highlighting, mask for colored masks
 
@@ -145,11 +142,17 @@ class PyQtGraphCanvas(QWidget):
                 color_map[cell_index+1]=cell_colors[i]
             mask_overlay=color_map[masks]
         
-        mask_overlay=np.rot90(mask_overlay, 3)
-        mask_overlay=np.fliplr(mask_overlay)
-
         opaque_mask=mask_overlay.copy()
         opaque_mask[mask_overlay[...,-1]!=0, -1]=1
+        if img_type=='outlines':
+            mask_overlay[self.parent.frame.outlines==0]=0
+        if seg_type=='outlines':
+            opaque_mask[self.parent.frame.outlines==0]=0
+
+        mask_overlay=np.rot90(mask_overlay, 3)
+        mask_overlay=np.fliplr(mask_overlay)
+        opaque_mask=np.rot90(opaque_mask, 3)
+        opaque_mask=np.fliplr(opaque_mask)
 
         layer[0].setImage(mask_overlay)
         layer[1].setImage(opaque_mask)

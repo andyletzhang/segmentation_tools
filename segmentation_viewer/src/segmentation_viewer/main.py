@@ -21,6 +21,10 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
+# TODO: fix grayscale
+# TODO: save different RGB, grayscale, masks, outlines config for each tab
+# TODO: implement mend gaps/remove edge masks
+
 # TODO: get_mitoses, visualize mitoses, edit mitoses
 
 # TODO: switching tabs changes modes? Think about what visuals and interactions at the base level
@@ -315,8 +319,10 @@ class MainWidget(QMainWindow):
         self.tabbed_menu_widget.currentChanged.connect(self.tab_switched)
     
     def tab_switched(self, index):
-        # TODO: initialize appropriate tab functions
-        pass
+        self.highlight_track_ends()
+        self.canvas.clear_selection_overlay()
+        if index==1:
+            self.cc_overlay()
 
     def get_segmentation_tab(self):
         segmentation_tab=QWidget()
@@ -668,7 +674,8 @@ class MainWidget(QMainWindow):
         return tracking_tab
 
     def highlight_track_ends(self):
-        if not self.file_loaded:
+        if not self.file_loaded or self.tabbed_menu_widget.currentIndex()!=2:
+            self.canvas.clear_tracking_overlay()
             return
         
         if self.highlight_track_ends_checkbox.isChecked() and hasattr(self.stack, 'tracked_centroids'):
@@ -689,7 +696,7 @@ class MainWidget(QMainWindow):
             death_cells=t[(t.frame==self.frame_number)&t.particle.isin(deaths)]['cell_number']
             both=np.intersect1d(birth_cells, death_cells)
             colors=['lime']*len(birth_cells)+['red']*len(death_cells)+['orange']*len(both)
-            self.canvas.highlight_cells(np.concatenate([birth_cells, death_cells, both]), alpha=0.5, cell_colors=colors, layer='tracking', type='outlines')
+            self.canvas.highlight_cells(np.concatenate([birth_cells, death_cells, both]), alpha=0.5, cell_colors=colors, layer='tracking', img_type='outlines')
 
         else:
             self.canvas.clear_tracking_overlay()
@@ -935,60 +942,66 @@ class MainWidget(QMainWindow):
         current_cell_n = self.get_cell(x, y)
         overlay_color=self.cc_overlay_dropdown.currentText().lower()
 
-        if event.button() == Qt.MouseButton.RightButton and overlay_color=='none': 
-            if event.modifiers() == Qt.KeyboardModifier.ShiftModifier: # split particles
-                self.selected_particle=self.particle_from_cell(current_cell_n)
-                if self.selected_particle is not None:
-                    self.split_particle_tracks()
-            elif not self.drawing_cell_roi: # segmentation
-                self.drawing_cell_roi=True
-                self.cell_roi.points=[]
+        if overlay_color=='none':
+            if event.button() == Qt.MouseButton.RightButton: 
+                if event.modifiers() == Qt.KeyboardModifier.ShiftModifier: # split particles
+                    self.selected_particle=self.particle_from_cell(current_cell_n)
+                    if self.selected_particle is not None:
+                        self.split_particle_tracks()
+                elif not self.drawing_cell_roi: # segmentation
+                    self.drawing_cell_roi=True
+                    self.cell_roi.points=[]
 
-                x, y = self.canvas.get_plot_coords(event.scenePos(), pixels=True)
-                # Add the first handle
-                self.cell_roi.add_vertex(y, x)
-                self.cell_roi.first_handle_pos=np.array((y, x))
-                self.cell_roi.last_handle_pos=np.array((y, x))
+                    x, y = self.canvas.get_plot_coords(event.scenePos(), pixels=True)
+                    # Add the first handle
+                    self.cell_roi.add_vertex(y, x)
+                    self.cell_roi.first_handle_pos=np.array((y, x))
+                    self.cell_roi.last_handle_pos=np.array((y, x))
 
-                self.roi_is_closeable=False
-                
-            else:
-                self.close_cell_roi()
+                    self.roi_is_closeable=False
+                    
+                else:
+                    self.close_cell_roi()
 
-        elif current_cell_n>=0:
-            if overlay_color=='none': # basic selection
-                if event.button() == Qt.MouseButton.LeftButton:
-                    if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-                        # ctrl click deletes cells
-                        self.delete_cell_mask(current_cell_n)
-                        self.selected_cell=None
-                        self.selected_particle=None
+            elif current_cell_n>=0:
+                if overlay_color=='none': # basic selection
+                    if event.button() == Qt.MouseButton.LeftButton:
+                        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                            # ctrl click deletes cells
+                            self.delete_cell_mask(current_cell_n)
+                            self.selected_cell=None
+                            self.selected_particle=None
 
-                    elif event.modifiers() == Qt.KeyboardModifier.AltModifier:
-                        # alt click merges cells
-                        if self.selected_cell is not None:
-                            self.merge_cell_masks(self.selected_cell, current_cell_n)
-                        else:
+                        elif event.modifiers() == Qt.KeyboardModifier.AltModifier:
+                            # alt click merges cells
+                            if self.selected_cell is not None:
+                                self.merge_cell_masks(self.selected_cell, current_cell_n)
+                            else:
+                                self.selected_cell=current_cell_n
+
+                        elif event.modifiers() == Qt.KeyboardModifier.ShiftModifier: # merge particles
+                            if self.selected_particle is not None:
+                                second_particle=self.particle_from_cell(current_cell_n)
+                                if second_particle is not None: # if a particle is found
+                                    self.merge_particle_tracks(self.selected_particle, second_particle)
                             self.selected_cell=current_cell_n
 
-                    elif event.modifiers() == Qt.KeyboardModifier.ShiftModifier: # merge particles
-                        if self.selected_particle is not None:
-                            second_particle=self.particle_from_cell(current_cell_n)
-                            if second_particle is not None: # if a particle is found
-                                self.merge_particle_tracks(self.selected_particle, second_particle)
-                        self.selected_cell=current_cell_n
+                        elif current_cell_n==self.selected_cell:
+                            # clicking the same cell again deselects it
+                            self.selected_cell=None
+                            self.selected_particle=None
 
-                    elif current_cell_n==self.selected_cell:
-                        # clicking the same cell again deselects it
-                        self.selected_cell=None
-                        self.selected_particle=None
+                        else:
+                            # select the cell
+                            self.selected_cell=current_cell_n
+                        self.canvas.highlight_cells([self.selected_cell], alpha=0.3, color='white', layer='selection')
+            else:
+                self.selected_cell=None # background
+                self.selected_particle=None
+                self.canvas.highlight_cells([self.selected_cell], alpha=0.3, color='white')
 
-                    else:
-                        # select the cell
-                        self.selected_cell=current_cell_n
-                    self.canvas.highlight_cells([self.selected_cell], alpha=0.3, color='white')
-
-            else: # cell cycle classification
+        else: # cell cycle classification
+            if current_cell_n>=0:
                 self.selected_cell=current_cell_n
                 cell=self.frame.cells[current_cell_n]
                 if event.button() == Qt.MouseButton.LeftButton:
@@ -1003,10 +1016,8 @@ class MainWidget(QMainWindow):
                         cell.green=True
                         cell.red=True
                 self.cc_overlay()
-        else:
-            self.selected_cell=None # background
-            self.selected_particle=None
-            self.canvas.highlight_cells([self.selected_cell], alpha=0.3, color='white')
+            else:
+                self.selected_cell=None
         
         if hasattr(self.stack, 'tracked_centroids'):
             t=self.stack.tracked_centroids
@@ -1244,6 +1255,8 @@ class MainWidget(QMainWindow):
 
     def cc_overlay(self, event=None):
         """Handle cell cycle overlay options."""
+        if self.tabbed_menu_widget.currentIndex()!=1:
+            return
         overlay_color=self.cc_overlay_dropdown.currentText().lower()
         if overlay_color == 'none': # clear overlay
             self.selected_cell=None
@@ -1257,11 +1270,11 @@ class MainWidget(QMainWindow):
                 colored_cells=np.where(red | green)[0] # cells that are either red or green
                 cell_cycle=green+2*red-1
                 cell_colors=colors[cell_cycle[colored_cells]] # map cell cycle state to green, red, orange
-                self.canvas.highlight_cells(colored_cells, alpha=0.1, cell_colors=cell_colors)
+                self.canvas.highlight_cells(colored_cells, alpha=1, cell_colors=cell_colors, img_type='outlines')
 
             else:
                 colored_cells=np.where(self.frame.get_cell_attr(overlay_color))[0]
-                self.canvas.highlight_cells(colored_cells, alpha=0.1, color=overlay_color)
+                self.canvas.highlight_cells(colored_cells, alpha=1, color=overlay_color, img_type='outlines')
 
     def reset_display(self):
         self.drawing_cell_roi=False

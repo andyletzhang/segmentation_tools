@@ -39,6 +39,7 @@ class PyQtGraphCanvas(QWidget):
         self.img_outline_overlay=pg.ImageItem()
         self.mask_overlay=[pg.ImageItem(), pg.ImageItem()]
         self.selection_overlay=[pg.ImageItem(), pg.ImageItem()]
+        self.tracking_overlay=[pg.ImageItem(), pg.ImageItem()]
 
         # add images to the plots
         self.img_plot.addItem(self.img)
@@ -51,6 +52,9 @@ class PyQtGraphCanvas(QWidget):
         self.seg_plot.addItem(self.selection_overlay[1])
 
         self.seg_plot.addItem(self.seg)
+        
+        self.img_plot.addItem(self.tracking_overlay[0])
+        self.seg_plot.addItem(self.tracking_overlay[1])
 
         # Set initial zoom levels
         self.img_plot.setRange(xRange=[0, self.img_data.shape[1]], yRange=[0, self.img_data.shape[0]], padding=0)
@@ -114,9 +118,17 @@ class PyQtGraphCanvas(QWidget):
 
         self.parent.frame.mask_overlay=[img_masks, seg_masks] # store the overlay for reuse
 
-    def highlight_cells(self, cell_indices, layer='selection', alpha=0.3, color='white', cell_colors=None):
+    def clear_tracking_overlay(self):
+        self.tracking_overlay[0].clear()
+        self.tracking_overlay[1].clear()
+
+    def highlight_cells(self, cell_indices, layer='selection', alpha=0.3, color='white', cell_colors=None, type='masks'):
         from matplotlib.colors import to_rgb
-        masks=self.parent.frame.masks
+        if type=='masks':
+            masks=self.parent.frame.masks
+        elif type=='outlines':
+            masks=np.zeros_like(self.parent.frame.masks)
+            masks[self.parent.frame.outlines]=self.parent.frame.masks[self.parent.frame.outlines]
 
         layer=getattr(self, f'{layer}_overlay') # get the specified overlay layer: selection for highlighting, mask for colored masks
 

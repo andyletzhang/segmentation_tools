@@ -82,6 +82,58 @@ class TimeSeries:
         self.drift=pd.concat([pd.DataFrame({'frame':[0],'y':[0],'x':[0]}).set_index('frame'), self.drift]) # add a row for the first frame (no drift)
         return self.tracked_centroids
 
+    def merge_particle_tracks(self, first_ID, second_ID, frame):
+        """
+        Merge two particle tracks into a single track.
+
+        Args:
+            first_ID (int): ID of the first particle to merge.
+            second_ID (int): ID of the second particle to merge.
+            frame (int): Frame number at which second_ID should be merged into first_ID.
+
+        Returns:
+            DataFrame: DataFrame containing the merged particle track.
+        """
+        t=self.tracked_centroids
+        first_particle=t.loc[t.particle==first_ID]
+        second_particle=t.loc[t.particle==second_ID]
+        # if necessary, split particles at the frame of interest
+        if np.any([first_particle.frame>=frame]):
+            self.split_particle_track(first_ID, frame)
+        if np.any([second_particle.frame<frame]):
+            second_ID=self.split_particle_track(second_ID, frame) # reassign second_ID in case of split
+
+        # merge particles
+        t.loc[t.particle==second_ID, 'particle']=first_ID
+
+        # renumber particles so that they're contiguous
+        particles=np.unique(t['particle'])
+        t['particle']=np.searchsorted(particles, t['particle'])
+
+        return t
+
+    def split_particle_track(self, particle_ID, split_frame):
+        """
+        Split a particle track into two separate tracks at a given frame.
+
+        Args:
+            particle_ID (int): ID of the particle to split.
+            split_frame (int): Frame number at which to split the particle track.
+            **kwargs: Additional keyword arguments passed to trackpy.link() function.
+
+        Returns:
+            DataFrame: DataFrame containing the two split particle tracks.
+        """
+        t=self.tracked_centroids
+        new_particle_ID=t['particle'].max()+1
+        t.loc[(t.particle==particle_ID)&(t.frame>=split_frame), 'particle']=new_particle_ID
+        old_particle=t.loc[t.particle==particle_ID]
+        new_particle=t.loc[t.particle==new_particle_ID]
+
+        return new_particle_ID
+
+
+
     def get_particle(self, input_ID):
         """
         Retrieve the cell trajectories for a given particle ID or cell.
@@ -641,7 +693,7 @@ class Image:
         if len(self.cells)==0:
             return np.empty((0,2)) # no cells in this frame
         
-        elif not hasattr(self.cells[0], 'centroid'): # check if centroids have been calculated just by checking the first cell
+        elif not hasattr(self.cells[-1], 'centroid'): # check if centroids have been calculated just by checking the last cell
             self.get_centroids()
         
         return np.array(self.get_cell_attr('centroid'))

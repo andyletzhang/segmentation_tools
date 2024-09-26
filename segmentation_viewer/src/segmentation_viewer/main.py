@@ -1,11 +1,13 @@
 import sys
 import numpy as np
-from cellpose import utils
+import pandas as pd
+from cellpose import utils # takes a while to import :(
+import os
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QComboBox, QPushButton, QRadioButton,
     QVBoxLayout, QHBoxLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog,
-    QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem
+    QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics
@@ -19,23 +21,26 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
-# TODO: channel 2 can just be "FUCCI" and will blend R and G channels
+# TODO: get_mitoses, visualize mitoses, edit mitoses
+
 # TODO: switching tabs changes modes? Think about what visuals and interactions at the base level
 # TODO: FUCCI tab - show cc occupancies as a stacked bar
-# TODO: modify tracking data: tracking mode
-# left click selects particle, right click overwrites particle
-# each particle is labeled with its particle number?
-# TODO: export/import tracking data
-# TODO: get_mitoses, visualize mitoses, edit mitoses
 # TODO: expand/collapse segmentation plot
 # TODO: undo/redo
 # TODO: load TIFs
+# TODO: channel 2 can just be "FUCCI" and will blend R and G channels
 
 darktheme_stylesheet = """
     QWidget {
         background-color: #2e2e2e;
         color: #ffffff;
     }
+
+    QWidget#bordered {
+            border: 2px solid #4b4b4b;
+            border-radius: 5px;
+            padding: 5px;
+        }
 
     QMainWindow {
         background-color: #2e2e2e;
@@ -129,7 +134,7 @@ class MainWidget(QMainWindow):
         self.setWindowTitle("Segmentation Viewer")
         icon_path=importlib.resources.files('segmentation_viewer.assets').joinpath('icon.png')
         self.setWindowIcon(QIcon(str(icon_path)))
-        self.resize(1080, 540)
+        self.resize(1080, 720)
         self.file_loaded = False # passive mode
         self.drawing_cell_roi=False
 
@@ -275,7 +280,7 @@ class MainWidget(QMainWindow):
         
         toolbar_layout.addWidget(self.tabbed_menu_widget)
         
-        toolbar_layout.addStretch() # spacer between top and bottom aligned widgets
+        toolbar_layout.addSpacerItem(self.vertical_spacer())
 
         toolbar_layout.addWidget(self.command_line_button)
 
@@ -319,11 +324,8 @@ class MainWidget(QMainWindow):
         segmentation_layout.setSpacing(5)
         segmentation_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         
-        utils_layout=QHBoxLayout()
-        self.mend_gaps_button=QPushButton("Mend Gaps", self)
-        self.remove_edge_masks_button=QPushButton("Remove Edge Masks", self)
-        utils_layout.addWidget(self.mend_gaps_button)
-        utils_layout.addWidget(self.remove_edge_masks_button)
+        segment_frame_widget=QWidget(objectName='bordered')
+        segment_frame_layout=QVBoxLayout(segment_frame_widget)
         self.cell_diameter=QLineEdit(self)
         self.cell_diameter.setPlaceholderText('Auto')
         self.cell_diameter.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
@@ -347,45 +349,65 @@ class MainWidget(QMainWindow):
         self.nuclear_channel.setFixedWidth(70)
         self.nuclear_channel_label=QLabel("Nuclear Channel:", self)
 
-        membrane_layout=QHBoxLayout()
-        membrane_layout.setSpacing(5)
-        membrane_layout.addWidget(self.membrane_channel_label)
-        membrane_layout.addWidget(self.membrane_channel)
+        membrane_tab_layout=QHBoxLayout()
+        membrane_tab_layout.setSpacing(10)
+        membrane_tab_layout.addWidget(self.membrane_channel_label)
+        membrane_tab_layout.addWidget(self.membrane_channel)
         nuclear_layout=QHBoxLayout()
         nuclear_layout.setSpacing(5)
         nuclear_layout.addWidget(self.nuclear_channel_label)
         nuclear_layout.addWidget(self.nuclear_channel)
 
-        self.channel_layout.addLayout(membrane_layout)
+        self.channel_layout.addLayout(membrane_tab_layout)
         self.channel_layout.addLayout(nuclear_layout)
 
         segmentation_button_layout=QHBoxLayout()
         self.segment_frame_button=QPushButton("Segment Frame", self)
-        self.segment_stack_button=QPushButton("Segment Stack", self) # TODO: disable if stack length=1
+        self.segment_stack_button=QPushButton("Segment Stack", self)
         segmentation_button_layout.addWidget(self.segment_frame_button)
         segmentation_button_layout.addWidget(self.segment_stack_button)
 
-        segmentation_layout.addLayout(utils_layout)
-        segmentation_layout.addLayout(self.cell_diameter_layout)
-        segmentation_layout.addLayout(self.channel_layout)
-        segmentation_layout.addSpacerItem(self.vertical_spacer())
-        segmentation_layout.addLayout(segmentation_button_layout)
 
-        # TODO: create segmentation functionality
+        segmentation_utils_widget=QWidget(objectName='bordered')
+        segmentation_utils_layout=QVBoxLayout(segmentation_utils_widget)
+        mend_remove_layout=QHBoxLayout()
+        self.mend_gaps_button=QPushButton("Mend Gaps", self)
+        self.remove_edge_masks_button=QPushButton("Remove Edge Masks", self)
+        mend_remove_layout.addWidget(self.mend_gaps_button)
+        mend_remove_layout.addWidget(self.remove_edge_masks_button)
+        operate_on_label=QLabel("Operate on:", self)
+        operate_on_layout=QHBoxLayout()
+        self.segment_on_frame=QRadioButton("Frame", self)
+        self.segment_on_stack=QRadioButton("Stack", self)
+        self.segment_on_frame.setChecked(True)
+        operate_on_layout.addWidget(self.segment_on_frame)
+        operate_on_layout.addWidget(self.segment_on_stack)
+        segmentation_button_layout.addWidget(self.mend_gaps_button)
+        segmentation_button_layout.addWidget(self.remove_edge_masks_button)
+
+        segment_frame_layout.addLayout(self.cell_diameter_layout)
+        segment_frame_layout.addLayout(self.channel_layout)
+        segment_frame_layout.addSpacerItem(self.vertical_spacer())
+        segment_frame_layout.addLayout(segmentation_button_layout)
+
+        segmentation_utils_layout.addLayout(mend_remove_layout)
+        segmentation_utils_layout.addWidget(operate_on_label)
+        segmentation_utils_layout.addLayout(operate_on_layout)
+
+        segmentation_layout.addWidget(segment_frame_widget)
+        segmentation_layout.addWidget(segmentation_utils_widget)
+
         self.circle_mask=None
         self.mend_gaps_button.clicked.connect(self.mend_gaps)
         self.remove_edge_masks_button.clicked.connect(self.remove_edge_masks)
         self.cell_diameter.textChanged.connect(self.update_cell_diameter)
         self.cell_diameter_calibrate.clicked.connect(self.calibrate_diameter_pressed)
-        self.segment_frame_button.clicked.connect(self.segment_frame)
-        self.segment_stack_button.clicked.connect(self.segment_stack)
+        self.segment_frame_button.clicked.connect(self.segment_frame_pressed)
+        self.segment_stack_button.clicked.connect(self.segment_stack_pressed)
+
 
         return segmentation_tab
     
-    def mend_gaps(self):
-        # TODO
-        print('Mending gaps... (not implemented)')
-        
     def mend_gaps(self):
         # TODO
         print('Mending gaps... (not implemented)')
@@ -408,7 +430,6 @@ class MainWidget(QMainWindow):
         padding=5
         img_shape=self.canvas.img_data.shape[:2]
         self.circle_mask=QGraphicsEllipseItem(padding, img_shape[1]+padding, diameter, diameter)
-        self.circle_mask.setPen(pg.mkPen(color='#CCCCCC', width=2))
         self.circle_mask.setBrush(pg.mkBrush(color='#4A90E2'))
         self.canvas.img_plot.addItem(self.circle_mask)
 
@@ -434,15 +455,31 @@ class MainWidget(QMainWindow):
 
         return diam
 
-    def segment_frame(self):
+    def segment_frame_pressed(self):
         if not self.file_loaded:
             return
+        
         self.segment([self.frame])
 
-    def segment_stack(self):
+        # update the display
+        self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
+        self.masks_checkbox.setChecked(True)
+        self.canvas.overlay_masks()
+        self.update_display()
+        self.cc_overlay()
+
+    def segment_stack_pressed(self):
         if not self.file_loaded:
             return
+        
         self.segment(self.stack.frames)
+
+        # update the display
+        self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
+        self.masks_checkbox.setChecked(True)
+        self.canvas.overlay_masks()
+        self.update_display()
+        self.cc_overlay()
 
     def segment(self, frames):
         diameter=self.cell_diameter.text()
@@ -467,32 +504,21 @@ class MainWidget(QMainWindow):
             if hasattr(frame, 'mask_overlay'):
                 del frame.mask_overlay # remove the stored mask_overlay to force redrawing
 
-        self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
-        self.masks_checkbox.setChecked(True)
-        self.canvas.overlay_masks()
-        self.update_display()
-        self.cc_overlay()
-
     def replace_segmentation(self, frame):
         ''' Regenerate the cell outlines and cell objects from the new segmentation masks. '''
+        frame.has_outlines=False
         frame.outlines=utils.masks_to_outlines(frame.masks)
-        outlines_list=utils.outlines_list_multi(frame.masks)
         frame.n=np.max(frame.masks)
-        frame.cells = np.array([Cell(n, outlines_list[n], frame_number=frame.frame_number) for n in range(frame.n)])
+        frame.cells = np.array([Cell(n, [], frame_number=frame.frame_number) for n in range(frame.n)])
 
     def get_FUCCI_tab(self):
         FUCCI_tab = QWidget()
-        FUCCI_layout = QVBoxLayout(FUCCI_tab)
-        FUCCI_layout.setSpacing(0)
-        FUCCI_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        FUCCI_tab_layout = QVBoxLayout(FUCCI_tab)
+        FUCCI_tab_layout.setSpacing(10)
+        FUCCI_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        FUCCI_overlay_layout=QHBoxLayout()
-        overlay_label = QLabel("FUCCI overlay: ", self)
-        self.cc_overlay_dropdown = QComboBox(self)
-        self.cc_overlay_dropdown.addItems(["None", "Green", "Red", "All"])
-        FUCCI_overlay_layout.addWidget(overlay_label)
-        FUCCI_overlay_layout.addWidget(self.cc_overlay_dropdown)
-        self.FUCCI_checkbox = QCheckBox("Show FUCCI Channel", self)
+        measure_FUCCI_widget=QWidget(objectName='bordered')
+        measure_FUCCI_layout=QVBoxLayout(measure_FUCCI_widget)
 
         red_threshold_layout=QHBoxLayout()
         red_threshold_label=QLabel("Red Threshold:", self)
@@ -519,13 +545,26 @@ class MainWidget(QMainWindow):
         FUCCI_button_layout.addWidget(self.FUCCI_frame_button)
         FUCCI_button_layout.addWidget(self.FUCCI_stack_button)
 
-        FUCCI_layout.addLayout(FUCCI_overlay_layout)
-        FUCCI_layout.addWidget(self.FUCCI_checkbox)
-        FUCCI_layout.addItem(self.vertical_spacer())
-        FUCCI_layout.addLayout(red_threshold_layout)
-        FUCCI_layout.addLayout(green_threshold_layout)
-        FUCCI_layout.addSpacerItem(self.vertical_spacer())
-        FUCCI_layout.addLayout(FUCCI_button_layout)
+        annotate_FUCCI_widget=QWidget(objectName='bordered')
+        annotate_FUCCI_layout=QVBoxLayout(annotate_FUCCI_widget)
+        FUCCI_overlay_layout=QHBoxLayout()
+        overlay_label = QLabel("FUCCI overlay: ", self)
+        self.cc_overlay_dropdown = QComboBox(self)
+        self.cc_overlay_dropdown.addItems(["None", "Green", "Red", "All"])
+        FUCCI_overlay_layout.addWidget(overlay_label)
+        FUCCI_overlay_layout.addWidget(self.cc_overlay_dropdown)
+        self.FUCCI_checkbox = QCheckBox("Show FUCCI Channel", self)
+
+        measure_FUCCI_layout.addLayout(red_threshold_layout)
+        measure_FUCCI_layout.addLayout(green_threshold_layout)
+        measure_FUCCI_layout.addSpacerItem(self.vertical_spacer())
+        measure_FUCCI_layout.addLayout(FUCCI_button_layout)
+
+        annotate_FUCCI_layout.addLayout(FUCCI_overlay_layout)
+        annotate_FUCCI_layout.addWidget(self.FUCCI_checkbox)
+
+        FUCCI_tab_layout.addWidget(measure_FUCCI_widget)
+        FUCCI_tab_layout.addWidget(annotate_FUCCI_widget)
 
         self.cc_overlay_dropdown.currentIndexChanged.connect(self.cc_overlay_changed)
         self.FUCCI_checkbox.stateChanged.connect(self.update_display)
@@ -534,10 +573,10 @@ class MainWidget(QMainWindow):
 
         return FUCCI_tab
     
-    def vertical_spacer(self, spacing=None):
+    def vertical_spacer(self, spacing=None, hSizePolicy=QSizePolicy.Policy.Fixed, vSizePolicy=QSizePolicy.Policy.Fixed):
         if spacing is None:
             spacing=self.spacer
-        return QSpacerItem(*spacing, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        return QSpacerItem(*spacing, hSizePolicy, vSizePolicy)
     
     def measure_FUCCI_frame(self):
         if not self.file_loaded:
@@ -569,36 +608,91 @@ class MainWidget(QMainWindow):
                 frame.FUCCI=frame.img[...,0], frame.img[...,1] # use the red and green channels
 
             frame.measure_FUCCI(red_fluor_threshold=red_threshold, green_fluor_threshold=green_threshold, orange_brightness=1)
+            self.get_red_green(frame)
         
         red_threshold=self.frame.red_fluor_threshold
         green_threshold=self.frame.green_fluor_threshold
         self.red_threshold.setText(f'{red_threshold:.2f}')
         self.green_threshold.setText(f'{green_threshold:.2f}')
-        self.get_red_green()
         self.cc_overlay_dropdown.setCurrentIndex(3)
         self.cc_overlay()
 
     def get_tracking_tab(self):
         tracking_tab = QWidget()
-        tracking_layout = QVBoxLayout(tracking_tab)
-        tracking_layout.setSpacing(5)
-        tracking_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        tracking_tab_layout = QVBoxLayout(tracking_tab)
+        tracking_tab_layout.setSpacing(10)
+        tracking_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self.tracking_range_layout=QFormLayout()
         range_label = QLabel('Search Range:  ', self)
-        self.tracking_range = QLineEdit(self)
-        self.tracking_range.setPlaceholderText('Auto')
-        self.tracking_range.setValidator(QIntValidator(bottom=1)) # non-negative integers only
+        memory_label = QLabel('Memory:  ', self)
+        self.memory_range = QLineEdit(self, placeholderText='0')
+        self.tracking_range = QLineEdit(self, placeholderText='Auto')
+        self.tracking_range.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
+        self.memory_range.setValidator(QIntValidator(bottom=0)) # non-negative integers only
+        self.tracking_range_layout.addRow(range_label, self.tracking_range)
+        self.tracking_range_layout.addRow(memory_label, self.memory_range)
+
         self.track_centroids_button = QPushButton("Track Centroids", self)
 
-        self.tracking_range_layout=QHBoxLayout()
-        self.tracking_range_layout.addWidget(range_label)
-        self.tracking_range_layout.addWidget(self.tracking_range)
-        tracking_layout.addLayout(self.tracking_range_layout)
-        tracking_layout.addWidget(self.track_centroids_button)
+        io_menu=QHBoxLayout()
+        self.save_tracking_button=QPushButton("Save Tracking", self)
+        self.load_tracking_button=QPushButton("Load Tracking", self)
+        io_menu.addWidget(self.save_tracking_button)
+        io_menu.addWidget(self.load_tracking_button)
+
+        split_particle_button=QPushButton("Split Particle", self)
+        self.highlight_track_ends_checkbox=QCheckBox("Highlight Track Ends", self)
+
+        track_centroids_widget=QWidget(objectName='bordered')
+        track_centroids_layout=QVBoxLayout(track_centroids_widget)
+        edit_tracking_widget=QWidget(objectName='bordered')
+        edit_tracking_layout=QVBoxLayout(edit_tracking_widget)
+        track_centroids_layout.addLayout(self.tracking_range_layout)
+        track_centroids_layout.addWidget(self.track_centroids_button)
+        edit_tracking_layout.addWidget(split_particle_button)
+        edit_tracking_layout.addWidget(self.highlight_track_ends_checkbox)
+        edit_tracking_layout.addSpacerItem(self.vertical_spacer())
+        edit_tracking_layout.addLayout(io_menu)
         
+        tracking_tab_layout.addWidget(track_centroids_widget)
+        tracking_tab_layout.addWidget(edit_tracking_widget)
+
         self.track_centroids_button.clicked.connect(self.track_centroids)
         self.tracking_range.returnPressed.connect(self.track_centroids)
+        split_particle_button.clicked.connect(self.split_particle_tracks)
+        self.save_tracking_button.clicked.connect(self.save_tracking)
+        self.load_tracking_button.clicked.connect(self.load_tracking_pressed)
+        self.highlight_track_ends_checkbox.stateChanged.connect(self.highlight_track_ends)
 
         return tracking_tab
+
+    def highlight_track_ends(self):
+        if not self.file_loaded:
+            return
+        
+        if self.highlight_track_ends_checkbox.isChecked() and hasattr(self.stack, 'tracked_centroids'):
+            # get the start and end points of each track
+            t=self.stack.tracked_centroids
+            track_ends=t.groupby('particle').agg({'frame': ['first', 'last']})
+            track_ends.columns=['start', 'end']
+            track_ends=track_ends.reset_index()
+
+            births=track_ends[track_ends.start==self.frame_number]['particle']
+            deaths=track_ends[track_ends.end==self.frame_number]['particle']
+            if self.frame_number==0:
+                births=[]
+            elif self.frame_number==len(self.stack.frames)-1:
+                deaths=[]
+            
+            birth_cells=t[(t.frame==self.frame_number)&t.particle.isin(births)]['cell_number']
+            death_cells=t[(t.frame==self.frame_number)&t.particle.isin(deaths)]['cell_number']
+            both=np.intersect1d(birth_cells, death_cells)
+            colors=['lime']*len(birth_cells)+['red']*len(death_cells)+['orange']*len(both)
+            self.canvas.highlight_cells(np.concatenate([birth_cells, death_cells, both]), alpha=0.5, cell_colors=colors, layer='tracking', type='outlines')
+
+        else:
+            self.canvas.clear_tracking_overlay()
 
     def wheelEvent(self, event):
         if not self.file_loaded:
@@ -639,13 +733,16 @@ class MainWidget(QMainWindow):
             return
 
         tracking_range=self.tracking_range.text()
-        
+        memory=self.memory_range.text()
+        if memory=='':
+            memory=0
+
         self.statusBar().showMessage(f'Tracking centroids...')
         try:
             if tracking_range=='':
-                self.stack.track_centroids()
+                self.stack.track_centroids(memory=memory)
             else:
-                self.stack.track_centroids(search_range=int(tracking_range))
+                self.stack.track_centroids(search_range=float(tracking_range), memory=memory)
         except Exception as e:
             print(e)
             self.statusBar().showMessage(f'Error tracking centroids: {e}', 4000)
@@ -653,21 +750,22 @@ class MainWidget(QMainWindow):
         print(f'Tracked centroids for stack {self.stack.name}')
         self.tracking_range.setText(f'{self.stack.tracking_range:.2f}')
         self.statusBar().showMessage(f'Tracked centroids for stack {self.stack.name}.', 2000)
+        self.tracked_recolor()
+        self.canvas.overlay_masks()
 
+    def tracked_recolor(self):
         # recolor cells so each particle has one color over time
         for frame in self.stack.frames:
             if hasattr(frame, 'mask_overlay'):
                 del frame.mask_overlay # remove the mask_overlay attribute to force recoloring
             
         t=self.stack.tracked_centroids
+        # TODO: don't reassign all colors, just for the cells that have changed
         colors=np.random.randint(0, self.canvas.cell_n_colors, size=t['particle'].nunique())
         t['color']=colors[t['particle']]
-
         for frame in self.stack.frames:
             tracked_frame=t[t.frame==frame.frame_number].sort_values('cell_number')
             frame.set_cell_attr('color_ID', self.canvas.cell_cmap(tracked_frame['color']))
-
-        self.canvas.overlay_masks()
 
     def LUT_slider_changed(self, event):
         ''' Update the LUTs when the sliders are moved. '''
@@ -676,9 +774,71 @@ class MainWidget(QMainWindow):
         self.normalize_custom_button.setChecked(True)
         self.set_LUTs()
 
+    def particle_from_cell(self, cell_number, frame_number=None):
+        if not hasattr(self.stack, 'tracked_centroids'):
+            return None
+        if frame_number is None:
+            frame_number=self.frame_number
+        t=self.stack.tracked_centroids
+        particle=t[(t.frame==frame_number)&(t.cell_number==cell_number)]['particle']
+        if len(particle)==1:
+            return particle.item()
+        elif len(particle)==0:
+            return None
+        else:
+            raise ValueError(f'Cell {cell_number} has {len(particle)} particles in frame {frame_number}')
+    
+    def cell_from_particle(self, particle, frame_number=None):
+        if not hasattr(self.stack, 'tracked_centroids'):
+            return None
+        if frame_number is None:
+            frame_number=self.frame_number
+        t=self.stack.tracked_centroids
+        cell=t[(t.frame==frame_number)&(t.particle==particle)]['cell_number']
+        if len(cell)==1:
+            return cell.item()
+        elif len(cell)==0:
+            return None
+        else:
+            raise ValueError(f'Particle {particle} has {len(cell)} cells in frame {frame_number}')
+        
+    def split_particle_tracks(self):
+        self.stack.split_particle_track(self.selected_particle, self.frame_number)
+        t=self.stack.tracked_centroids
+        self.selected_particle=self.particle_from_cell(self.selected_cell) # update the selected particle
+        
+        # assign a random color to the new particle
+        new_color=self.canvas.cell_cmap(np.random.randint(self.canvas.cell_n_colors))
+        for cell in self.stack.get_particle(self.selected_particle):
+            cell.color_ID=new_color
+        self.highlight_track_ends()
+        self.canvas.overlay_masks()
+
+    def merge_particle_tracks(self, first_particle, second_particle):
+        if hasattr(self.stack, 'tracked_centroids'):
+            if first_particle==second_particle: # same particle, no need to merge
+                return
+            else:
+                merged_color=self.stack.get_particle(first_particle)[0].color_ID
+                self.stack.merge_particle_tracks(first_particle, second_particle, self.frame_number)
+                if hasattr(self.stack, 'tracked_centroids'):
+                    # renumber the cells in the merged frame
+                    t=self.stack.tracked_centroids
+                    cell_numbers=np.unique(t[t.frame==self.frame_number]['cell_number'])
+                    new_cell_numbers=np.searchsorted(cell_numbers, t.loc[t.frame==self.frame_number, 'cell_number'])
+                    t.loc[t.frame==self.frame_number, 'cell_number']=new_cell_numbers.astype(t['cell_number'].dtype)
+
+                for cell in self.stack.get_particle(first_particle):
+                    cell.color_ID=merged_color
+                print(f'Merged particles {first_particle} and {second_particle}')
+                self.highlight_track_ends()
+                self.canvas.overlay_masks()
+            
     def set_LUTs(self):
         ''' Set the LUTs for the image display based on the current slider values. '''
         bounds=self.get_LUT_slider_values()
+        if self.show_grayscale.isChecked():
+            bounds=bounds[0] # TODO: adjust LUTs before grayscale mode
         self.canvas.img.setLevels(bounds)
         self.update_LUT_labels()
 
@@ -767,6 +927,7 @@ class MainWidget(QMainWindow):
         self.cli_window.show()
 
     def on_click(self, event):
+        # TODO: split this into separate functions for clarity
         if not self.file_loaded:
             return
         
@@ -774,8 +935,12 @@ class MainWidget(QMainWindow):
         current_cell_n = self.get_cell(x, y)
         overlay_color=self.cc_overlay_dropdown.currentText().lower()
 
-        if event.button() == Qt.MouseButton.RightButton and overlay_color=='none': # segmentation
-            if not self.drawing_cell_roi:
+        if event.button() == Qt.MouseButton.RightButton and overlay_color=='none': 
+            if event.modifiers() == Qt.KeyboardModifier.ShiftModifier: # split particles
+                self.selected_particle=self.particle_from_cell(current_cell_n)
+                if self.selected_particle is not None:
+                    self.split_particle_tracks()
+            elif not self.drawing_cell_roi: # segmentation
                 self.drawing_cell_roi=True
                 self.cell_roi.points=[]
 
@@ -798,6 +963,7 @@ class MainWidget(QMainWindow):
                         self.delete_cell_mask(current_cell_n)
                         self.selected_cell=None
                         self.selected_particle=None
+
                     elif event.modifiers() == Qt.KeyboardModifier.AltModifier:
                         # alt click merges cells
                         if self.selected_cell is not None:
@@ -805,10 +971,18 @@ class MainWidget(QMainWindow):
                         else:
                             self.selected_cell=current_cell_n
 
+                    elif event.modifiers() == Qt.KeyboardModifier.ShiftModifier: # merge particles
+                        if self.selected_particle is not None:
+                            second_particle=self.particle_from_cell(current_cell_n)
+                            if second_particle is not None: # if a particle is found
+                                self.merge_particle_tracks(self.selected_particle, second_particle)
+                        self.selected_cell=current_cell_n
+
                     elif current_cell_n==self.selected_cell:
                         # clicking the same cell again deselects it
                         self.selected_cell=None
                         self.selected_particle=None
+
                     else:
                         # select the cell
                         self.selected_cell=current_cell_n
@@ -836,13 +1010,7 @@ class MainWidget(QMainWindow):
         
         if hasattr(self.stack, 'tracked_centroids'):
             t=self.stack.tracked_centroids
-            self.selected_particle=t[(t.frame==self.frame.frame_number)&(t.cell_number==self.selected_cell)]['particle']
-            if len(self.selected_particle)==0:
-                self.selected_particle=None
-            elif len(self.selected_particle)==1:
-                self.selected_particle=self.selected_particle.item()
-            else:
-                raise ValueError(f'Multiple particles found for cell {self.selected_cell} in frame {self.frame.frame_number}') # shouldn't happen unless tracking data is broken
+            self.selected_particle=self.particle_from_cell(self.selected_cell)
 
         self.update_cell_label(self.selected_cell)
         self.update_tracking_ID_label(self.selected_particle)
@@ -892,31 +1060,40 @@ class MainWidget(QMainWindow):
         return colors
         
     def add_cell_mask(self, enclosed_pixels):
-        
         new_mask_n=self.frame.n+1
         cell_mask=np.zeros_like(self.frame.masks, dtype=bool)
         cell_mask[enclosed_pixels[:,0], enclosed_pixels[:,1]]=True
         new_mask=cell_mask & (self.frame.masks==0)
         self.new_mask=new_mask
-        if new_mask.sum()>3: # if the mask is larger than 3 pixels
+        if new_mask.sum()>4: # if the mask is larger than 4 pixels (minimum for cellpose to generate an outline)
             self.frame.masks[new_mask]=new_mask_n
             self.frame.n=new_mask_n
             print(f'Added cell {new_mask_n}')
 
-            cell_color=self.random_color()
+            cell_color_n=np.random.randint(0, self.canvas.cell_n_colors)
+            cell_color=self.canvas.cell_cmap(cell_color_n)
             outline=utils.outlines_list(new_mask)[0]
 
             self.frame.outlines[outline[:,1], outline[:,0]]=True
-            self.frame.cells=np.append(self.frame.cells, Cell(new_mask_n, outline, color_ID=cell_color, red=False, green=False, frame_number=self.frame.frame_number))
+            centroid=np.mean(enclosed_pixels, axis=0)
+            self.frame.cells=np.append(self.frame.cells, Cell(new_mask_n, outline, color_ID=cell_color, centroid=centroid, red=False, green=False, frame_number=self.frame_number))
             
+            if hasattr(self.stack, 'tracked_centroids'):
+                t=self.stack.tracked_centroids
+                new_particle_ID=t['particle'].max()+1
+                new_particle=pd.DataFrame([[new_mask_n-1, centroid[0], centroid[1], self.frame_number, new_particle_ID, cell_color_n]], columns=t.columns, index=[len(t)])
+                self.stack.tracked_centroids=pd.concat([t, new_particle])
+
+            self.highlight_track_ends()
             self.canvas.overlay_masks()
             self.canvas.overlay_outlines()
+
             return True
         else:
             return False
         
     def add_cell(self, n, outline, color_ID=None, red=False, green=False, frame_number=None):
-        if frame_number is None: frame_number=self.frame.frame_number
+        if frame_number is None: frame_number=self.frame_number
         self.frame.cells=np.append(self.frame.cells, Cell(n, outline, color_ID=color_ID, red=red, green=green, frame_number=frame_number))
     
     def add_outline(self, mask):
@@ -928,8 +1105,6 @@ class MainWidget(QMainWindow):
 
     def merge_cell_masks(self, cell_n1, cell_n2):
         ''' merges cell_n2 into cell_n1. '''
-        
-
         if cell_n1==cell_n2:
             return
 
@@ -951,9 +1126,44 @@ class MainWidget(QMainWindow):
         print(f'Deleted cell {cell_n}')
         
         self.frame.delete_cell(cell_n)
+        if hasattr(self.stack, 'tracked_centroids'): # remove tracking data for the cell
+            t=self.stack.tracked_centroids
+            t.drop(t[(t.frame==self.frame_number)&(t.cell_number==cell_n)].index, inplace=True)
+            cell_numbers=np.unique(t[t.frame==self.frame_number]['cell_number'])
+            new_cell_numbers=np.searchsorted(cell_numbers, t.loc[t.frame==self.frame_number, 'cell_number'])
+            t.loc[t.frame==self.frame_number, 'cell_number']=new_cell_numbers.astype(t['cell_number'].dtype)
 
+        self.highlight_track_ends()
         self.canvas.overlay_masks()
         self.update_display()
+
+    def save_tracking(self):
+        if not self.file_loaded:
+            return
+        if not hasattr(self.stack, 'tracked_centroids'):
+            print('No tracking data to save.')
+            return
+        
+        file_path=QFileDialog.getSaveFileName(self, 'Save tracking data as...', filter='*.csv')[0]
+        if file_path=='':
+            return
+        self.stack.tracked_centroids.to_csv(file_path, index=False)
+        print(f'Saved tracking data to {file_path}')
+    
+    def load_tracking_pressed(self):
+        if not self.file_loaded:
+            return
+        file_path=QFileDialog.getOpenFileName(self, 'Load tracking data...', filter='*.csv')[0]
+        if file_path=='':
+            return
+        
+        self.stack.tracked_centroids=self.load_tracking_data(file_path)
+        self.tracked_recolor()
+
+    def load_tracking_data(self, file_path):
+        tracked_centroids=pd.read_csv(file_path, dtype={'frame':int, 'particle':int, 'cell_number':int}, index_col=False)
+        print(f'Loaded tracking data from {file_path}')
+        return tracked_centroids
 
     def save_segmentation(self):
         if not self.file_loaded:
@@ -965,24 +1175,49 @@ class MainWidget(QMainWindow):
             frames_to_save=[self.stack.frames[self.frame_number]]
 
         for frame in frames_to_save:
-            try:
-                green, red=np.array(frame.get_cell_attr(['green', 'red'])).T
-                frame.cell_cycles=green+2*red
-                frame.to_seg_npy(write_attrs=['cell_cycles'])
-            except AttributeError:
-                frame.to_seg_npy()
-            print(f'Saved frame to {frame.name}')
+            self.save_frame(frame) # save the frame to the same file path
 
 
     def save_as_segmentation(self):
         if not self.file_loaded:
             return
+        
+        if self.save_stack.isChecked():
+            folder_path=QFileDialog.getExistingDirectory(self, 'Save stack to folder...')
+            if folder_path=='':
+                return
+            for frame in self.stack.frames:
+                file_path=os.path.join(folder_path, os.path.basename(frame.name))
+                self.save_frame(frame, file_path=file_path)
+        else:
+            file_path=QFileDialog.getSaveFileName(self, 'Save frame as...', filter='*_seg.npy')[0]
+            if file_path=='':
+                return
+            self.save_frame(self.frame, file_path)
 
-        frame=self.stack.frames[self.frame_number]
-        file_path=QFileDialog.getSaveFileName(self, 'Save segmentation as...', filter='*_seg.npy')[0]
-        frame.to_seg_npy(file_path)
-        print(f'Saved segmentation to {file_path}')
+    def save_frame(self, frame, file_path=None):
+        if file_path is None:
+            file_path=frame.name
+        if not frame.has_outlines:
+            print('Generating outlines...')
+            outlines_list=utils.outlines_list_multi(frame.masks)
+            for cell, outline in zip(frame.cells, outlines_list):
+                cell.outline=outline
+            frame.has_outlines=True
+        
+        try: # fetch cell cycle data if available
+            green, red=np.array(frame.get_cell_attr(['green', 'red'])).T
+            frame.cell_cycles=green+2*red
+            write_attrs=['cell_cycles']
 
+        except AttributeError:
+            write_attrs=[]
+
+        frame.to_seg_npy(file_path, write_attrs=write_attrs)
+        frame.name=file_path
+        print(f'Saved frame to {file_path}')
+        frame.name=file_path
+        
     def cc_overlay_changed(self):
         if not self.file_loaded:
             return
@@ -1051,15 +1286,8 @@ class MainWidget(QMainWindow):
         else:
             # preserve selected cell if tracking info is available
             if hasattr(self, 'selected_particle') and self.selected_particle is not None:
-                # TODO: non-redundant workflow for indexing cells and particles
                 t=self.stack.tracked_centroids
-                self.selected_cell=t[(t.frame==self.frame.frame_number)&(t.particle==self.selected_particle)]['cell_number']
-                if len(self.selected_cell)==0:
-                    self.selected_cell=None
-                elif len(self.selected_cell)==1:
-                    self.selected_cell=self.selected_cell.item()
-                else:
-                    raise ValueError(f'Multiple cells found for particle {self.particle} in frame {self.frame.frame_number}')
+                self.selected_cell=self.cell_from_particle(self.selected_particle)
                 
                 self.update_cell_label(self.selected_cell)
                 self.canvas.highlight_cells([self.selected_cell], alpha=0.3, color='white', layer='selection')
@@ -1084,6 +1312,7 @@ class MainWidget(QMainWindow):
         if self.cc_overlay_dropdown.currentIndex() != 0:
             self.cc_overlay()
 
+        self.highlight_track_ends()
         self.update_display()
 
     def get_RGB(self):
@@ -1099,9 +1328,15 @@ class MainWidget(QMainWindow):
             raise ValueError('RGB must be a bool or boolean array of length 3.')
         for checkbox, state in zip(self.RGB_checkboxes, RGB):
             checkbox.setChecked(state)
-
+    
     def keyPressEvent(self, event):
         """Handle key press events (e.g., arrow keys for frame navigation)."""
+        if event.key() == Qt.Key.Key_Tab:
+            # switch between tabs
+            if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                current_tab=self.tabbed_menu_widget.currentIndex()
+                self.tabbed_menu_widget.setCurrentIndex((current_tab+1)%self.tabbed_menu_widget.count())
+        
         if not self.file_loaded:
             return
 
@@ -1168,10 +1403,6 @@ class MainWidget(QMainWindow):
                 self.RGB_checkboxes[1].toggle()
             elif event.key() == Qt.Key.Key_B:
                 self.RGB_checkboxes[2].toggle()
-        
-            if event.key() == Qt.Key.Key_Tab:
-                # toggle grayscale
-                    self.show_grayscale.toggle()
 
         # segmentation overlay
         if event.key() == Qt.Key.Key_X:
@@ -1316,12 +1547,23 @@ class MainWidget(QMainWindow):
         self.open_stack(natsorted(files))
 
     def open_stack(self, files):
-        self.load_files(files)
-        if not self.file_loaded:
+        self.stack, tracked_centroids=self.load_files(files)
+        if not self.stack:
             return
+        self.file_loaded=True
+        if tracked_centroids is not None:
+            self.stack.tracked_centroids=tracked_centroids
+            self.tracked_recolor()
+
+        out_message=f'Loaded stack {self.stack.name} with {len(self.stack.frames)} frames.'
+        print(out_message)
+        self.statusBar().showMessage(out_message, 3000)
         
         self.frame_number = 0
         self.frame=self.stack.frames[self.frame_number]
+        for frame in self.stack.frames:
+            frame.has_outlines=True
+            
         if self.frame.img.ndim==2: # single channel
             self.is_grayscale=True
             n_colors=1
@@ -1363,26 +1605,37 @@ class MainWidget(QMainWindow):
     def load_files(self, files):
         """Load segmentation files."""
         self.file_loaded = True
-        if files[0].endswith('seg.npy'): # segmented file paths
-            if len(files)==1: # single file
+        tracked_centroids=None
+        seg_files=[f for f in files if f.endswith('seg.npy')]
+        if np.any([seg_file.endswith('seg.npy') for seg_file in seg_files]): # segmented file paths
+            if len(seg_files)==1: # single file
                 progress_bar=lambda x: x
             else:
                 progress_bar=tqdm
-            self.stack=TimeSeries(frame_paths=files, load_img=True, progress_bar=progress_bar)
+            stack=TimeSeries(frame_paths=seg_files, load_img=True, progress_bar=progress_bar)
+            for file in files:
+                if file.endswith('tracking.csv'):
+                    tracked_centroids=self.load_tracking_data(file)
+                    print(f'Loaded tracking data from {file}')
         else:
             try: # maybe it's a folder of segmented files?
-                self.stack=TimeSeries(stack_path=files[0], verbose_load=True, progress_bar=tqdm, load_img=True)
+                stack=TimeSeries(stack_path=files[0], verbose_load=True, progress_bar=tqdm, load_img=True)
+                tracking_path=os.path.join(files[0], 'tracking.csv')
+                if os.path.exists(tracking_path):
+                    tracked_centroids=self.load_tracking_data(tracking_path)
+                    print(f'Loaded tracking data from {tracking_path}')
             except FileNotFoundError: # nope, just reject it
                 self.statusBar().showMessage(f'ERROR: File {files[0]} is not a seg.npy file, cannot be loaded.', 4000)
-                self.file_loaded = False
-        
-        if self.file_loaded:
-            print(f'Loaded stack {self.stack.name} with {len(self.stack.frames)} frames.')
-            self.statusBar().showMessage(f'Loaded stack {self.stack.name} with {len(self.stack.frames)} frames.', 4000)
+                return False
+            
+        return stack, tracked_centroids
 
-    def get_red_green(self):
+    def get_red_green(self, frame=None):
         ''' Fetch or create red and green attributes for cells in the current frame. '''
-        for cell in self.frame.cells:
+        if frame is None:
+            frame=self.frame
+
+        for cell in frame.cells:
             if hasattr(cell, 'cycle_stage'):
                 cell.green=cell.cycle_stage==1 or cell.cycle_stage==3
                 cell.red=cell.cycle_stage==2 or cell.cycle_stage==3
@@ -1395,7 +1648,7 @@ class MainWidget(QMainWindow):
         if hasattr(self, 'cli_window'):
             self.cli_window.close()
         event.accept()
-
+    
 def main():
     pg.setConfigOptions(useOpenGL=True)
     pg.setConfigOptions(enableExperimental=True)

@@ -7,7 +7,7 @@ import os
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QComboBox, QPushButton, QRadioButton,
     QVBoxLayout, QHBoxLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog,
-    QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout
+    QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics
@@ -23,11 +23,13 @@ from tqdm import tqdm
 
 # TODO: fix grayscale
 # TODO: save different RGB, grayscale, masks, outlines config for each tab
+# TODO: buttons to clear masks, clear FUCCI, clear tracking
+# TODO: button to propagate FUCCI labels forward in time
 # TODO: implement mend gaps/remove edge masks
+# TODO: add mouse and keyboard shortcuts to interface
 
 # TODO: get_mitoses, visualize mitoses, edit mitoses
 
-# TODO: switching tabs changes modes? Think about what visuals and interactions at the base level
 # TODO: FUCCI tab - show cc occupancies as a stacked bar
 # TODO: expand/collapse segmentation plot
 # TODO: undo/redo
@@ -138,9 +140,10 @@ class MainWidget(QMainWindow):
         self.setWindowTitle("Segmentation Viewer")
         icon_path=importlib.resources.files('segmentation_viewer.assets').joinpath('icon.png')
         self.setWindowIcon(QIcon(str(icon_path)))
-        self.resize(1080, 720)
+        self.resize(1280, 720)
         self.file_loaded = False # passive mode
-        self.drawing_cell_roi=False
+        self.is_grayscale = False
+        self.drawing_cell_roi = False
 
         # ----------------Toolbar items----------------
         self.spacer = (0,10)
@@ -190,13 +193,17 @@ class MainWidget(QMainWindow):
         self.locals_dict = {}
 
         # Save Menu
-        save_menu=QHBoxLayout()
-        save_menu.setSpacing(5)
+        save_widget=QWidget(objectName='bordered')
+        save_menu=QVBoxLayout(save_widget)
+        save_buttons=QHBoxLayout()
+        save_buttons.setSpacing(5)
         self.save_button = QPushButton("Save", self)
         self.save_as_button = QPushButton("Save As", self)
-        save_menu.addWidget(self.save_button)
-        save_menu.addWidget(self.save_as_button)
+        save_buttons.addWidget(self.save_button)
+        save_buttons.addWidget(self.save_as_button)
         self.save_stack = QCheckBox("Save Stack", self)
+        save_menu.addLayout(save_buttons)
+        save_menu.addWidget(self.save_stack)
 
         # Status bar
         self.status_cell=QLabel("Selected Cell: None", self)
@@ -207,6 +214,38 @@ class MainWidget(QMainWindow):
         self.statusBar().addWidget(self.status_frame_number)
         self.statusBar().addWidget(self.status_tracking_ID)
         self.statusBar().addPermanentWidget(self.status_coordinates)
+
+        #----------------Right Toolbar----------------
+        self.particle_stat_plot=pg.PlotWidget(title='Tracked Cell Statistics', background='#2e2e2e')
+        self.particle_stat_plot.setLabel('bottom', 'Frame')
+        self.stat_plot_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
+        self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
+
+        cell_ID_widget=QWidget(objectName='bordered')
+        cell_ID_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.cell_ID_layout=QFormLayout(cell_ID_widget)
+        selected_cell_label=QLabel("Cell ID:", self)
+        self.selected_cell_prompt=QLineEdit(self, placeholderText='None')
+        self.selected_cell_prompt.setValidator(QIntValidator(bottom=0)) # non-negative integers only
+        selected_particle_label=QLabel("Tracking ID:", self)
+        self.selected_particle_prompt=QLineEdit(self, placeholderText='None')
+        self.selected_particle_prompt.setValidator(QIntValidator(bottom=0)) # non-negative integers only
+        self.cell_ID_layout.addRow(selected_cell_label, self.selected_cell_prompt)
+        self.cell_ID_layout.addRow(selected_particle_label, self.selected_particle_prompt)
+
+        particle_stat_widget=QWidget(objectName='bordered')
+        particle_stat_layout=QVBoxLayout(particle_stat_widget)
+        particle_stat_layout.setSpacing(0)
+        particle_stat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.area_button=QRadioButton("Area", self)
+        self.perimeter_button=QRadioButton("Perimeter", self)
+        self.circularity_button=QRadioButton("Circularity", self)
+        self.cell_cycle_button=QRadioButton("Cell Cycle", self)
+        self.area_button.setChecked(True)
+        particle_stat_layout.addWidget(self.area_button)
+        particle_stat_layout.addWidget(self.perimeter_button)
+        particle_stat_layout.addWidget(self.circularity_button)
+        particle_stat_layout.addWidget(self.cell_cycle_button)
 
         #----------------Frame Slider----------------
         self.frame_slider=QSlider(Qt.Orientation.Horizontal, self)
@@ -233,17 +272,22 @@ class MainWidget(QMainWindow):
 
         #----------------Layout----------------
         # Main layout
-        main_widget = QWidget()
+        main_widget = QSplitter()
         self.setCentralWidget(main_widget)
-        main_layout = QHBoxLayout(main_widget)
-        main_layout.setSpacing(0)
-        main_layout.setContentsMargins(0, 5, 5, 5)
 
-        self.toolbar = QWidget()
-        toolbar_layout = QVBoxLayout(self.toolbar)
-        toolbar_layout.setSpacing(0)
-        toolbar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.toolbar.setFixedWidth(250)
+        self.left_toolbar = QWidget()
+        left_toolbar_layout = QVBoxLayout(self.left_toolbar)
+        left_toolbar_layout.setSpacing(10)
+        left_toolbar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        #self.left_toolbar.setFixedWidth(250)
+
+        self.right_toolbar = QSplitter()
+        self.right_toolbar.setOrientation(Qt.Orientation.Vertical)
+        right_toolbar_widget = QWidget()
+        right_toolbar_layout = QVBoxLayout(right_toolbar_widget)
+        right_toolbar_layout.setSpacing(10)
+        right_toolbar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        #self.left_toolbar.setFixedWidth(250)
 
         self.canvas_widget = QWidget()
         canvas_layout = QVBoxLayout(self.canvas_widget)
@@ -258,43 +302,47 @@ class MainWidget(QMainWindow):
         canvas_layout.addWidget(self.canvas)
         canvas_layout.addWidget(self.frame_slider)
 
-        main_layout.addWidget(self.toolbar)
-        main_layout.addWidget(self.canvas_widget)
+        main_widget.addWidget(self.left_toolbar)
+        main_widget.addWidget(self.canvas_widget)
+        main_widget.addWidget(self.right_toolbar)
+        main_widget.setSizes([250, 800, 250])
 
         self.tabbed_menu_widget = QTabWidget()
         self.tabbed_menu_widget.addTab(self.get_segmentation_tab(), "Segmentation")
         self.tabbed_menu_widget.addTab(self.get_FUCCI_tab(), "FUCCI")
         self.tabbed_menu_widget.addTab(self.get_tracking_tab(), "Tracking")
 
-        # Toolbar layout
-        toolbar_layout.addLayout(open_menu)
+        # Left Toolbar layout
+        LUT_widget=QWidget(objectName='bordered')
+        LUT_layout=QVBoxLayout(LUT_widget)
+        LUT_layout.setSpacing(0)
+        LUT_layout.addLayout(self.RGB_checkbox_layout)
+        LUT_layout.addItem(self.vertical_spacer())
+        LUT_layout.addWidget(self.normalize_label)
+        LUT_layout.addWidget(self.normalize_widget)
+        LUT_layout.addLayout(self.slider_layout)
+        LUT_layout.addWidget(segmentation_overlay_widget)
 
-        toolbar_layout.addLayout(self.RGB_checkbox_layout)
+        left_toolbar_layout.addLayout(open_menu)
 
-        toolbar_layout.addItem(self.vertical_spacer())
-
-        toolbar_layout.addWidget(self.normalize_label)
-        toolbar_layout.addWidget(self.normalize_widget)
-
-        toolbar_layout.addLayout(self.slider_layout)
-
-        toolbar_layout.addWidget(segmentation_overlay_widget)
-
-        toolbar_layout.addItem(self.vertical_spacer())
+        left_toolbar_layout.addWidget(LUT_widget)
         
-        toolbar_layout.addWidget(self.tabbed_menu_widget)
-        
-        toolbar_layout.addSpacerItem(self.vertical_spacer())
+        left_toolbar_layout.addWidget(self.tabbed_menu_widget)
 
-        toolbar_layout.addWidget(self.command_line_button)
+        left_toolbar_layout.addWidget(self.command_line_button)
 
-        toolbar_layout.addItem(self.vertical_spacer())
+        left_toolbar_layout.addWidget(save_widget)
 
+        self.saved_visual_settings=[self.get_visual_settings() for _ in range(self.tabbed_menu_widget.count())]
+        self.current_tab=0
+        self.current_cc_overlay=0
+        # Right Toolbar layout
+        self.right_toolbar.addWidget(self.particle_stat_plot)
+        right_toolbar_layout.addWidget(cell_ID_widget)
+        right_toolbar_layout.addWidget(particle_stat_widget)
+        self.right_toolbar.addWidget(right_toolbar_widget)
+        self.right_toolbar.setSizes([100, 200])
 
-        toolbar_layout.addLayout(save_menu)
-        toolbar_layout.addWidget(self.save_stack)
-
-        
         #----------------Connections----------------
         self.frame_slider.valueChanged.connect(self.update_frame_number)
         # click event
@@ -317,13 +365,53 @@ class MainWidget(QMainWindow):
         self.open_folder.clicked.connect(self.open_folder_dialog)
         # switch tabs
         self.tabbed_menu_widget.currentChanged.connect(self.tab_switched)
+        # input current cell/particle
+        self.selected_cell_prompt.textChanged.connect(self.cell_prompt_changed)
+        self.selected_cell_prompt.returnPressed.connect(self.cell_prompt_changed)
+        self.selected_particle_prompt.textChanged.connect(self.particle_prompt_changed)
+        self.selected_particle_prompt.returnPressed.connect(self.particle_prompt_changed)
+        # particle measurements
+        self.area_button.toggled.connect(self.plot_particle_statistic)
+        self.perimeter_button.toggled.connect(self.plot_particle_statistic)
+        self.circularity_button.toggled.connect(self.plot_particle_statistic)
+        self.cell_cycle_button.toggled.connect(self.plot_particle_statistic)
     
     def tab_switched(self, index):
+        if not self.file_loaded:
+            self.current_tab=index
+            return
+
+        if self.current_tab==1:
+            self.current_cc_overlay=self.cc_overlay_dropdown.currentIndex()
+            self.cc_overlay_dropdown.blockSignals(True)
+            self.cc_overlay_dropdown.setCurrentIndex(0) # manually set to none without triggering FUCCI tab change
+            self.cc_overlay_dropdown.blockSignals(False)
+            self.cc_overlay()
+
+        elif index==1:
+            self.cc_overlay_dropdown.setCurrentIndex(self.current_cc_overlay)
+            self.cc_overlay()
+
+        # RGB, grayscale, masks, outlines
+        self.saved_visual_settings[self.current_tab]=self.get_visual_settings()
+        self.current_tab=index
+        self.set_visual_settings(self.saved_visual_settings[index])
+
         self.highlight_track_ends()
         self.canvas.clear_selection_overlay()
         if index==1:
             self.cc_overlay()
+    
+    def set_visual_settings(self, settings):
+        self.set_RGB(settings[0])
+        self.normalize_type=settings[1]
+        self.masks_checkbox.setChecked(settings[2])
+        self.outlines_checkbox.setChecked(settings[3])
 
+    def get_visual_settings(self):
+        # retrieve the current visual settings
+        return [self.get_RGB(), self.normalize_type, self.masks_checkbox.isChecked(), self.outlines_checkbox.isChecked()]
+    
     def get_segmentation_tab(self):
         segmentation_tab=QWidget()
         segmentation_layout=QVBoxLayout(segmentation_tab)
@@ -411,9 +499,34 @@ class MainWidget(QMainWindow):
         self.segment_frame_button.clicked.connect(self.segment_frame_pressed)
         self.segment_stack_button.clicked.connect(self.segment_stack_pressed)
 
-
         return segmentation_tab
     
+    def cell_prompt_changed(self, cell_n):
+        if not self.file_loaded:
+            return
+        
+        if cell_n=='' or cell_n=='None':
+            cell_n=None
+            self.update_tracking_ID_label(None)
+            return
+        else:
+            cell_n=int(cell_n)
+
+        self.select_cell(cell=cell_n)
+
+    def particle_prompt_changed(self, particle):
+        if not self.file_loaded:
+            return
+        
+        if particle=='' or particle=='None':
+            particle=None
+            self.update_cell_label(None)
+            return
+        else:
+            particle=int(particle)
+
+        self.select_cell(particle=particle)
+
     def mend_gaps(self):
         # TODO
         print('Mending gaps... (not implemented)')
@@ -715,6 +828,9 @@ class MainWidget(QMainWindow):
             return
         self.frame_number = frame_number
         self.imshow(self.stack.frames[self.frame_number], reset=False)
+        
+        # frame marker on stat plot
+        self.stat_plot_frame_marker.setPos(self.frame_number)
 
     def update_coordinate_label(self, x, y):
         ''' Update the status bar with the current cursor coordinates. '''
@@ -724,15 +840,19 @@ class MainWidget(QMainWindow):
         ''' Update the status bar with the selected cell number. '''
         if cell_n is None:
             self.status_cell.setText("Selected Cell: None")
+            self.selected_cell_prompt.setText('')
         else:
             self.status_cell.setText(f"Selected Cell: {cell_n}")
+            self.selected_cell_prompt.setText(str(cell_n))
 
     def update_tracking_ID_label(self, tracking_ID):
         ''' Update the status bar with the current tracking ID. '''
         if tracking_ID is None:
             self.status_tracking_ID.setText("Tracking ID: None")
+            self.selected_particle_prompt.setText('')
         else:
             self.status_tracking_ID.setText(f"Tracking ID: {tracking_ID}")
+            self.selected_particle_prompt.setText(str(tracking_ID))
 
     def track_centroids(self):
         ''' Track centroids for the current stack. '''
@@ -933,6 +1053,56 @@ class MainWidget(QMainWindow):
         self.globals_dict['cli'] = self.cli_window.cli
         self.cli_window.show()
 
+    def select_cell(self, particle=None, cell=None):
+        ''' Select a cell or particle by number. '''
+        if cell is not None:
+            self.selected_cell=cell
+            self.selected_particle=self.particle_from_cell(cell)
+        elif particle is not None:
+            self.selected_particle=particle
+            self.selected_cell=self.cell_from_particle(particle)
+        else:
+            self.selected_cell=None
+            self.selected_particle=None
+        
+        self.update_cell_label(self.selected_cell)
+        self.update_tracking_ID_label(self.selected_particle)
+        
+        if self.selected_particle is not None:
+            # put info about the particle in the right toolbar
+            self.plot_particle_statistic()
+
+        if self.cc_overlay_dropdown.currentIndex()==0: # if no overlay, highlight the selected cell
+            self.canvas.highlight_cells([self.selected_cell], alpha=0.3, color='white', layer='selection')
+
+    def plot_particle_statistic(self):
+        # TODO: follow through mitosis?
+        measurement_idx=self.get_selected_statistic()
+        measurement=['area', 'perimeter', 'circularity', 'cell_cycle'][measurement_idx]
+        color=self.canvas.cell_cmap(measurement_idx)[:3]
+        color=pg.mkColor([c*255 for c in color])
+        particle=self.get_selected_particle()
+        timepoints=[cell.frame for cell in particle]
+        if measurement=='cell_cycle':
+            for cell in particle:
+                if not hasattr(cell, 'green'):
+                    cell.green=False
+                    cell.red=False
+            green, red=np.array([[cell.green, cell.red] for cell in particle]).T
+            values=green+2*red
+        else:
+            values=[getattr(cell, measurement) for cell in particle]
+
+        # clear the plot
+        self.particle_stat_plot.clear()
+        self.particle_stat_plot.setLabel('left', measurement)
+        self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
+        self.particle_stat_plot.plot(timepoints, values, pen=color, symbol='o', symbolPen='w', symbolBrush=color, symbolSize=5, width=2)
+
+    def get_selected_statistic(self):
+        stats=[self.area_button.isChecked(), self.perimeter_button.isChecked(), self.circularity_button.isChecked(), self.cell_cycle_button.isChecked()]
+        return stats.index(True)
+
     def on_click(self, event):
         # TODO: split this into separate functions for clarity
         if not self.file_loaded:
@@ -969,41 +1139,34 @@ class MainWidget(QMainWindow):
                         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
                             # ctrl click deletes cells
                             self.delete_cell_mask(current_cell_n)
-                            self.selected_cell=None
-                            self.selected_particle=None
+                            self.select_cell(None) # deselect the cell
 
-                        elif event.modifiers() == Qt.KeyboardModifier.AltModifier:
-                            # alt click merges cells
-                            if self.selected_cell is not None:
-                                self.merge_cell_masks(self.selected_cell, current_cell_n)
-                            else:
-                                self.selected_cell=current_cell_n
+                        elif event.modifiers() == Qt.KeyboardModifier.AltModifier and self.selected_cell is not None:
+                            self.merge_cell_masks(self.selected_cell, current_cell_n)
+                            self.select_cell(cell=self.selected_cell) # reselect the merged cell
 
                         elif event.modifiers() == Qt.KeyboardModifier.ShiftModifier: # merge particles
                             if self.selected_particle is not None:
                                 second_particle=self.particle_from_cell(current_cell_n)
                                 if second_particle is not None: # if a particle is found
                                     self.merge_particle_tracks(self.selected_particle, second_particle)
-                            self.selected_cell=current_cell_n
+                            self.select_cell(cell=current_cell_n)
 
                         elif current_cell_n==self.selected_cell:
                             # clicking the same cell again deselects it
-                            self.selected_cell=None
-                            self.selected_particle=None
+                            self.select_cell(None)
 
                         else:
                             # select the cell
-                            self.selected_cell=current_cell_n
-                        self.canvas.highlight_cells([self.selected_cell], alpha=0.3, color='white', layer='selection')
-            else:
-                self.selected_cell=None # background
-                self.selected_particle=None
-                self.canvas.highlight_cells([self.selected_cell], alpha=0.3, color='white')
+                            self.select_cell(cell=current_cell_n)
+
+            else: # clicked on background, deselect 
+                self.select_cell(None)
 
         else: # cell cycle classification
             if current_cell_n>=0:
-                self.selected_cell=current_cell_n
-                cell=self.frame.cells[current_cell_n]
+                self.select_cell(cell=current_cell_n)
+                cell=self.get_selected_cell()
                 if event.button() == Qt.MouseButton.LeftButton:
                     cell.green=not cell.green
                 if event.button() == Qt.MouseButton.RightButton:
@@ -1017,14 +1180,13 @@ class MainWidget(QMainWindow):
                         cell.red=True
                 self.cc_overlay()
             else:
-                self.selected_cell=None
-        
-        if hasattr(self.stack, 'tracked_centroids'):
-            t=self.stack.tracked_centroids
-            self.selected_particle=self.particle_from_cell(self.selected_cell)
+                self.select_cell(None)
 
-        self.update_cell_label(self.selected_cell)
-        self.update_tracking_ID_label(self.selected_particle)
+    def get_selected_cell(self):
+        return self.frame.cells[self.selected_cell]
+    
+    def get_selected_particle(self):
+        return self.stack.get_particle(self.selected_particle)
 
     def mouse_moved(self, pos):
         ''' Dynamically update the cell mask overlay as the user draws a new cell. '''
@@ -1233,7 +1395,10 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         
+        self.tabbed_menu_widget.blockSignals(True) # manually switch tabs (without triggering tab switch event)
         self.tabbed_menu_widget.setCurrentIndex(1) # switch to the FUCCI tab
+        self.current_tab=1
+        self.tabbed_menu_widget.blockSignals(False)
         overlay_color=self.cc_overlay_dropdown.currentText().lower()
         
         # set RGB mode
@@ -1259,10 +1424,7 @@ class MainWidget(QMainWindow):
             return
         overlay_color=self.cc_overlay_dropdown.currentText().lower()
         if overlay_color == 'none': # clear overlay
-            self.selected_cell=None
-            self.selected_particle=None
-            self.update_cell_label(None)
-            self.canvas.highlight_cells([])
+            self.select_cell(None)
         else:
             if overlay_color == 'all':
                 colors=np.array(['g','r','orange'])
@@ -1278,9 +1440,7 @@ class MainWidget(QMainWindow):
 
     def reset_display(self):
         self.drawing_cell_roi=False
-        self.selected_cell=None
-        self.selected_particle=None
-        self.update_cell_label(None)
+        self.select_cell(None)
         self.cc_overlay_dropdown.setCurrentIndex(0) # clear overlay
         self.set_RGB(True)
         if not self.is_grayscale:
@@ -1299,11 +1459,7 @@ class MainWidget(QMainWindow):
         else:
             # preserve selected cell if tracking info is available
             if hasattr(self, 'selected_particle') and self.selected_particle is not None:
-                t=self.stack.tracked_centroids
-                self.selected_cell=self.cell_from_particle(self.selected_particle)
-                
-                self.update_cell_label(self.selected_cell)
-                self.canvas.highlight_cells([self.selected_cell], alpha=0.3, color='white', layer='selection')
+                self.select_cell(particle=self.selected_particle)
             
             # or clear highlight
             else:
@@ -1663,8 +1819,8 @@ class MainWidget(QMainWindow):
         event.accept()
     
 def main():
-    pg.setConfigOptions(useOpenGL=True)
-    pg.setConfigOptions(enableExperimental=True)
+    #pg.setConfigOptions(useOpenGL=True)
+    #pg.setConfigOptions(enableExperimental=True)
 
     if not QApplication.instance():
         app = QApplication(sys.argv)

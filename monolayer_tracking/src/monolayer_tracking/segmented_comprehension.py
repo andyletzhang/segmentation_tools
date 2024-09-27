@@ -132,8 +132,6 @@ class TimeSeries:
 
         return new_particle_ID
 
-
-
     def get_particle(self, input_ID):
         """
         Retrieve the cell trajectories for a given particle ID or cell.
@@ -150,6 +148,10 @@ class TimeSeries:
             particle_ID = input_ID
         elif isinstance(input_ID, Cell):  # If input is a Cell object, find its corresponding particle ID
             particle_ID = t[(t['frame'] == input_ID.frame) & (t['cell_number'] == input_ID.n)]['particle'].iloc[0]
+        elif input_ID is None:  # If no input is provided, return an empty list
+            return []
+        else:
+            raise ValueError(f'Invalid input for get_particle function {input_ID}. Please provide a valid particle ID or Cell object.')
 
         cell_rows = t[t.particle == particle_ID][['frame', 'cell_number']] # Locate particle
 
@@ -365,17 +367,17 @@ class TimeSeries:
                 mother_cell = self.frames[potential_mother_ID['frame'].item()].cells[potential_mother_ID['cell_number'].item()]
                 
                 # Potential mother attributes
-                m_size = np.sqrt(mother_cell.get_area())
+                m_size = np.sqrt(mother_cell.area())
                 extended_mother = trajectories.loc[potential_mother_ID['particle']].iloc[-3:].reset_index()
-                m_circ = 1 - np.max([self.frames[frame_number].cells[cell_number].get_circularity() for frame_number, cell_number in np.array(extended_mother[['frame', 'cell_number']])])
+                m_circ = 1 - np.max([self.frames[frame_number].cells[cell_number].circularity for frame_number, cell_number in np.array(extended_mother[['frame', 'cell_number']])])
                 
                 # Potential daughter attributes
                 d_circs = []
                 d_areas = []
                 for frame_number, cell_number in np.array(potential_daughter_IDs[['frame', 'cell_number']]):
                     daughter_cell = self.frames[frame_number].cells[cell_number]
-                    d_circs.append(daughter_cell.get_circularity())
-                    d_areas.append(daughter_cell.get_area())
+                    d_circs.append(daughter_cell.circularity)
+                    d_areas.append(daughter_cell.area())
                 d_circs = 1 - np.array(d_circs)
                 d_areas = np.array(d_areas)
 
@@ -776,8 +778,6 @@ class Image:
         '''returns an array of all shape parameters.'''
         shape_parameters=[]
         for cell in self.good_cells():
-            if not hasattr(cell, 'shape_parameter'):
-                cell.get_shape_parameter()
             shape_parameters.append(cell.shape_parameter)
         return np.array(shape_parameters)
 
@@ -853,15 +853,20 @@ class Cell:
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    def get_area(self):
-        self.area=0.5*np.abs(np.dot(self.outline.T[0],np.roll(self.outline.T[1],1))-np.dot(self.outline.T[1],np.roll(self.outline.T[0],1)))
-        return self.area
-    def get_perimeter(self):
-        self.perimeter=np.sum(np.linalg.norm(np.diff(self.outline, axis=0, append=[self.outline[0]]).T, axis=0))
-        return self.perimeter
-    def get_circularity(self):
-        self.circularity=4*np.pi*self.get_area()/self.get_perimeter()**2
-        return self.circularity
+    @property
+    def area(self):
+        area=0.5*np.abs(np.dot(self.outline.T[0],np.roll(self.outline.T[1],1))-np.dot(self.outline.T[1],np.roll(self.outline.T[0],1)))
+        return area
+    
+    @property
+    def perimeter(self):
+        perimeter=np.sum(np.linalg.norm(np.diff(self.outline, axis=0, append=[self.outline[0]]).T, axis=0))
+        return perimeter
+    
+    @property
+    def circularity(self):
+        circularity=4*np.pi*self.area/self.perimeter**2
+        return circularity
     
     def sort_vertices(self):
         '''
@@ -919,7 +924,7 @@ class Cell:
         segment_lengths = np.linalg.norm(np.diff(vertices, append=[vertices[0]], axis=0), axis=1)
         
         # Calculate center of mass of the perimeter
-        CoM_P = np.sum([1 / 2 * (vertices[i] + vertices[(i + 1) % len(vertices)]) * segment_lengths[i] for i in range(len(vertices))], axis=0) / self.get_perimeter()
+        CoM_P = np.sum([1 / 2 * (vertices[i] + vertices[(i + 1) % len(vertices)]) * segment_lengths[i] for i in range(len(vertices))], axis=0) / self.perimeter
         
         # Translate vertices to center of mass
         zeroed_vertices = vertices - CoM_P
@@ -983,19 +988,28 @@ class Cell:
         
         return self.theta_polyP
 
-        
-    def get_shape_parameter(self):
+    @property
+    def shape_parameter(self):
         '''
         calculates the shape parameter q=perimeter/area**2 using vertex data. 
         only calculable for cells with reconstructed vertices ('good cells').
         '''
-        y,x=self.sorted_vertices.T # pull out x and y for next line
-        self.vertex_area=0.5*np.abs(np.dot(x,np.roll(y,1))-np.dot(y,np.roll(x,1))) # compute area
-        self.vertex_perimeter=np.sum(np.linalg.norm(np.diff(self.sorted_vertices, append=[self.sorted_vertices[0]], axis=0), axis=1)) # compute perimeter
-        self.shape_parameter=self.vertex_perimeter/(self.vertex_area**0.5)
-        return self.shape_parameter
+        shape_parameter=self.vertex_perimeter/(self.vertex_area**0.5)
+        return shape_parameter
     
-        
+    @property
+    def vertex_area(self):
+        '''returns the area of the cell as calculated from the vertices.'''
+        y,x=self.sorted_vertices.T
+        vertex_area=0.5*np.abs(np.dot(x,np.roll(y,1))-np.dot(y,np.roll(x,1)))
+        return vertex_area
+    
+    @property
+    def vertex_perimeter(self):
+        '''returns the perimeter of the cell as calculated from the vertices.'''
+        vertex_perimeter=np.sum(np.linalg.norm(np.diff(self.sorted_vertices, append=[self.sorted_vertices[0]], axis=0), axis=1))
+        return vertex_perimeter
+    
     def fit_ellipse(self):
         '''
         uses skimage's EllipseModel to fit an ellipse to the outline of the cell.

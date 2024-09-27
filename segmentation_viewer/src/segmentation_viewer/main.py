@@ -22,7 +22,6 @@ import importlib.resources
 from tqdm import tqdm
 
 # TODO: fix grayscale
-# TODO: save different RGB, grayscale, masks, outlines config for each tab
 # TODO: buttons to clear masks, clear FUCCI, clear tracking
 # TODO: button to propagate FUCCI labels forward in time
 # TODO: implement mend gaps/remove edge masks
@@ -1285,8 +1284,9 @@ class MainWidget(QMainWindow):
         self.frame.outlines[self.frame.masks==cell_n1+1]=False
         
         self.add_outline(self.frame.masks==cell_n1+1)
-        self.frame.delete_cell(cell_n2)
         print(f'Merged cell {cell_n2} into cell {cell_n1}')
+        self.frame.delete_cell(cell_n2)
+        self.remove_tracking_data(cell_n2)
 
         self.canvas.overlay_masks()
         self.canvas.overlay_outlines()
@@ -1299,16 +1299,21 @@ class MainWidget(QMainWindow):
         print(f'Deleted cell {cell_n}')
         
         self.frame.delete_cell(cell_n)
-        if hasattr(self.stack, 'tracked_centroids'): # remove tracking data for the cell
-            t=self.stack.tracked_centroids
-            t.drop(t[(t.frame==self.frame_number)&(t.cell_number==cell_n)].index, inplace=True)
-            cell_numbers=np.unique(t[t.frame==self.frame_number]['cell_number'])
-            new_cell_numbers=np.searchsorted(cell_numbers, t.loc[t.frame==self.frame_number, 'cell_number'])
-            t.loc[t.frame==self.frame_number, 'cell_number']=new_cell_numbers.astype(t['cell_number'].dtype)
+        self.remove_tracking_data(cell_n)
 
         self.highlight_track_ends()
         self.canvas.overlay_masks()
         self.update_display()
+
+    def remove_tracking_data(self, cell_number):
+        ''' Remove a cell from one frame of the tracking data. Renumber the cell numbers in the frame to align with the new cell masks. '''
+        # TODO: is there a way to only renumber once instead of applying the same algorithm twice in parallel?
+        if hasattr(self.stack, 'tracked_centroids'):
+            t=self.stack.tracked_centroids
+            t.drop(t[(t.frame==self.frame_number)&(t.cell_number==cell_number)].index, inplace=True)
+            cell_numbers=np.unique(t[t.frame==self.frame_number]['cell_number'])
+            new_cell_numbers=np.searchsorted(cell_numbers, t.loc[t.frame==self.frame_number, 'cell_number'])
+            t.loc[t.frame==self.frame_number, 'cell_number']=new_cell_numbers.astype(t['cell_number'].dtype)
 
     def save_tracking(self):
         if not self.file_loaded:

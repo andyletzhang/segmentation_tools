@@ -39,6 +39,7 @@ class PyQtGraphCanvas(QWidget):
         self.img_outline_overlay=pg.ImageItem()
         self.mask_overlay=[pg.ImageItem(), pg.ImageItem()]
         self.selection_overlay=[pg.ImageItem(), pg.ImageItem()]
+        self.FUCCI_overlay=[pg.ImageItem(), pg.ImageItem()]
         self.tracking_overlay=[pg.ImageItem(), pg.ImageItem()]
 
         # add images to the plots
@@ -47,14 +48,16 @@ class PyQtGraphCanvas(QWidget):
 
         self.img_plot.addItem(self.mask_overlay[0])
         self.seg_plot.addItem(self.mask_overlay[1])
-
-        self.img_plot.addItem(self.selection_overlay[0])
-        self.seg_plot.addItem(self.selection_overlay[1])
-
         
         self.img_plot.addItem(self.tracking_overlay[0])
         self.seg_plot.addItem(self.tracking_overlay[1])
+
+        self.img_plot.addItem(self.FUCCI_overlay[0])
+        self.seg_plot.addItem(self.FUCCI_overlay[1])
         
+        self.img_plot.addItem(self.selection_overlay[0])
+        self.seg_plot.addItem(self.selection_overlay[1])
+
         self.seg_plot.addItem(self.seg)
 
         # Set initial zoom levels
@@ -110,7 +113,7 @@ class PyQtGraphCanvas(QWidget):
             #from monolayer_tracking.networks import color_masks, greedy_color # generate pseudo-random colors
             #random_colors=color_masks(self.parent.frame.masks)
             random_colors=np.random.randint(0, self.cell_n_colors, size=self.parent.frame.masks.max())
-            cell_colors=self.cell_cmap(random_colors)[..., :3]
+            cell_colors=self.cell_cmap(random_colors)
             self.parent.frame.set_cell_attr('color_ID', cell_colors)
 
         # highlight all cells with the specified colors
@@ -119,6 +122,10 @@ class PyQtGraphCanvas(QWidget):
 
         self.parent.frame.mask_overlay=[img_masks, seg_masks] # store the overlay for reuse
 
+    def clear_FUCCI_overlay(self):
+        self.FUCCI_overlay[0].clear()
+        self.FUCCI_overlay[1].clear()
+        
     def clear_tracking_overlay(self):
         self.tracking_overlay[0].clear()
         self.tracking_overlay[1].clear()

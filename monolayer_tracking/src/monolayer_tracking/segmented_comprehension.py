@@ -483,7 +483,14 @@ class Image:
                 self.img = preprocessing.normalize(self.img, dtype=np.float32)  # Normalize image data if specified
         
         # Load masks and set resolution
-        self.masks = data['masks'].astype(np.min_scalar_type(self.n))  # Masks for cell detection
+        self.masks = data['masks']  # Masks for cell detection
+        
+        # set masks datatype
+        if self.masks.max() < 65535: # there will always be fewer than 65535 cells in a single frame, just a failsafe
+            self.masks = self.masks.astype(np.uint16)
+        else:
+            self.masks = self.masks.astype(np.uint32)
+
         self.resolution = self.masks.shape  # Image resolution
 
         # Check for and mend gaps in masks

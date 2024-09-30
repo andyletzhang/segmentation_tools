@@ -23,6 +23,7 @@ from tqdm import tqdm
 
 # TODO: buttons to clear masks, clear tracking
 # TODO: add mouse and keyboard shortcuts to interface
+# TODO: normalize the summed channels when show_grayscale
 
 # TODO: get_mitoses, visualize mitoses, edit mitoses
 
@@ -30,7 +31,6 @@ from tqdm import tqdm
 # TODO: expand/collapse segmentation plot
 # TODO: undo/redo
 # TODO: load TIFs
-# TODO: grayscale LUTs
 # TODO: segmentation channel 2 "FUCCI" option which blends R and G channels
 
 darktheme_stylesheet = """
@@ -1010,8 +1010,6 @@ class MainWidget(QMainWindow):
     def set_LUTs(self):
         ''' Set the LUTs for the image display based on the current slider values. '''
         bounds=self.get_LUT_slider_values()
-        if self.show_grayscale.isChecked():
-            bounds=bounds[0] # TODO: adjust LUTs before grayscale mode
         self.canvas.img.setLevels(bounds)
         self.update_LUT_labels()
 
@@ -1551,7 +1549,7 @@ class MainWidget(QMainWindow):
         self.FUCCI_dropdown.setCurrentIndex(0) # clear overlay
         self.set_RGB(True)
         if not self.is_grayscale:
-            self.show_grayscale.setChecked(False)
+            self.show_grayscale_checkbox.setChecked(False)
         self.canvas.clear_selection_overlay() # remove any overlays (highlighting, outlines)
         self.canvas.img_plot.autoRange()
 
@@ -1690,7 +1688,7 @@ class MainWidget(QMainWindow):
             self.set_RGB(True)
             self.canvas.img_plot.autoRange()
             if not self.is_grayscale:
-                self.show_grayscale.setChecked(False)
+                self.show_grayscale_checkbox.setChecked(False)
 
         # Handle frame navigation with left and right arrow keys
         if event.key() == Qt.Key.Key_Left:
@@ -1740,15 +1738,20 @@ class MainWidget(QMainWindow):
         for checkbox in self.RGB_checkboxes:
             checkbox.setChecked(True)
             self.color_channels_layout.addWidget(checkbox)
-        self.show_grayscale=QCheckBox("Grayscale", self)
-        self.show_grayscale.setChecked(False)
+        self.show_grayscale_checkbox=QCheckBox("Grayscale", self)
+        self.show_grayscale_checkbox.setChecked(False)
         layout.addSpacerItem(self.vertical_spacer())
         layout.addLayout(self.color_channels_layout)
-        layout.addWidget(self.show_grayscale)
+        layout.addWidget(self.show_grayscale_checkbox)
         
         for checkbox in self.RGB_checkboxes:
             checkbox.stateChanged.connect(self.update_display)
-        self.show_grayscale.stateChanged.connect(self.update_display)
+        self.show_grayscale_checkbox.stateChanged.connect(self.show_grayscale_toggled)
+
+    def show_grayscale_toggled(self):
+        if not self.file_loaded:
+            return
+        self.canvas.img.set_grayscale(self.show_grayscale_checkbox.isChecked())
 
     def clear_channel_layout(self):
         self.clear_layout(self.segmentation_channels_layout)
@@ -1778,6 +1781,7 @@ class MainWidget(QMainWindow):
         return channel_layout
 
     def grayscale_mode(self):
+        ''' Hide RGB GUI elements when a grayscale image is loaded. '''
         self.clear_LUT_sliders()
         self.clear_RGB_checkboxes()
         self.add_grayscale_sliders(self.slider_layout)
@@ -1786,6 +1790,7 @@ class MainWidget(QMainWindow):
         self.nuclear_channel.setCurrentIndex(0)
 
     def RGB_mode(self):
+        ''' Show RGB GUI elements when an RGB image is loaded. '''
         self.clear_LUT_sliders()
         self.clear_RGB_checkboxes()
         self.add_RGB_checkboxes(self.RGB_checkbox_layout)

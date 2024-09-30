@@ -3,9 +3,9 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QGraphicsPolygonItem
 from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QPen, QColor, QBrush, QPolygonF
+from PyQt6.QtGui import QPen, QColor, QBrush, QPolygonF, QPainter
 from shapely.geometry import Polygon, Point
-
+    
 class PyQtGraphCanvas(QWidget):
     def __init__(self, parent=None, cell_n_colors=10, cell_cmap='tab10'):
         from matplotlib import colormaps
@@ -34,7 +34,7 @@ class PyQtGraphCanvas(QWidget):
         self.seg_data = self.img_data.copy()
 
         # Plot the data
-        self.img = pg.ImageItem(self.img_data)
+        self.img = RGB_ImageItem(self.img_data, parent=self, plot=self.img_plot)
         self.seg = pg.ImageItem(self.seg_data)
         self.img_outline_overlay=pg.ImageItem()
         self.mask_overlay=[pg.ImageItem(), pg.ImageItem()]
@@ -43,7 +43,7 @@ class PyQtGraphCanvas(QWidget):
         self.tracking_overlay=[pg.ImageItem(), pg.ImageItem()]
 
         # add images to the plots
-        self.img_plot.addItem(self.img)
+        #self.img_plot.addItem(self.img)
         self.img_plot.addItem(self.img_outline_overlay)
 
         self.img_plot.addItem(self.mask_overlay[0])
@@ -218,8 +218,8 @@ class PyQtGraphCanvas(QWidget):
                     self.img_data[..., i] = 0
             
         # Grayscale checkbox
-        if not self.parent.is_grayscale and self.parent.show_grayscale.isChecked():
-            self.img_data = np.mean(self.img_data, axis=-1) # TODO: incorporate LUTs?
+        #if not self.parent.is_grayscale and self.parent.show_grayscale.isChecked():
+        #    self.img_data = np.mean(self.img_data, axis=-1) # TODO: incorporate LUTs?
 
         # update segmentation overlay
         self.overlay_outlines()
@@ -271,6 +271,69 @@ class SegPlot(pg.PlotWidget):
             super().wheelEvent(event)
         else:
             event.ignore()
+
+class RGB_ImageItem():
+    def __init__(self, img_data=None, parent=None, plot:pg.PlotWidget=None):
+        self.parent=parent
+        if img_data is None:
+            img_data=np.zeros((512, 512, 3), dtype=np.uint8)
+        self.img_data=img_data
+        self.redItem=pg.ImageItem(self.img_data[..., 0])
+        self.greenItem=pg.ImageItem(self.img_data[..., 1])
+        self.blueItem=pg.ImageItem(self.img_data[..., 2])
+
+        # Add items to the view
+        plot.addItem(self.redItem)
+        plot.addItem(self.greenItem)
+        plot.addItem(self.blueItem)
+
+        self.redItem.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+        self.greenItem.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+        self.blueItem.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+        self.RGB_mode()
+
+        self.is_grayscale=False
+        self.toggle_grayscale()
+    
+    def setImage(self, img_data):
+        self.img_data=img_data
+        self.redItem.setImage(self.img_data[..., 0])
+        self.greenItem.setImage(self.img_data[..., 1])
+        self.blueItem.setImage(self.img_data[..., 2])
+
+    def toggle_grayscale(self):
+        if self.is_grayscale:
+            self.grayscale_mode()
+        else:
+            self.RGB_mode()
+
+    def setLevels(self, levels):
+        ''' Update the levels of the image items based on the sliders. '''
+        for l, item in zip(levels, [self.redItem, self.greenItem, self.blueItem]):
+            item.setLevels(l)
+
+    def create_lut(self, color):
+        lut = np.zeros((256, 3), dtype=np.ubyte)
+        for i in range(256):
+            lut[i] = [color.red() * i // 255, color.green() * i // 255, color.blue() * i // 255]
+        return lut
+    
+    def grayscale_mode(self):
+        # Grayscale mode
+        gray_lut = self.create_lut(QColor(255, 255, 255))
+        self.redItem.setLookupTable(gray_lut)
+        self.greenItem.setLookupTable(gray_lut)
+        self.blueItem.setLookupTable(gray_lut)
+    
+    def RGB_mode(self):
+        # Color mode
+        self.redItem.setLookupTable(self.create_lut(QColor(255, 0, 0)))
+        self.greenItem.setLookupTable(self.create_lut(QColor(0, 255, 0)))
+        self.blueItem.setLookupTable(self.create_lut(QColor(0, 0, 255)))
+
+    def set_grayscale(self, grayscale):
+        self.is_grayscale=grayscale
+        self.toggle_grayscale()
 
 class CellMaskPolygon(QGraphicsPolygonItem):
     ''' Polygonal overlay for drawing the current mask. '''

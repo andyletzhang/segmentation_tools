@@ -120,15 +120,13 @@ class TimeSeries:
             particle_ID (int): ID of the particle to split.
             split_frame (int): Frame number at which to split the particle track.
             **kwargs: Additional keyword arguments passed to trackpy.link() function.
-
+        
         Returns:
-            DataFrame: DataFrame containing the two split particle tracks.
+            int: ID of the new particle track created by the split.
         """
         t=self.tracked_centroids
         new_particle_ID=t['particle'].max()+1
         t.loc[(t.particle==particle_ID)&(t.frame>=split_frame), 'particle']=new_particle_ID
-        old_particle=t.loc[t.particle==particle_ID]
-        new_particle=t.loc[t.particle==new_particle_ID]
 
         return new_particle_ID
 
@@ -162,6 +160,62 @@ class TimeSeries:
 
         return particle
     
+    def get_particle_attr(self, input_ID, attributes, fill_value=None):
+        """
+        Retrieve a specific attribute for a given particle ID or cell.
+
+        Args:
+            input_ID (int, np.integer, Cell): ID of the particle or a Cell object.
+            attr (str): Attribute to retrieve.
+
+        Returns:
+            list: List of attribute values for the particle trajectory.
+        """
+        ret=[]
+        particle=self.get_particle(input_ID)
+        for cell in particle:
+            if isinstance(attributes, str):
+                try:
+                    ret.append(getattr(cell, attributes))
+                except AttributeError:
+                    if fill_value is not None:
+                        ret.append(fill_value)
+                    else:
+                        raise AttributeError(f'Cell {cell.n} in frame {cell.frame} does not have attribute {attributes}')
+            else:
+                cell_attrs=[]
+                for attribute in attributes:
+                    try:
+                        cell_attrs.append(getattr(cell, attribute))
+                    except AttributeError:
+                        if fill_value is not None:
+                            cell_attrs.append(fill_value)
+                        else:
+                            raise AttributeError(f'Cell {cell.n} in frame {cell.frame} does not have attribute {attribute}')
+                ret.append(cell_attrs)
+        return ret
+    
+    def set_particle_attr(self, input_ID, attributes, values):
+        """
+        Set a specific attribute for a given particle ID or cell.
+
+        Args:
+            input_ID (int, np.integer, Cell): ID of the particle or a Cell object.
+            attr (str): Attribute to set.
+            value (any): Value to set the attribute to.
+
+        Returns:
+            list: List of attribute values for the particle trajectory.
+        """
+        particle=self.get_particle(input_ID)
+        if len(particle)!=len(values):
+            raise ValueError('Length of values must match the number of cells in the particle')
+        for n, cell in enumerate(particle):
+            if isinstance(attributes, str):
+                setattr(cell, attributes, values[n])
+            else:
+                for attribute, value in zip(attributes, values[n]):
+                    setattr(cell, attribute, value)
 
     def get_velocities(self, from_csv=False, to_csv=False, **tracking_kwargs):
         """
@@ -214,8 +268,17 @@ class TimeSeries:
             csv_path=Path(self.name.split('/segmented/')[0]+'/tracking/')
             csv_path.makedir(exist_ok=True, parents=True)
             self.velocities.to_csv(self.name.replace('segmented','tracking')[:-1]+'.csv')
-        
         return self.velocities
+
+    def propagate_FUCCI_labels(self):
+        '''
+        propagates FUCCI data forward in time by copying the last observed value.
+        '''
+        t=self.tracked_centroids
+        for ID in np.unique(t['particle']):
+            cell_cycle=self.get_particle_attr(ID, 'cycle_stage', fill_value=0)
+            propagated_cell_cycle=np.maximum.accumulate(cell_cycle)
+            self.set_particle_attr(ID, 'cycle_stage', propagated_cell_cycle)
 
     def get_interpretable_FUCCI(self, zero_remainder=True, impute_zeros=True):
         from .FUCCI_linking import get_problematic_IDs, impute_fill, smooth_small_flickers, correct_mother_G2, correct_daughter_G1, remove_sandwich_flicker
@@ -633,21 +696,27 @@ class Image:
     
     # -------------Metrics---------------
     # generalized methods for getting and setting cell attributes
-    def get_cell_attr(self, attributes):
+    def get_cell_attr(self, attributes, fill_value=None):
         ret=[]
         for cell in self.cells:
             if isinstance(attributes, str):
                 try:
                     ret.append(getattr(cell, attributes))
                 except AttributeError:
-                    raise AttributeError(f'Cell {cell.n} does not have attribute {attributes}')
+                    if fill_value is not None:
+                        ret.append(fill_value)
+                    else:
+                        raise AttributeError(f'Cell {cell.n} does not have attribute {attributes}')
             else:
                 cell_attrs=[]
                 for attribute in attributes:
                     try:
                         cell_attrs.append(getattr(cell, attribute))
                     except AttributeError:
-                        raise AttributeError(f'Cell {cell.n} does not have attribute {attribute}')
+                        if fill_value is not None:
+                            cell_attrs.append(fill_value)
+                        else:
+                            raise AttributeError(f'Cell {cell.n} does not have attribute {attribute}')
                 ret.append(cell_attrs)
         return ret
 

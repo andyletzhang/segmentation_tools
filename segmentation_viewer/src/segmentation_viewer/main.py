@@ -21,11 +21,8 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
-# TODO: buttons to clear masks, clear FUCCI, clear tracking
-# TODO: button to propagate FUCCI labels forward in time
-# TODO: implement mend gaps/remove edge masks
+# TODO: buttons to clear masks, clear tracking
 # TODO: add mouse and keyboard shortcuts to interface
-# TODO: after adding a cell, track_centroids may raise an error (cell 0 has no attribute centroid? reproducible?)
 
 # TODO: get_mitoses, visualize mitoses, edit mitoses
 
@@ -418,28 +415,9 @@ class MainWidget(QMainWindow):
         self.cell_diameter_layout.addWidget(self.cell_diameter)
         self.cell_diameter_layout.addWidget(self.cell_diameter_calibrate)
 
-        # channel selection # TODO: if image is grayscale, hide this. Will always be [0, 0]
-        self.channel_layout=QVBoxLayout()
-        self.membrane_channel=QComboBox(self)
-        self.membrane_channel.addItems(["Gray", "Red", "Green", "Blue"])
-        self.membrane_channel.setFixedWidth(70)
-        self.membrane_channel_label=QLabel("Membrane Channel:", self)
-        self.nuclear_channel=QComboBox(self)
-        self.nuclear_channel.addItems(["None", "Red", "Green", "Blue"])
-        self.nuclear_channel.setFixedWidth(70)
-        self.nuclear_channel_label=QLabel("Nuclear Channel:", self)
-
-        membrane_tab_layout=QHBoxLayout()
-        membrane_tab_layout.setSpacing(10)
-        membrane_tab_layout.addWidget(self.membrane_channel_label)
-        membrane_tab_layout.addWidget(self.membrane_channel)
-        nuclear_layout=QHBoxLayout()
-        nuclear_layout.setSpacing(5)
-        nuclear_layout.addWidget(self.nuclear_channel_label)
-        nuclear_layout.addWidget(self.nuclear_channel)
-
-        self.channel_layout.addLayout(membrane_tab_layout)
-        self.channel_layout.addLayout(nuclear_layout)
+        # channel selection
+        self.segmentation_channels_layout=QVBoxLayout()
+        self.add_channel_layout(self.segmentation_channels_layout)
 
         segmentation_button_layout=QHBoxLayout()
         self.segment_frame_button=QPushButton("Segment Frame", self)
@@ -455,6 +433,13 @@ class MainWidget(QMainWindow):
         self.remove_edge_masks_button=QPushButton("Remove Edge Masks", self)
         mend_remove_layout.addWidget(self.mend_gaps_button)
         mend_remove_layout.addWidget(self.remove_edge_masks_button)
+        gap_size_layout=QHBoxLayout()
+        gap_size_label=QLabel("Gap Size:", self)
+        self.gap_size=QLineEdit(self)
+        self.gap_size.setPlaceholderText('Auto')
+        self.gap_size.setValidator(QIntValidator(bottom=0)) # non-negative integers only
+        gap_size_layout.addWidget(gap_size_label)
+        gap_size_layout.addWidget(self.gap_size)
         operate_on_label=QLabel("Operate on:", self)
         operate_on_layout=QHBoxLayout()
         self.segment_on_frame=QRadioButton("Frame", self)
@@ -466,11 +451,12 @@ class MainWidget(QMainWindow):
         segmentation_button_layout.addWidget(self.remove_edge_masks_button)
 
         segment_frame_layout.addLayout(self.cell_diameter_layout)
-        segment_frame_layout.addLayout(self.channel_layout)
+        segment_frame_layout.addLayout(self.segmentation_channels_layout)
         segment_frame_layout.addSpacerItem(self.vertical_spacer())
         segment_frame_layout.addLayout(segmentation_button_layout)
 
         segmentation_utils_layout.addLayout(mend_remove_layout)
+        segmentation_utils_layout.addLayout(gap_size_layout)
         segmentation_utils_layout.addWidget(operate_on_label)
         segmentation_utils_layout.addLayout(operate_on_layout)
 
@@ -514,12 +500,40 @@ class MainWidget(QMainWindow):
         self.select_cell(particle=particle)
 
     def mend_gaps(self):
-        # TODO
-        print('Mending gaps... (not implemented)')
+        # TODO: can pull this off without replace_segmentation via a series of merges.
+        # perhaps slower, but preserves tracking and coloration.
+        if not self.file_loaded:
+            return
+        from monolayer_tracking.preprocessing import mend_gaps
+        if self.segment_on_stack.isChecked():
+            frames=self.stack.frames
+        else:
+            frames=[self.frame]
+        
+        gap_size=self.gap_size.text()
+        for frame in frames:
+            if gap_size=='':
+                gap_size=frame.mean_cell_area(scaled=False)/2 # default to half the mean cell area
+            frame.masks, _=mend_gaps(frame.masks, gap_size)
+            self.replace_segmentation(frame)
+        
+        self.update_display()
 
     def remove_edge_masks(self):
-        # TODO
-        print('Removing edge masks... (not implemented)')
+        # TODO: can pull this off without replace_segmentation via a series of deletions.
+        # perhaps slower, but preserves tracking and coloration.
+        if not self.file_loaded:
+            return
+        if self.segment_on_stack.isChecked():
+            frames=self.stack.frames
+        else:
+            frames=[self.frame]
+        
+        for frame in frames:
+            frame.masks=utils.remove_edge_masks(frame.masks)
+            self.replace_segmentation(frame)
+        
+        self.update_display()
     
     def update_cell_diameter(self, diameter):
         self.draw_cell_diameter(diameter)
@@ -606,8 +620,6 @@ class MainWidget(QMainWindow):
             masks, _, _=self.cellpose_model.eval(frame.img, channels=channels, diameter=diameter)
             frame.masks=masks
             self.replace_segmentation(frame)
-            if hasattr(frame, 'mask_overlay'):
-                del frame.mask_overlay # remove the stored mask_overlay to force redrawing
 
     def replace_segmentation(self, frame):
         ''' Regenerate the cell outlines and cell objects from the new segmentation masks. '''
@@ -615,6 +627,8 @@ class MainWidget(QMainWindow):
         frame.outlines=utils.masks_to_outlines(frame.masks)
         frame.n=np.max(frame.masks)
         frame.cells = np.array([Cell(n, [], frame_number=frame.frame_number) for n in range(frame.n)])
+        if hasattr(frame, 'mask_overlay'):
+            del frame.mask_overlay
 
     def get_FUCCI_tab(self):
         FUCCI_tab = QWidget()
@@ -645,10 +659,10 @@ class MainWidget(QMainWindow):
 
         FUCCI_button_layout=QHBoxLayout()
         FUCCI_button_layout.setSpacing(5)
-        self.FUCCI_frame_button=QPushButton("Measure Frame", self)
-        self.FUCCI_stack_button=QPushButton("Measure Stack", self)
-        FUCCI_button_layout.addWidget(self.FUCCI_frame_button)
-        FUCCI_button_layout.addWidget(self.FUCCI_stack_button)
+        FUCCI_frame_button=QPushButton("Measure Frame", self)
+        FUCCI_stack_button=QPushButton("Measure Stack", self)
+        FUCCI_button_layout.addWidget(FUCCI_frame_button)
+        FUCCI_button_layout.addWidget(FUCCI_stack_button)
 
         annotate_FUCCI_widget=QWidget(objectName='bordered')
         annotate_FUCCI_layout=QVBoxLayout(annotate_FUCCI_widget)
@@ -659,6 +673,14 @@ class MainWidget(QMainWindow):
         FUCCI_overlay_layout.addWidget(overlay_label)
         FUCCI_overlay_layout.addWidget(self.FUCCI_dropdown)
         self.FUCCI_checkbox = QCheckBox("Show FUCCI Channel", self)
+        # clear FUCCI, propagate FUCCI
+        self.propagate_FUCCI_checkbox=QCheckBox("Propagate FUCCI", self)
+        self.propagate_FUCCI_checkbox.setEnabled(False)
+        clear_frame_button=QPushButton("Clear Frame", self)
+        clear_stack_button=QPushButton("Clear Stack", self)
+        clear_FUCCI_layout=QHBoxLayout()
+        clear_FUCCI_layout.addWidget(clear_frame_button)
+        clear_FUCCI_layout.addWidget(clear_stack_button)
 
         measure_FUCCI_layout.addLayout(red_threshold_layout)
         measure_FUCCI_layout.addLayout(green_threshold_layout)
@@ -667,17 +689,52 @@ class MainWidget(QMainWindow):
 
         annotate_FUCCI_layout.addLayout(FUCCI_overlay_layout)
         annotate_FUCCI_layout.addWidget(self.FUCCI_checkbox)
+        annotate_FUCCI_layout.addSpacerItem(self.vertical_spacer())
+        annotate_FUCCI_layout.addWidget(self.propagate_FUCCI_checkbox)
+        annotate_FUCCI_layout.addLayout(clear_FUCCI_layout)
 
         FUCCI_tab_layout.addWidget(measure_FUCCI_widget)
         FUCCI_tab_layout.addWidget(annotate_FUCCI_widget)
 
         self.FUCCI_dropdown.currentIndexChanged.connect(self.FUCCI_overlay_changed)
         self.FUCCI_checkbox.stateChanged.connect(self.update_display)
-        self.FUCCI_frame_button.clicked.connect(self.measure_FUCCI_frame)
-        self.FUCCI_stack_button.clicked.connect(self.measure_FUCCI_stack)
+        FUCCI_frame_button.clicked.connect(self.measure_FUCCI_frame)
+        FUCCI_stack_button.clicked.connect(self.measure_FUCCI_stack)
+        self.propagate_FUCCI_checkbox.stateChanged.connect(self.propagate_FUCCI_toggled)
+        clear_frame_button.clicked.connect(self.clear_FUCCI_frame_pressed)
+        clear_stack_button.clicked.connect(self.clear_FUCCI_stack_pressed)
 
         return FUCCI_tab
     
+    def propagate_FUCCI_toggled(self, state):
+        ''' Propagate the FUCCI labels forward in time. '''
+        if state!=2 or not self.file_loaded:
+            return
+        if not hasattr(self.stack, 'tracked_centroids'):
+            self.statusBar().showMessage('No tracked centroids found.', 2000)
+            return
+        
+        self.convert_red_green()
+        self.stack.propagate_FUCCI_labels()
+        for frame in self.stack.frames:
+            self.get_red_green(frame)
+        self.FUCCI_overlay()
+    
+    def clear_FUCCI_frame_pressed(self):
+        if not self.file_loaded:
+            return
+        self.clear_FUCCI([self.frame])
+
+    def clear_FUCCI_stack_pressed(self):
+        if not self.file_loaded:
+            return
+        self.clear_FUCCI(self.stack.frames)
+
+    def clear_FUCCI(self, frames):
+        for frame in frames:
+            frame.set_cell_attr(['red', 'green'], [[False, False] for _ in range(frame.n)])
+        self.FUCCI_overlay()
+
     def vertical_spacer(self, spacing=None, hSizePolicy=QSizePolicy.Policy.Fixed, vSizePolicy=QSizePolicy.Policy.Fixed):
         if spacing is None:
             spacing=self.spacer
@@ -915,13 +972,13 @@ class MainWidget(QMainWindow):
             raise ValueError(f'Particle {particle} has {len(cell)} cells in frame {frame_number}')
         
     def split_particle_tracks(self):
-        self.stack.split_particle_track(self.selected_particle, self.frame_number)
+        self.stack.split_particle_track(self.selected_particle_n, self.frame_number)
         t=self.stack.tracked_centroids
-        self.selected_particle=self.particle_from_cell(self.selected_cell) # update the selected particle
+        self.selected_particle_n=self.particle_from_cell(self.selected_cell_n) # update the selected particle
         
         # assign a random color to the new particle
         new_color=self.canvas.cell_cmap(np.random.randint(self.canvas.cell_n_colors))
-        for cell in self.stack.get_particle(self.selected_particle):
+        for cell in self.stack.get_particle(self.selected_particle_n):
             cell.color_ID=new_color
 
         self.plot_particle_statistic()
@@ -1045,47 +1102,41 @@ class MainWidget(QMainWindow):
     def select_cell(self, particle=None, cell=None):
         ''' Select a cell or particle by number. '''
         if cell is not None:
-            self.selected_cell=cell
-            self.selected_particle=self.particle_from_cell(cell)
+            self.selected_cell_n=cell
+            self.selected_particle_n=self.particle_from_cell(cell)
         elif particle is not None:
-            self.selected_particle=particle
-            self.selected_cell=self.cell_from_particle(particle)
+            self.selected_particle_n=particle
+            self.selected_cell_n=self.cell_from_particle(particle)
         else:
-            self.selected_cell=None
-            self.selected_particle=None
+            self.selected_cell_n=None
+            self.selected_particle_n=None
         
-        self.update_cell_label(self.selected_cell)
-        self.update_tracking_ID_label(self.selected_particle)
+        self.update_cell_label(self.selected_cell_n)
+        self.update_tracking_ID_label(self.selected_particle_n)
         
-        if self.selected_particle is not None:
+        if self.selected_particle_n is not None:
             # put info about the particle in the right toolbar
             self.plot_particle_statistic()
 
         if not self.FUCCI_mode: # basic selection, not cell cycle classification
-            self.canvas.highlight_cells([self.selected_cell], alpha=0.3, color='white', layer='selection')
+            self.canvas.highlight_cells([self.selected_cell_n], alpha=0.3, color='white', layer='selection')
 
     def plot_particle_statistic(self):
         if not hasattr(self.stack, 'tracked_centroids'):
             return
         # TODO: follow through mitosis?
-        if self.selected_particle is None:
+        if self.selected_particle_n is None:
             timepoints, values=[], [] # empty plot
         else:
-            measurement_idx=self.get_selected_statistic()
-            measurement=['area', 'perimeter', 'circularity', 'cell_cycle'][measurement_idx]
-            color=self.canvas.cell_cmap(measurement_idx)[:3]
+            measurement=['area', 'perimeter', 'circularity', 'cell_cycle'][self.selected_statistic]
+            color=self.canvas.cell_cmap(self.selected_statistic)[:3]
             color=pg.mkColor([c*255 for c in color])
-            particle=self.get_selected_particle()
-            timepoints=[cell.frame for cell in particle]
+            timepoints=self.stack.get_particle_attr(self.selected_particle_n, 'frame')
             if measurement=='cell_cycle': # fetch up-to-date cell cycle classification
-                for cell in particle:
-                    if not hasattr(cell, 'green'):
-                        cell.green=False
-                        cell.red=False
-                green, red=np.array([[cell.green, cell.red] for cell in particle]).T
+                green, red=np.array(self.stack.get_particle_attr(self.selected_particle_n, ['green', 'red'], fill_value=False)).T
                 values=green+2*red
             else:
-                values=[getattr(cell, measurement) for cell in particle]
+                values=self.stack.get_particle_attr(self.selected_particle_n, measurement)
 
         # clear the plot
         self.particle_stat_plot.clear()
@@ -1093,7 +1144,8 @@ class MainWidget(QMainWindow):
         self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
         self.particle_stat_plot.plot(timepoints, values, pen=color, symbol='o', symbolPen='w', symbolBrush=color, symbolSize=7, width=4)
 
-    def get_selected_statistic(self):
+    @property
+    def selected_statistic(self):
         stats=[self.area_button.isChecked(), self.perimeter_button.isChecked(), self.circularity_button.isChecked(), self.cell_cycle_button.isChecked()]
         return stats.index(True)
 
@@ -1108,18 +1160,13 @@ class MainWidget(QMainWindow):
         if self.FUCCI_mode: # cell cycle classification
             if current_cell_n>=0:
                 self.select_cell(cell=current_cell_n)
-                cell=self.get_selected_cell()
+                cell=self.selected_cell
                 if event.button() == Qt.MouseButton.LeftButton:
-                    cell.green=not cell.green
+                    self.classify_cell_cycle(cell, 0)
                 if event.button() == Qt.MouseButton.RightButton:
-                    cell.red=not cell.red
+                    self.classify_cell_cycle(cell, 1)
                 if event.button() == Qt.MouseButton.MiddleButton:
-                    if cell.red and cell.green: # if orange, reset to none
-                        cell.green=False
-                        cell.red=False
-                    else: # otherwise, set to orange
-                        cell.green=True
-                        cell.red=True
+                    self.classify_cell_cycle(cell, 2)
                 self.FUCCI_overlay()
             else:
                 self.select_cell(None)
@@ -1127,8 +1174,8 @@ class MainWidget(QMainWindow):
         else:
             if event.button() == Qt.MouseButton.RightButton: 
                 if event.modifiers() == Qt.KeyboardModifier.ShiftModifier: # split particles
-                    self.selected_particle=self.particle_from_cell(current_cell_n)
-                    if self.selected_particle is not None:
+                    self.selected_particle_n=self.particle_from_cell(current_cell_n)
+                    if self.selected_particle_n is not None:
                         self.split_particle_tracks()
                 elif not self.drawing_cell_roi: # segmentation
                     self.drawing_cell_roi=True
@@ -1152,18 +1199,18 @@ class MainWidget(QMainWindow):
                         self.delete_cell_mask(current_cell_n)
                         self.select_cell(None) # deselect the cell
 
-                    elif event.modifiers() == Qt.KeyboardModifier.AltModifier and self.selected_cell is not None:
-                        self.merge_cell_masks(self.selected_cell, current_cell_n)
-                        self.select_cell(cell=self.selected_cell) # reselect the merged cell
+                    elif event.modifiers() == Qt.KeyboardModifier.AltModifier and self.selected_cell_n is not None:
+                        self.merge_cell_masks(self.selected_cell_n, current_cell_n)
+                        self.select_cell(cell=self.selected_cell_n) # reselect the merged cell
 
                     elif event.modifiers() == Qt.KeyboardModifier.ShiftModifier: # merge particles
-                        if self.selected_particle is not None:
+                        if self.selected_particle_n is not None:
                             second_particle=self.particle_from_cell(current_cell_n)
                             if second_particle is not None: # if a particle is found
-                                self.merge_particle_tracks(self.selected_particle, second_particle)
+                                self.merge_particle_tracks(self.selected_particle_n, second_particle)
                         self.select_cell(cell=current_cell_n)
 
-                    elif current_cell_n==self.selected_cell:
+                    elif current_cell_n==self.selected_cell_n:
                         # clicking the same cell again deselects it
                         self.select_cell(None)
 
@@ -1174,11 +1221,35 @@ class MainWidget(QMainWindow):
                 else: # clicked on background, deselect 
                     self.select_cell(None)
 
-    def get_selected_cell(self):
-        return self.frame.cells[self.selected_cell]
+    def classify_cell_cycle(self, cell, classification):
+        if classification==0:
+            cell.green=not cell.green
+        elif classification==1:
+            cell.red=not cell.red
+        else:
+            if cell.green and cell.red:
+                cell.green=False
+                cell.red=False
+            else:
+                cell.green=True
+                cell.red=True
+        
+        if self.propagate_FUCCI_checkbox.isChecked():
+            particle=self.stack.get_particle(cell)
+            for cell_timepoint in particle:
+                if cell_timepoint.frame>cell.frame:
+                    cell_timepoint.green=cell.green
+                    cell_timepoint.red=cell.red
+        
+        self.plot_particle_statistic()
+
+    @property
+    def selected_cell(self):
+        return self.frame.cells[self.selected_cell_n]
     
-    def get_selected_particle(self):
-        return self.stack.get_particle(self.selected_particle)
+    @property
+    def selected_particle(self):
+        return self.stack.get_particle(self.selected_particle_n)
 
     def mouse_moved(self, pos):
         ''' Dynamically update the cell mask overlay as the user draws a new cell. '''
@@ -1296,7 +1367,6 @@ class MainWidget(QMainWindow):
             del self.frame.mask_overlay
         
         self.plot_particle_statistic()
-        self.canvas.overlay_masks()
         self.update_display()
         
     def delete_cell_mask(self, cell_n):
@@ -1307,7 +1377,7 @@ class MainWidget(QMainWindow):
         
         self.frame.delete_cell(cell_n)
         self.remove_tracking_data(cell_n)
-        if self.selected_cell==cell_n:
+        if self.selected_cell_n==cell_n:
             # deselect the removed cell if it was selected
             self.select_cell(None)
             self.plot_particle_statistic()
@@ -1351,6 +1421,8 @@ class MainWidget(QMainWindow):
             return
         
         self.stack.tracked_centroids=self.load_tracking_data(file_path)
+        self.statusBar().showMessage(f'Loaded tracking data from {file_path}', 2000)
+        self.propagate_FUCCI_checkbox.setEnabled(True)
         self.tracked_recolor()
 
     def load_tracking_data(self, file_path):
@@ -1399,8 +1471,7 @@ class MainWidget(QMainWindow):
             frame.has_outlines=True
         
         try: # fetch cell cycle data if available
-            green, red=np.array(frame.get_cell_attr(['green', 'red'])).T
-            frame.cell_cycles=green+2*red
+            self.convert_red_green([frame])
             write_attrs=['cell_cycles']
 
         except AttributeError:
@@ -1411,6 +1482,19 @@ class MainWidget(QMainWindow):
         print(f'Saved frame to {file_path}')
         frame.name=file_path
         
+    def convert_red_green(self, frames=None):
+        ''' convert cell.red, cell.green attributes to FUCCI labeling for the stack.'''
+        if frames==None:
+            frames=self.stack.frames
+        for frame in frames:
+            try:
+                green, red=np.array(frame.get_cell_attr(['green', 'red'])).T
+            except AttributeError:
+                self.get_red_green(frame)
+                green, red=np.array(frame.get_cell_attr(['green', 'red'])).T
+            frame.cell_cycles=green+2*red
+            frame.set_cell_attr('cycle_stage', frame.cell_cycles)
+
     def FUCCI_overlay_changed(self):
         if not self.file_loaded:
             return
@@ -1448,6 +1532,7 @@ class MainWidget(QMainWindow):
 
         else:
             self.FUCCI_mode=True
+            self.canvas.clear_selection_overlay() # clear basic selection during FUCCI labeling
             if overlay_color == 'all':
                 colors=np.array(['g','r','orange'])
                 green, red=np.array(self.frame.get_cell_attr(['green', 'red'])).T
@@ -1480,8 +1565,8 @@ class MainWidget(QMainWindow):
             self.reset_display()
         else:
             # preserve selected cell if tracking info is available
-            if hasattr(self, 'selected_particle') and self.selected_particle is not None:
-                self.select_cell(particle=self.selected_particle)
+            if hasattr(self, 'selected_particle') and self.selected_particle_n is not None:
+                self.select_cell(particle=self.selected_particle_n)
             
             # or clear highlight
             else:
@@ -1596,8 +1681,8 @@ class MainWidget(QMainWindow):
         elif event.key() == Qt.Key.Key_Z:
             self.outlines_checkbox.toggle()
         elif event.key() == Qt.Key.Key_Delete:
-            if self.selected_cell is not None:
-                self.delete_cell_mask(self.selected_cell)
+            if self.selected_cell_n is not None:
+                self.delete_cell_mask(self.selected_cell_n)
 
         # reset visuals
         if event.key() == Qt.Key.Key_Escape:
@@ -1648,33 +1733,65 @@ class MainWidget(QMainWindow):
         self.RGB_checkboxes.clear()
 
     def add_RGB_checkboxes(self, layout):
-        self.channels_layout = QHBoxLayout()
-        self.channels_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.channels_layout.setSpacing(25)
+        self.color_channels_layout = QHBoxLayout()
+        self.color_channels_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.color_channels_layout.setSpacing(25)
         self.RGB_checkboxes = [QCheckBox(s, self) for s in ['R', 'G', 'B']]
         for checkbox in self.RGB_checkboxes:
             checkbox.setChecked(True)
-            self.channels_layout.addWidget(checkbox)
+            self.color_channels_layout.addWidget(checkbox)
         self.show_grayscale=QCheckBox("Grayscale", self)
         self.show_grayscale.setChecked(False)
         layout.addSpacerItem(self.vertical_spacer())
-        layout.addLayout(self.channels_layout)
+        layout.addLayout(self.color_channels_layout)
         layout.addWidget(self.show_grayscale)
         
         for checkbox in self.RGB_checkboxes:
             checkbox.stateChanged.connect(self.update_display)
         self.show_grayscale.stateChanged.connect(self.update_display)
 
+    def clear_channel_layout(self):
+        self.clear_layout(self.segmentation_channels_layout)
+    
+    def add_channel_layout(self, channel_layout):
+        self.membrane_channel=QComboBox(self)
+        self.membrane_channel.addItems(["Gray", "Red", "Green", "Blue"])
+        self.membrane_channel.setFixedWidth(70)
+        self.membrane_channel_label=QLabel("Membrane Channel:", self)
+        self.nuclear_channel=QComboBox(self)
+        self.nuclear_channel.addItems(["None", "Red", "Green", "Blue"])
+        self.nuclear_channel.setFixedWidth(70)
+        self.nuclear_channel_label=QLabel("Nuclear Channel:", self)
+
+        membrane_tab_layout=QHBoxLayout()
+        membrane_tab_layout.setSpacing(10)
+        membrane_tab_layout.addWidget(self.membrane_channel_label)
+        membrane_tab_layout.addWidget(self.membrane_channel)
+        nuclear_layout=QHBoxLayout()
+        nuclear_layout.setSpacing(5)
+        nuclear_layout.addWidget(self.nuclear_channel_label)
+        nuclear_layout.addWidget(self.nuclear_channel)
+
+        channel_layout.addLayout(membrane_tab_layout)
+        channel_layout.addLayout(nuclear_layout)
+
+        return channel_layout
+
     def grayscale_mode(self):
         self.clear_LUT_sliders()
         self.clear_RGB_checkboxes()
         self.add_grayscale_sliders(self.slider_layout)
+        self.clear_channel_layout()
+        self.membrane_channel.setCurrentIndex(0)
+        self.nuclear_channel.setCurrentIndex(0)
 
     def RGB_mode(self):
         self.clear_LUT_sliders()
         self.clear_RGB_checkboxes()
         self.add_RGB_checkboxes(self.RGB_checkbox_layout)
         self.add_RGB_sliders(self.slider_layout)
+        self.clear_channel_layout()
+        self.add_channel_layout(self.segmentation_channels_layout)
 
     def labeled_LUT_slider(self, slider_name=None):
         labels_and_slider=QHBoxLayout()
@@ -1740,7 +1857,10 @@ class MainWidget(QMainWindow):
         self.file_loaded=True
         if tracked_centroids is not None:
             self.stack.tracked_centroids=tracked_centroids
+            self.propagate_FUCCI_checkbox.setEnabled(True)
             self.tracked_recolor()
+        else:
+            self.propagate_FUCCI_checkbox.setEnabled(False)
 
         out_message=f'Loaded stack {self.stack.name} with {len(self.stack.frames)} frames.'
         print(out_message)

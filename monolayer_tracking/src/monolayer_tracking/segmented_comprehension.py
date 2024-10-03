@@ -430,7 +430,7 @@ class TimeSeries:
                 mother_cell = self.frames[potential_mother_ID['frame'].item()].cells[potential_mother_ID['cell_number'].item()]
                 
                 # Potential mother attributes
-                m_size = np.sqrt(mother_cell.area())
+                m_size = np.sqrt(mother_cell.area)
                 extended_mother = trajectories.loc[potential_mother_ID['particle']].iloc[-3:].reset_index()
                 m_circ = 1 - np.max([self.frames[frame_number].cells[cell_number].circularity for frame_number, cell_number in np.array(extended_mother[['frame', 'cell_number']])])
                 
@@ -440,7 +440,7 @@ class TimeSeries:
                 for frame_number, cell_number in np.array(potential_daughter_IDs[['frame', 'cell_number']]):
                     daughter_cell = self.frames[frame_number].cells[cell_number]
                     d_circs.append(daughter_cell.circularity)
-                    d_areas.append(daughter_cell.area())
+                    d_areas.append(daughter_cell.area)
                 d_circs = 1 - np.array(d_circs)
                 d_areas = np.array(d_areas)
 
@@ -508,7 +508,7 @@ class Image:
         else:
             pass
 
-    def __init__(self, file_path, frame_number=None, mend=False, max_gap_size=300, verbose=False, overwrite=False, load_img=False, normalize=False, scale=0.3225, units='microns'):
+    def __init__(self, file_path, frame_number=None, mend=False, max_gap_size=300, verbose=False, overwrite=False, load_img=False, normalize=False, scale=None, units=None):
         '''
         takes a file path and loads the data.
         
@@ -520,12 +520,7 @@ class Image:
         Normalize=True sets the maximum img value to 1.
         '''
         import cellpose.utils as cp_utils
-
-        # Set pixel units and scale
-        self.units = units  # Units for measurements
-        self.scale = scale  # Scale factor for converting pixels to desired units
-        self.frame_number = frame_number  # Frame number for the image sequence
-
+        
         # Print debug statements if verbose mode is enabled
         self.verbose = verbose
 
@@ -535,9 +530,23 @@ class Image:
         # Load data from file
         data = np.load(file_path, allow_pickle=True).item()
 
-        # Fetch data and metadata from seg.npy
+        if not hasattr(data, 'img') and hasattr(data, 'filename'):
+            # this seg.npy was made with the cellpose GUI
+            data=preprocessing.convert_GUI_seg(data)
+
+        # Fetch metadata from seg.npy
         self.name = file_path  # File name
         self.n = np.max(data['masks'])  # Number of detected cells in field of view (FOV)
+
+        for attr in set(data.keys()).difference(['img', 'masks', 'outlines', 'outlines_list']):
+            setattr(self, attr, data[attr])  # Load all attributes aside from stuff treated later on
+
+        # Set pixel units and scale (if specified)
+        if units is not None:
+            self.units = units  # Units for measurements
+        if scale is not None:
+            self.scale = scale  # Scale factor for converting pixels to desired units
+        self.frame_number = frame_number  # Frame number for the image sequence
         
         # Load image if specified or for overwriting
         if load_img or overwrite:
@@ -581,11 +590,6 @@ class Image:
         else:
             outlines_list = data['outlines_list']  # Load outlines_list from file
         
-        # Set additional attributes from data file
-        for attr in set(data.keys()).difference(['img', 'masks', 'outlines', 'outlines_list']):
-            setattr(self, attr, data[attr])  # Set additional attributes
-        
-        
         # Overwrite file if specified
         if overwrite:
             export = {'img': data['img'], 'masks': self.masks, 'outlines': self.outlines, 'outlines_list': outlines_list}
@@ -599,6 +603,7 @@ class Image:
         # Instantiate Cell objects for each cell labeled in the image
         self.cells = np.array([Cell(n, outlines_list[n], frame_number=frame_number) for n in range(self.n)])
         
+        # assign cell cycle to cell objects
         if hasattr(self, 'cell_cycles'):
             self.write_cell_cycle(self.cell_cycles)
 
@@ -620,11 +625,14 @@ class Image:
 
             
         export={'img':img, 'masks':self.masks, 'outlines':self.outlines, 'outlines_list':outlines_list}
-        for attr in write_attrs:
-            export[attr]=getattr(self, attr)
 
-        if hasattr(self, 'FUCCI'): # export FUCCI channels if present
-            export['FUCCI']=self.FUCCI
+        optional_attrs=['FUCCI','cell_cycles','volumes','masks_3d','scale','z_scale', 'units'] # if any of these exist, may as well export them
+        for attr in optional_attrs:
+            if hasattr(self, attr):
+                write_attrs.append(attr)
+
+        for attr in set(write_attrs): # write any additional attributes. Set is used to avoid duplicates.
+            export[attr]=getattr(self, attr)
 
         if export_path is None: # if no export path is given, overwrite existing file
             export_path=self.name
@@ -657,7 +665,8 @@ class Image:
         """
         # Ensure FUCCI data is available
         if not hasattr(self, 'FUCCI'):  # Check if FUCCI data exists
-            raise AttributeError('use FUCCI_preprocess.ipynb to generate FUCCI data first')
+            print('No FUCCI channel found. Using image data for FUCCI measurements.')
+            self.FUCCI=np.array([self.img[...,0], self.img[...,1]])  # Use image data for FUCCI measurements
         nuclear_size_threshold=np.median(self.cell_areas(scaled=False))*percent_threshold
         red, green = self.FUCCI
         
@@ -873,6 +882,7 @@ class HeightMap(Image):
     def __init__(self, seg_path, mesh_path=None, zero_to_nan=True, scale=0.1625, z_scale=0.3225, NORI=False, **kwargs):
         if mesh_path is None:
             mesh_path=seg_path.replace('segmented','heights').replace('seg.npy', 'binarized.tif')
+        self.z_scale=z_scale
         self.z, self.height_img=preprocessing.read_height_tif(mesh_path, z_scale=z_scale, zero_to_nan=zero_to_nan)
         super().__init__(seg_path, scale=scale, **kwargs)
 

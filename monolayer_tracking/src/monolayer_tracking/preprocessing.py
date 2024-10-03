@@ -4,6 +4,62 @@ from multiprocessing import Pool
 from functools import partial
 from skimage import io
 
+def convert_GUI_seg(seg, multiprocess=False, remove_edge_masks=True, mend=False, max_gap_size=20, export=False, out_path=None):
+    ''' convert a segmentation image from the GUI to a format that can be used by the tracking algorithm '''
+    from cellpose.utils import masks_to_outlines
+
+    img_path=seg['filename']
+    img=io.imread(img_path)
+    masks=seg['masks']
+    if remove_edge_masks:
+        if img.ndim==2:
+            membrane=img
+        elif img.ndim==3:
+            color_channel=np.argmin(img.shape)
+            membrane=img.take(-1, axis=color_channel)
+        masks=remove_edge_masks_tile(membrane, masks)
+
+    if mend:
+        masks, _ =mend_gaps(masks, max_gap_size)
+
+    if multiprocess:
+        from cellpose.utils import outlines_list_multi
+        outlines_list=outlines_list_multi(masks)
+    else:
+        from cellpose.utils import outlines_list
+        outlines_list=outlines_list(masks)
+
+    outlines=masks_to_outlines(masks)
+
+    out_dict={'img':img, 'masks':masks, 'outlines':outlines, 'outlines_list':outlines_list}
+    if export:
+        if out_path is None:
+            out_path=seg.replace('.tif', '_seg.npy')
+        
+        if not out_path.endswith('seg.npy'):
+            out_path+='_seg.npy'
+        np.save(out_path, out_dict)
+    
+    return out_dict
+
+def get_stitched_boundary(membrane, radius=2):
+    from scipy.signal import convolve2d
+
+    boundary=convolve2d(membrane==0, np.ones((2*radius+1,2*radius+1)), mode='same')!=0
+    boundary[0]=boundary[-1]=boundary[:,0]=boundary[:,-1]=True
+
+    return boundary
+
+def remove_edge_masks_tile(membrane, masks, radius=2):
+    boundary=get_stitched_boundary(membrane, radius)
+    # remove all masks that touch the edge
+    edge_masks=np.unique(masks[boundary])[1:]
+    
+    new_masks=masks.copy()
+    new_masks[np.isin(new_masks, edge_masks)]=0
+    new_masks=np.unique(new_masks, return_inverse=True)[1].reshape(masks.shape) # renumber masks to consecutive integers with edge masks removed
+    return new_masks
+
 def read_height_tif(file_path, z_scale=1, zero_to_nan=True):
     height_img=io.imread(file_path).astype(bool) # binary image
     #top_surface=img.shape[0]-np.argmax(np.flip(img, axis=0), axis=0).astype(float) # first nonzero value from the top of the z stack

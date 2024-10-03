@@ -27,11 +27,13 @@ from tqdm import tqdm
 
 # TODO: get_mitoses, visualize mitoses, edit mitoses
 
+# TODO: QProgressBar for frame operations
 # TODO: FUCCI tab - show cc occupancies as a stacked bar
 # TODO: expand/collapse segmentation plot
 # TODO: undo/redo
 # TODO: load TIFs
 # TODO: segmentation channel 2 "FUCCI" option which blends R and G channels
+# TODO: some image pyramid approach to speed up work on large images??
 
 darktheme_stylesheet = """
     QWidget {
@@ -425,7 +427,7 @@ class MainWidget(QMainWindow):
         segmentation_button_layout.addWidget(self.segment_frame_button)
         segmentation_button_layout.addWidget(self.segment_stack_button)
 
-
+        # segmentation utilities
         segmentation_utils_widget=QWidget(objectName='bordered')
         segmentation_utils_layout=QVBoxLayout(segmentation_utils_widget)
         mend_remove_layout=QHBoxLayout()
@@ -440,6 +442,7 @@ class MainWidget(QMainWindow):
         self.gap_size.setValidator(QIntValidator(bottom=0)) # non-negative integers only
         gap_size_layout.addWidget(gap_size_label)
         gap_size_layout.addWidget(self.gap_size)
+        regenerate_outlines_button=QPushButton("Regenerate Outlines", self)
         operate_on_label=QLabel("Operate on:", self)
         operate_on_layout=QHBoxLayout()
         self.segment_on_frame=QRadioButton("Frame", self)
@@ -457,6 +460,7 @@ class MainWidget(QMainWindow):
 
         segmentation_utils_layout.addLayout(mend_remove_layout)
         segmentation_utils_layout.addLayout(gap_size_layout)
+        segmentation_utils_layout.addWidget(regenerate_outlines_button)
         segmentation_utils_layout.addWidget(operate_on_label)
         segmentation_utils_layout.addLayout(operate_on_layout)
 
@@ -470,6 +474,7 @@ class MainWidget(QMainWindow):
         self.cell_diameter_calibrate.clicked.connect(self.calibrate_diameter_pressed)
         self.segment_frame_button.clicked.connect(self.segment_frame_pressed)
         self.segment_stack_button.clicked.connect(self.segment_stack_pressed)
+        regenerate_outlines_button.clicked.connect(self.regenerate_outlines)
 
         return segmentation_tab
     
@@ -851,7 +856,7 @@ class MainWidget(QMainWindow):
             birth_cells=t[(t.frame==self.frame_number)&t.particle.isin(births)]['cell_number']
             death_cells=t[(t.frame==self.frame_number)&t.particle.isin(deaths)]['cell_number']
             both=np.intersect1d(birth_cells, death_cells)
-            colors=['lime']*len(birth_cells)+['red']*len(death_cells)+['orange']*len(both)
+            colors=['lime']*len(birth_cells)+['red']*len(death_cells)+['orange']*len(both) # TODO: pick better colors which don't overlap with FUCCI
             self.canvas.highlight_cells(np.concatenate([birth_cells, death_cells, both]), alpha=0.5, cell_colors=colors, layer='tracking', img_type='outlines')
 
         else:
@@ -930,7 +935,7 @@ class MainWidget(QMainWindow):
                 del frame.mask_overlay # remove the mask_overlay attribute to force recoloring
             
         t=self.stack.tracked_centroids
-        colors=np.random.randint(0, self.canvas.cell_n_colors, size=t['particle'].nunique())
+        colors=np.random.randint(0, self.canvas.cell_n_colors, size=t['particle'].max()+1)
         t['color']=colors[t['particle']]
         for frame in self.stack.frames:
             tracked_frame=t[t.frame==frame.frame_number].sort_values('cell_number')
@@ -1035,8 +1040,6 @@ class MainWidget(QMainWindow):
     def get_LUT_slider_values(self):
         ''' Get the current values of the LUT sliders. '''
         slider_values=[slider.value() for slider in self.LUT_range_sliders]
-        if self.is_grayscale:
-            slider_values=slider_values[0]
         
         return slider_values
     
@@ -1105,42 +1108,38 @@ class MainWidget(QMainWindow):
         elif particle is not None:
             self.selected_particle_n=particle
             self.selected_cell_n=self.cell_from_particle(particle)
-        else:
+        else: # clear selection
             self.selected_cell_n=None
             self.selected_particle_n=None
         
         self.update_cell_label(self.selected_cell_n)
         self.update_tracking_ID_label(self.selected_particle_n)
         
-        if self.selected_particle_n is not None:
-            # put info about the particle in the right toolbar
-            self.plot_particle_statistic()
+        # put info about the particle in the right toolbar
+        self.plot_particle_statistic()
 
         if not self.FUCCI_mode: # basic selection, not cell cycle classification
             self.canvas.highlight_cells([self.selected_cell_n], alpha=0.3, color='white', layer='selection')
 
     def plot_particle_statistic(self):
-        if not hasattr(self.stack, 'tracked_centroids'):
+        if not self.file_loaded or not hasattr(self.stack, 'tracked_centroids'):
             return
         # TODO: follow through mitosis?
-        if self.selected_particle_n is None:
-            timepoints, values=[], [] # empty plot
-        else:
-            measurement=['area', 'perimeter', 'circularity', 'cell_cycle'][self.selected_statistic]
-            color=self.canvas.cell_cmap(self.selected_statistic)[:3]
-            color=pg.mkColor([c*255 for c in color])
+        measurement=['area', 'perimeter', 'circularity', 'cell_cycle'][self.selected_statistic]
+        # clear the plot
+        self.particle_stat_plot.clear()
+        self.particle_stat_plot.setLabel('left', measurement)
+        self.particle_stat_plot.addItem(self.stat_plot_frame_marker) # add the frame marker line
+
+        if self.selected_particle_n is not None:
+            color=pg.mkColor(np.array(self.canvas.cell_cmap(self.selected_statistic)[:3])*255)
             timepoints=self.stack.get_particle_attr(self.selected_particle_n, 'frame')
             if measurement=='cell_cycle': # fetch up-to-date cell cycle classification
                 green, red=np.array(self.stack.get_particle_attr(self.selected_particle_n, ['green', 'red'], fill_value=False)).T
                 values=green+2*red
             else:
                 values=self.stack.get_particle_attr(self.selected_particle_n, measurement)
-
-        # clear the plot
-        self.particle_stat_plot.clear()
-        self.particle_stat_plot.setLabel('left', measurement)
-        self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
-        self.particle_stat_plot.plot(timepoints, values, pen=color, symbol='o', symbolPen='w', symbolBrush=color, symbolSize=7, width=4)
+            self.particle_stat_plot.plot(timepoints, values, pen=color, symbol='o', symbolPen='w', symbolBrush=color, symbolSize=7, width=4)
 
     @property
     def selected_statistic(self):
@@ -1366,7 +1365,22 @@ class MainWidget(QMainWindow):
         
         self.plot_particle_statistic()
         self.update_display()
-        
+
+    def regenerate_outlines(self):
+        if not self.file_loaded:
+            return
+
+        if self.segment_on_stack.isChecked():
+            frames=tqdm(self.stack.frames)
+        else:
+            frames=[self.frame]
+
+        for frame in frames:
+            outlines=utils.outlines_list(frame.masks)
+            for cell, outline in zip(frame.cells, outlines):
+                cell.outline=outline
+        self.statusBar().showMessage('Regenerated outlines.', 1000)
+
     def delete_cell_mask(self, cell_n):
         to_clear=self.frame.masks==cell_n+1
         self.frame.masks[to_clear]=0
@@ -1463,7 +1477,7 @@ class MainWidget(QMainWindow):
             file_path=frame.name
         if not frame.has_outlines:
             print('Generating outlines...')
-            outlines_list=utils.outlines_list_multi(frame.masks)
+            outlines_list=utils.outlines_list(frame.masks)
             for cell, outline in zip(frame.cells, outlines_list):
                 cell.outline=outline
             frame.has_outlines=True

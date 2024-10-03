@@ -2,6 +2,8 @@ from PyQt6.QtCore import pyqtSignal, pyqtSlot, QThread, Qt
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLineEdit, QMainWindow
 from PyQt6.QtGui import QIcon
 import importlib.resources
+import io
+import sys
 
 
 class CommandLineWindow(QMainWindow):
@@ -118,22 +120,42 @@ class CodeExecutionWorker(QThread):
         self.locals_dict = locals_dict
 
     def run(self):
+        # Create a buffer to capture stdout
+        output_buffer = io.StringIO()
+        error = ""
+
+        # Redirect stdout to the buffer
+        sys_stdout = sys.stdout
+        sys.stderr = sys.stderr
+        sys.stdout = output_buffer
+        sys.stderr = output_buffer
+
         try:
             # First attempt eval (for expressions)
             output = str(eval(self.code, self.globals_dict, self.locals_dict))
             error = ""
+
         except SyntaxError:
             # If it’s not an expression, run it as a statement using exec
             try:
                 exec(self.code, self.globals_dict, self.locals_dict)
-                output = ""
-                error = ""
+                output = "" # No output for statements
             except Exception as e:
                 output = ""
                 error = str(e)
+
         except Exception as e:
             output = ""
             error = str(e)
+
+        finally:
+            # Restore stdout
+            sys.stdout = sys_stdout
+            sys.stderr = sys.stderr
+
+        if not output or output=='None':
+            output=output_buffer.getvalue()
+        output_buffer.close()
 
         # Emit the result and any error message back to the main thread
         self.execution_done.emit(output, error)

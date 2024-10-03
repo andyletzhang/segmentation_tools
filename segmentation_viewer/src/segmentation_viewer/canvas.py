@@ -218,7 +218,7 @@ class PyQtGraphCanvas(QWidget):
                     self.img_data[..., i] = 0
             
         # Grayscale checkbox
-        #if not self.parent.is_grayscale and self.parent.show_grayscale.isChecked():
+        #if not self.parent.show_grayscale and self.parent.show_grayscale.isChecked():
         #    self.img_data = np.mean(self.img_data, axis=-1) # TODO: incorporate LUTs?
 
         # update segmentation overlay
@@ -278,38 +278,47 @@ class RGB_ImageItem():
         if img_data is None:
             img_data=np.zeros((512, 512, 3), dtype=np.uint8)
         self.img_data=img_data
-        self.redItem=pg.ImageItem(self.img_data[..., 0])
-        self.greenItem=pg.ImageItem(self.img_data[..., 1])
-        self.blueItem=pg.ImageItem(self.img_data[..., 2])
+        self.red=pg.ImageItem(self.img_data[..., 0])
+        self.green=pg.ImageItem(self.img_data[..., 1])
+        self.blue=pg.ImageItem(self.img_data[..., 2])
 
         # Add items to the view
-        plot.addItem(self.redItem)
-        plot.addItem(self.greenItem)
-        plot.addItem(self.blueItem)
+        plot.addItem(self.red)
+        plot.addItem(self.green)
+        plot.addItem(self.blue)
 
-        self.redItem.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
-        self.greenItem.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
-        self.blueItem.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
-        self.RGB_mode()
+        self.red.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+        self.green.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+        self.blue.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+        self.setLookupTable('RGB')
 
+        self.show_grayscale=False
         self.is_grayscale=False
         self.toggle_grayscale()
     
     def setImage(self, img_data):
         self.img_data=img_data
-        self.redItem.setImage(self.img_data[..., 0])
-        self.greenItem.setImage(self.img_data[..., 1])
-        self.blueItem.setImage(self.img_data[..., 2])
+        if img_data.ndim==2:
+            self.is_grayscale=True
+            self.red.setImage(self.img_data)
+            self.green.clear()
+            self.blue.clear()
+            self.setLookupTable('gray')
+        else: # RGB image
+            self.red.setImage(self.img_data[..., 0])
+            self.green.setImage(self.img_data[..., 1])
+            self.blue.setImage(self.img_data[..., 2])
+            self.setLookupTable('RGB')
 
     def toggle_grayscale(self):
-        if self.is_grayscale:
-            self.grayscale_mode()
+        if self.show_grayscale:
+            self.setLookupTable('gray')
         else:
-            self.RGB_mode()
+            self.setLookupTable('RGB')
 
     def setLevels(self, levels):
         ''' Update the levels of the image items based on the sliders. '''
-        for l, item in zip(levels, [self.redItem, self.greenItem, self.blueItem]):
+        for l, item in zip(levels, [self.red, self.green, self.blue]):
             item.setLevels(l)
 
     def create_lut(self, color):
@@ -318,21 +327,24 @@ class RGB_ImageItem():
             lut[i] = [color.red() * i // 255, color.green() * i // 255, color.blue() * i // 255]
         return lut
     
-    def grayscale_mode(self):
-        # Grayscale mode
-        gray_lut = self.create_lut(QColor(255, 255, 255))
-        self.redItem.setLookupTable(gray_lut)
-        self.greenItem.setLookupTable(gray_lut)
-        self.blueItem.setLookupTable(gray_lut)
-    
-    def RGB_mode(self):
-        # Color mode
-        self.redItem.setLookupTable(self.create_lut(QColor(255, 0, 0)))
-        self.greenItem.setLookupTable(self.create_lut(QColor(0, 255, 0)))
-        self.blueItem.setLookupTable(self.create_lut(QColor(0, 0, 255)))
+    def setLookupTable(self, lut_style):
+        ''' Set the lookup table for the image items. '''
+        if lut_style=='gray':
+            luts=self.gray_lut()
+        elif lut_style=='RGB':
+            luts=self.RGB_lut()
+
+        for item, lut in zip([self.red, self.green, self.blue], luts):
+            item.setLookupTable(lut)
+
+    def gray_lut(self):
+        return [self.create_lut(QColor(255, 255, 255))]*3
+
+    def RGB_lut(self):
+        return [self.create_lut(QColor(255, 0, 0)), self.create_lut(QColor(0, 255, 0)), self.create_lut(QColor(0, 0, 255))]
 
     def set_grayscale(self, grayscale):
-        self.is_grayscale=grayscale
+        self.show_grayscale=grayscale
         self.toggle_grayscale()
 
 class CellMaskPolygon(QGraphicsPolygonItem):

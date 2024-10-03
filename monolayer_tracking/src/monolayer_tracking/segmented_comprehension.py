@@ -530,7 +530,7 @@ class Image:
         # Load data from file
         data = np.load(file_path, allow_pickle=True).item()
 
-        if not hasattr(data, 'img') and hasattr(data, 'filename'):
+        if not 'img' in data.keys() and 'filename' in data.keys():
             # this seg.npy was made with the cellpose GUI
             data=preprocessing.convert_GUI_seg(data)
 

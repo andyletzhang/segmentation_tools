@@ -22,6 +22,7 @@ import importlib.resources
 from tqdm import tqdm
 
 # TODO: buttons to clear masks, clear tracking
+# TODO: mouseover shows pixel RGB values
 # TODO: add mouse and keyboard shortcuts to interface
 # TODO: normalize the summed channels when show_grayscale
 
@@ -1146,6 +1147,35 @@ class MainWidget(QMainWindow):
         stats=[self.area_button.isChecked(), self.perimeter_button.isChecked(), self.circularity_button.isChecked(), self.cell_cycle_button.isChecked()]
         return stats.index(True)
 
+    def FUCCI_click(self, event, current_cell_n):
+        if current_cell_n>=0:
+            self.select_cell(cell=current_cell_n)
+            cell=self.selected_cell
+            if event.button() == Qt.MouseButton.LeftButton:
+                self.classify_cell_cycle(cell, 0)
+            if event.button() == Qt.MouseButton.RightButton:
+                self.classify_cell_cycle(cell, 1)
+            if event.button() == Qt.MouseButton.MiddleButton:
+                self.classify_cell_cycle(cell, 2)
+        else:
+            self.select_cell(None)
+
+    def segmentation_click(self, event):
+        if not self.drawing_cell_roi:
+            self.drawing_cell_roi=True
+            self.cell_roi.points=[]
+
+            x, y = self.canvas.get_plot_coords(event.scenePos(), pixels=True)
+            # Add the first handle
+            self.cell_roi.add_vertex(y, x)
+            self.cell_roi.first_handle_pos=np.array((y, x))
+            self.cell_roi.last_handle_pos=np.array((y, x))
+
+            self.roi_is_closeable=False
+            
+        else:
+            self.close_cell_roi()
+
     def on_click(self, event):
         # TODO: split this into separate functions for clarity
         if not self.file_loaded:
@@ -1155,18 +1185,7 @@ class MainWidget(QMainWindow):
         current_cell_n = self.get_cell(x, y)
         
         if self.FUCCI_mode: # cell cycle classification
-            if current_cell_n>=0:
-                self.select_cell(cell=current_cell_n)
-                cell=self.selected_cell
-                if event.button() == Qt.MouseButton.LeftButton:
-                    self.classify_cell_cycle(cell, 0)
-                if event.button() == Qt.MouseButton.RightButton:
-                    self.classify_cell_cycle(cell, 1)
-                if event.button() == Qt.MouseButton.MiddleButton:
-                    self.classify_cell_cycle(cell, 2)
-                self.FUCCI_overlay()
-            else:
-                self.select_cell(None)
+            self.FUCCI_click(event, current_cell_n)
 
         else:
             if event.button() == Qt.MouseButton.RightButton: 
@@ -1174,20 +1193,8 @@ class MainWidget(QMainWindow):
                     self.selected_particle_n=self.particle_from_cell(current_cell_n)
                     if self.selected_particle_n is not None:
                         self.split_particle_tracks()
-                elif not self.drawing_cell_roi: # segmentation
-                    self.drawing_cell_roi=True
-                    self.cell_roi.points=[]
-
-                    x, y = self.canvas.get_plot_coords(event.scenePos(), pixels=True)
-                    # Add the first handle
-                    self.cell_roi.add_vertex(y, x)
-                    self.cell_roi.first_handle_pos=np.array((y, x))
-                    self.cell_roi.last_handle_pos=np.array((y, x))
-
-                    self.roi_is_closeable=False
-                    
-                else:
-                    self.close_cell_roi()
+                else: # segmentation
+                    self.segmentation_click(event)
 
             elif event.button() == Qt.MouseButton.LeftButton:
                 if  current_cell_n>=0:
@@ -1237,7 +1244,19 @@ class MainWidget(QMainWindow):
                 if cell_timepoint.frame>cell.frame:
                     cell_timepoint.green=cell.green
                     cell_timepoint.red=cell.red
-        
+
+        if self.FUCCI_mode:
+            overlay_color=self.FUCCI_dropdown.currentText().lower()
+            if overlay_color=='all':
+                color=['none','g','r','orange'][2*cell.red+cell.green]
+            elif overlay_color=='green':
+                color=['none', 'g'][cell.green]
+            elif overlay_color=='red':
+                color=['none', 'r'][cell.red]
+            else:
+                color='none'
+            self.canvas.add_cell_highlight(cell.n, alpha=1, color=color, img_type='outlines', layer='FUCCI')
+
         self.plot_particle_statistic()
 
     @property
@@ -1538,7 +1557,7 @@ class MainWidget(QMainWindow):
         """Handle cell cycle overlay options."""
         overlay_color=self.FUCCI_dropdown.currentText().lower()
         if self.tabbed_menu_widget.currentIndex()!=1 or overlay_color=='none':
-            self.canvas.clear_FUCCI_overlay()
+            self.canvas.clear_FUCCI_overlay() # clear FUCCI overlay during basic selection
             self.FUCCI_mode=False
             return
 

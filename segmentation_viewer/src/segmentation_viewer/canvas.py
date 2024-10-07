@@ -165,6 +165,78 @@ class PyQtGraphCanvas(QWidget):
         layer[1].setImage(opaque_mask)
         return mask_overlay, opaque_mask
 
+    def add_cell_highlight(self, cell_index, layer='selection', alpha=0.3, color='white', img_type='masks', seg_type='masks'):
+        from matplotlib.colors import to_rgb
+        masks = self.parent.frame.masks
+
+        # Get the specified overlay layer: selection for highlighting, mask for colored masks
+        layer = getattr(self, f'{layer}_overlay')
+
+        cell_mask=masks == cell_index + 1
+        cell_mask=np.rot90(cell_mask, 3)
+        cell_mask=np.fliplr(cell_mask)
+
+        if color=='none':
+            # remove the cell from the overlay
+            layer[0].image[cell_mask] = 0
+            layer[1].image[cell_mask] = 0
+
+            layer[0].setImage(layer[0].image)
+            layer[1].setImage(layer[1].image)
+            return None, None
+        
+        # Convert color to RGBA
+        color = [*to_rgb(color), alpha]
+        
+        # get bounding box of cell mask
+        xmin, xmax, ymin, ymax=self.get_bounding_box(cell_mask)
+
+        cell_mask_bbox=cell_mask[xmin:xmax, ymin:ymax]
+        # Get the mask for the specified cell
+        img_cell_mask = cell_mask_bbox[..., np.newaxis] * color
+        # Create an opaque mask for the specified cell
+        seg_cell_mask = img_cell_mask.copy()
+        seg_cell_mask[cell_mask_bbox, -1] = 1
+
+        if img_type == 'outlines' or seg_type == 'outlines':
+            outlines=self.parent.frame.outlines
+            outlines=np.rot90(outlines, 3)
+            outlines=np.fliplr(outlines)
+            outlines=outlines[xmin:xmax, ymin:ymax]
+            if img_type == 'outlines':
+                img_cell_mask[~outlines] = 0
+            if seg_type == 'outlines':
+                seg_cell_mask[~outlines] = 0
+
+        # Rotate and flip the masks to match the display orientation
+        # Add the cell mask to the existing overlay
+        layer[0].image[xmin:xmax, ymin:ymax][cell_mask_bbox] = img_cell_mask[cell_mask_bbox]
+        layer[1].image[xmin:xmax, ymin:ymax][cell_mask_bbox] = seg_cell_mask[cell_mask_bbox]
+
+        # Update the overlay images
+        layer[0].setImage(layer[0].image)
+        layer[1].setImage(layer[1].image)
+        return img_cell_mask, seg_cell_mask
+    
+    def get_bounding_box(self, cell_mask):
+        # UTIL
+        # Find the rows and columns that contain True values
+        rows = np.any(cell_mask, axis=1)
+        cols = np.any(cell_mask, axis=0)
+        
+        # Find the indices of these rows and columns
+        row_indices = np.where(rows)[0]
+        col_indices = np.where(cols)[0]
+        
+        # Calculate the bounding box coordinates
+        if row_indices.size and col_indices.size:
+            min_row, max_row = row_indices[[0, -1]]
+            min_col, max_col = col_indices[[0, -1]]
+            return min_row, max_row, min_col, max_col
+        else:
+            # If no True values are found, return None
+            return None
+
     def clear_selection_overlay(self):
         self.selection_overlay[0].clear()
         self.selection_overlay[1].clear()
@@ -371,12 +443,22 @@ class CellMaskPolygon(QGraphicsPolygonItem):
 
     def get_enclosed_pixels(self):
         ''' Return all pixels enclosed by the polygon. '''
-        points=[(p.y()-0.5, p.x()-0.5) for p in self.points]
-        shapely_polygon=Polygon(points).buffer(0.1)
-        xmin, ymin, xmax, ymax=shapely_polygon.bounds
-        x, y = np.meshgrid(np.arange(int(xmin), int(xmax)+1), np.arange(int(ymin), int(ymax)+1))
+        from skimage.draw import polygon
 
-        bbox_grid=np.vstack((x.flatten(), y.flatten())).T
-        enclosed_pixels=np.array([tuple(p) for p in bbox_grid if shapely_polygon.contains(Point(p))])
+        points = [(p.x(), p.y()-0.5) for p in self.points]
+        shapely_polygon = Polygon(points).buffer(0.1)
+        
+        # Get the bounding box of the polygon
+        xmin, ymin, xmax, ymax = shapely_polygon.bounds
+        xmin, ymin, xmax, ymax = map(int, [xmin, ymin, xmax, ymax])
+        
+        # Get the coordinates of the polygon vertices
+        poly_verts = np.array(shapely_polygon.exterior.coords)
+        
+        # Use skimage.draw.polygon to get the pixels within the polygon
+        rr, cc = polygon(poly_verts[:, 1] - ymin, poly_verts[:, 0] - xmin)
+                
+        # Adjust the coordinates to the original image space
+        enclosed_pixels = np.vstack((rr + ymin, cc + xmin)).T
         
         return enclosed_pixels

@@ -98,9 +98,11 @@ class TimeSeries:
         first_particle=t.loc[t.particle==first_ID]
         second_particle=t.loc[t.particle==second_ID]
         # if necessary, split particles at the frame of interest
+        new_head, new_tail=None, None
         if np.any([first_particle.frame>=frame]):
-            self.split_particle_track(first_ID, frame)
+            new_tail=self.split_particle_track(first_ID, frame)
         if np.any([second_particle.frame<frame]):
+            new_head=second_ID
             second_ID=self.split_particle_track(second_ID, frame) # reassign second_ID in case of split
 
         # merge particles
@@ -110,7 +112,7 @@ class TimeSeries:
         particles=np.unique(t['particle'])
         t['particle']=np.searchsorted(particles, t['particle'])
 
-        return t
+        return new_head, new_tail
 
     def split_particle_track(self, particle_ID, split_frame):
         """
@@ -618,9 +620,9 @@ class Image:
         data=np.load(self.name, allow_pickle=True).item()
         outlines_list=[cell.outline for cell in self.cells]
 
-        if not overwrite_img:
+        if not overwrite_img and 'img' in data.keys(): # take unmodified img from the original file
             img=data['img']
-        else:
+        else: # if img is not in the data or we're overwriting it
             img=self.img
 
             

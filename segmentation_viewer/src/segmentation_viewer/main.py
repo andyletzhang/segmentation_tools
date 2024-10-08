@@ -419,7 +419,9 @@ class MainWidget(QMainWindow):
         self.cell_diameter_layout.addWidget(self.cell_diameter_calibrate)
 
         # channel selection
-        self.segmentation_channels_layout=QVBoxLayout()
+        self.segmentation_channels_widget=QWidget()
+        self.segmentation_channels_widget.setContentsMargins(0, 0, 0, 0)
+        self.segmentation_channels_layout=QVBoxLayout(self.segmentation_channels_widget)
         self.add_channel_layout(self.segmentation_channels_layout)
 
         segmentation_button_layout=QHBoxLayout()
@@ -455,7 +457,7 @@ class MainWidget(QMainWindow):
         segmentation_button_layout.addWidget(self.remove_edge_masks_button)
 
         segment_frame_layout.addLayout(self.cell_diameter_layout)
-        segment_frame_layout.addLayout(self.segmentation_channels_layout)
+        segment_frame_layout.addWidget(self.segmentation_channels_widget)
         segment_frame_layout.addSpacerItem(self.vertical_spacer())
         segment_frame_layout.addLayout(segmentation_button_layout)
 
@@ -475,7 +477,7 @@ class MainWidget(QMainWindow):
         self.cell_diameter_calibrate.clicked.connect(self.calibrate_diameter_pressed)
         self.segment_frame_button.clicked.connect(self.segment_frame_pressed)
         self.segment_stack_button.clicked.connect(self.segment_stack_pressed)
-        regenerate_outlines_button.clicked.connect(self.regenerate_outlines)
+        regenerate_outlines_button.clicked.connect(self.regenerate_outlines_list)
 
         return segmentation_tab
     
@@ -589,7 +591,7 @@ class MainWidget(QMainWindow):
         # update the display
         self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
         self.masks_checkbox.setChecked(True)
-        self.canvas.overlay_masks()
+        self.canvas.draw_masks()
         self.update_display()
         self.FUCCI_overlay()
 
@@ -602,7 +604,7 @@ class MainWidget(QMainWindow):
         # update the display
         self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
         self.masks_checkbox.setChecked(True)
-        self.canvas.overlay_masks()
+        self.canvas.draw_masks()
         self.update_display()
         self.FUCCI_overlay()
 
@@ -633,8 +635,8 @@ class MainWidget(QMainWindow):
         frame.outlines=utils.masks_to_outlines(frame.masks)
         frame.n=np.max(frame.masks)
         frame.cells = np.array([Cell(n, [], frame_number=frame.frame_number) for n in range(frame.n)])
-        if hasattr(frame, 'mask_overlay'):
-            del frame.mask_overlay
+        if hasattr(frame, 'stored_mask_overlay'):
+            del frame.stored_mask_overlay
 
     def get_FUCCI_tab(self):
         FUCCI_tab = QWidget()
@@ -927,13 +929,13 @@ class MainWidget(QMainWindow):
         self.tracking_range.setText(f'{self.stack.tracking_range:.2f}')
         self.statusBar().showMessage(f'Tracked centroids for stack {self.stack.name}.', 2000)
         self.tracked_recolor()
-        self.canvas.overlay_masks()
+        self.canvas.draw_masks()
 
     def tracked_recolor(self):
         # recolor cells so each particle has one color over time
         for frame in self.stack.frames:
-            if hasattr(frame, 'mask_overlay'):
-                del frame.mask_overlay # remove the mask_overlay attribute to force recoloring
+            if hasattr(frame, 'stored_mask_overlay'):
+                del frame.stored_mask_overlay # remove the mask_overlay attribute to force recoloring
             
         t=self.stack.tracked_centroids
         colors=np.random.randint(0, self.canvas.cell_n_colors, size=t['particle'].max()+1)
@@ -978,18 +980,19 @@ class MainWidget(QMainWindow):
             raise ValueError(f'Particle {particle} has {len(cell)} cells in frame {frame_number}')
         
     def split_particle_tracks(self):
-        self.stack.split_particle_track(self.selected_particle_n, self.frame_number)
+        new_particle=self.stack.split_particle_track(self.selected_particle_n, self.frame_number)
         t=self.stack.tracked_centroids
-        self.selected_particle_n=self.particle_from_cell(self.selected_cell_n) # update the selected particle
+        self.selected_particle_n=new_particle
         
         # assign a random color to the new particle
-        new_color=self.canvas.cell_cmap(np.random.randint(self.canvas.cell_n_colors))
+        new_color=self.canvas.random_cell_color()
         for cell in self.stack.get_particle(self.selected_particle_n):
             cell.color_ID=new_color
 
         self.plot_particle_statistic()
         self.highlight_track_ends()
-        self.canvas.overlay_masks()
+        current_cell=self.cell_from_particle(self.selected_particle_n)
+        self.canvas.add_cell_highlight(current_cell, color=new_color, alpha=0.5, layer='mask')
 
     def merge_particle_tracks(self, first_particle, second_particle):
         if hasattr(self.stack, 'tracked_centroids'):
@@ -997,7 +1000,15 @@ class MainWidget(QMainWindow):
                 return
             else:
                 merged_color=self.stack.get_particle(first_particle)[0].color_ID
-                self.stack.merge_particle_tracks(first_particle, second_particle, self.frame_number)
+                new_head, new_tail=self.stack.merge_particle_tracks(first_particle, second_particle, self.frame_number)
+                if new_head is not None:
+                    new_head_color=self.canvas.random_cell_color()
+                    for cell in self.stack.get_particle(new_head):
+                        cell.color_ID=new_head_color
+                if new_tail is not None:
+                    new_tail_color=self.canvas.random_cell_color()
+                    for cell in self.stack.get_particle(new_tail):
+                        cell.color_ID=new_tail_color
                 if hasattr(self.stack, 'tracked_centroids'):
                     # renumber the cells in the merged frame
                     t=self.stack.tracked_centroids
@@ -1011,7 +1022,12 @@ class MainWidget(QMainWindow):
                 print(f'Merged particles {first_particle} and {second_particle}')
                 self.plot_particle_statistic()
                 self.highlight_track_ends()
-                self.canvas.overlay_masks()
+                current_cell=self.cell_from_particle(first_particle)
+                self.canvas.add_cell_highlight(current_cell, color=merged_color, alpha=0.5, layer='mask')
+
+                new_tail_cell=self.cell_from_particle(new_tail)
+                if new_tail_cell is not None:
+                    self.canvas.add_cell_highlight(new_tail_cell, color=new_tail_color, alpha=0.5, layer='mask')
             
     def set_LUTs(self):
         ''' Set the LUTs for the image display based on the current slider values. '''
@@ -1119,8 +1135,9 @@ class MainWidget(QMainWindow):
         # put info about the particle in the right toolbar
         self.plot_particle_statistic()
 
-        if not self.FUCCI_mode: # basic selection, not cell cycle classification
-            self.canvas.highlight_cells([self.selected_cell_n], alpha=0.3, color='white', layer='selection')
+        self.canvas.clear_selection_overlay()
+        if not self.FUCCI_mode and self.selected_cell_n is not None: # basic selection, not cell cycle classification
+            self.canvas.add_cell_highlight(self.selected_cell_n)
 
     def plot_particle_statistic(self):
         if not self.file_loaded or not hasattr(self.stack, 'tracked_centroids'):
@@ -1337,10 +1354,9 @@ class MainWidget(QMainWindow):
                 self.stack.tracked_centroids=pd.concat([t, new_particle])
                 self.stack.tracked_centroids=self.stack.tracked_centroids.sort_values(['frame', 'particle'])
 
+            self.canvas.draw_outlines()
             self.highlight_track_ends()
-            if hasattr(self.frame, 'mask_overlay'):
-                del self.frame.mask_overlay
-            self.canvas.overlay_masks()
+            self.canvas.add_cell_highlight(new_mask_n, alpha=0.5, color=cell_color, layer='mask')
 
             return True
         else:
@@ -1376,16 +1392,17 @@ class MainWidget(QMainWindow):
         self.frame.delete_cell(cell_n2)
         self.remove_tracking_data(cell_n2)
 
+        # add new cell mask to the overlay
+        self.canvas.add_cell_highlight(cell_n1, alpha=0.5, color=new_cell.color_ID, layer='mask')
+
         print(f'Merged cell {cell_n2} into cell {cell_n1}')
 
         self.highlight_track_ends()
-        if hasattr(self.frame, 'mask_overlay'):
-            del self.frame.mask_overlay
-        
+        self.canvas.draw_outlines()
         self.plot_particle_statistic()
         self.update_display()
 
-    def regenerate_outlines(self):
+    def regenerate_outlines_list(self):
         if not self.file_loaded:
             return
 
@@ -1401,6 +1418,7 @@ class MainWidget(QMainWindow):
         self.statusBar().showMessage('Regenerated outlines.', 1000)
 
     def delete_cell_mask(self, cell_n):
+        self.canvas.add_cell_highlight(cell_n, alpha=0.5, color='none', img_type='outlines', layer='mask')
         to_clear=self.frame.masks==cell_n+1
         self.frame.masks[to_clear]=0
         self.frame.outlines[to_clear]=False
@@ -1411,12 +1429,10 @@ class MainWidget(QMainWindow):
         if self.selected_cell_n==cell_n:
             # deselect the removed cell if it was selected
             self.select_cell(None)
-            self.plot_particle_statistic()
+            self.plot_particle_statistic() # clear the particle statistic plot
 
+        self.canvas.draw_outlines()
         self.highlight_track_ends()
-        if hasattr(self.frame, 'mask_overlay'):
-            del self.frame.mask_overlay
-        self.canvas.overlay_masks()
         self.update_display()
 
     def remove_tracking_data(self, cell_number):
@@ -1509,6 +1525,7 @@ class MainWidget(QMainWindow):
             write_attrs=[]
 
         frame.to_seg_npy(file_path, write_attrs=write_attrs)
+
         frame.name=file_path
         print(f'Saved frame to {file_path}')
         frame.name=file_path
@@ -1619,6 +1636,7 @@ class MainWidget(QMainWindow):
         if self.FUCCI_dropdown.currentIndex() != 0:
             self.FUCCI_overlay()
 
+        self.canvas.draw_outlines()
         self.highlight_track_ends()
         self.update_display()
 
@@ -1818,7 +1836,7 @@ class MainWidget(QMainWindow):
         self.clear_LUT_sliders()
         self.clear_RGB_checkboxes()
         self.add_grayscale_sliders(self.slider_layout)
-        self.clear_channel_layout()
+        self.segmentation_channels_widget.hide()
         self.membrane_channel.setCurrentIndex(0)
         self.nuclear_channel.setCurrentIndex(0)
 
@@ -1828,8 +1846,7 @@ class MainWidget(QMainWindow):
         self.clear_RGB_checkboxes()
         self.add_RGB_checkboxes(self.RGB_checkbox_layout)
         self.add_RGB_sliders(self.slider_layout)
-        self.clear_channel_layout()
-        self.add_channel_layout(self.segmentation_channels_layout)
+        self.segmentation_channels_widget.show()
 
     def labeled_LUT_slider(self, slider_name=None):
         labels_and_slider=QHBoxLayout()

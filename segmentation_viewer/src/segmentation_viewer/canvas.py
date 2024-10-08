@@ -82,13 +82,12 @@ class PyQtGraphCanvas(QWidget):
         self.seg_plot.addItem(self.seg_vline, ignoreBounds=True)
         self.seg_plot.addItem(self.seg_hline, ignoreBounds=True)
 
-    def overlay_outlines(self, event=None, color='white', alpha=0.5):
+    def overlay_outlines(self):
+        self.img_outline_overlay.setVisible(self.parent.outlines_checkbox.isChecked())
+
+    def draw_outlines(self, color='white', alpha=0.5):
         ''' Overlay the outlines of the masks on the image plot. '''
         from matplotlib.colors import to_rgb
-        
-        if not self.parent.outlines_checkbox.isChecked():
-            self.img_outline_overlay.clear()
-            return
         color=[*to_rgb(color), alpha]
 
         overlay=np.zeros((*self.parent.frame.masks.shape, 4))
@@ -98,29 +97,36 @@ class PyQtGraphCanvas(QWidget):
         overlay=np.fliplr(overlay)
         self.img_outline_overlay.setImage(overlay)
 
-    def overlay_masks(self, event=None, alpha=0.5):
-        ''' Overlay the masks on both plots. '''
-        if not self.parent.masks_checkbox.isChecked():
-            # masks are not visible, clear the overlay
-            self.mask_overlay[0].clear()
-            self.mask_overlay[1].clear()
-            return
-        
+    def overlay_masks(self):
+        if not hasattr(self.parent.frame, 'stored_mask_overlay'):
+            self.draw_masks()
+        for l in self.mask_overlay:
+            l.setVisible(self.parent.masks_checkbox.isChecked())
+
+    def random_cell_color(self, n=1):
+        from matplotlib.colors import to_rgb
+        random_colors=np.random.randint(0, self.cell_n_colors, size=n)
+
+        if n==1:
+            return self.cell_cmap(random_colors[0])
+        else:
+            return [self.cell_cmap(c) for c in random_colors]
+
+    def draw_masks(self, alpha=0.5):
         # get cell colors
         try:
             cell_colors=self.parent.frame.get_cell_attr('color_ID') # retrieve the stored colors for each cell
         except AttributeError:
             #from monolayer_tracking.networks import color_masks, greedy_color # generate pseudo-random colors
             #random_colors=color_masks(self.parent.frame.masks)
-            random_colors=np.random.randint(0, self.cell_n_colors, size=self.parent.frame.masks.max())
-            cell_colors=self.cell_cmap(random_colors)
+            cell_colors=self.random_cell_color(self.parent.frame.masks.max())
             self.parent.frame.set_cell_attr('color_ID', cell_colors)
 
         # highlight all cells with the specified colors
         cell_indices=np.unique(self.parent.frame.masks)[1:]-1
         img_masks, seg_masks=self.highlight_cells(cell_indices, alpha=alpha, cell_colors=cell_colors, layer='mask')
 
-        self.parent.frame.mask_overlay=[img_masks, seg_masks] # store the overlay for reuse
+        return img_masks, seg_masks
 
     def clear_FUCCI_overlay(self):
         self.FUCCI_overlay[0].clear()
@@ -160,6 +166,10 @@ class PyQtGraphCanvas(QWidget):
         mask_overlay=np.fliplr(mask_overlay)
         opaque_mask=np.rot90(opaque_mask, 3)
         opaque_mask=np.fliplr(opaque_mask)
+        
+        # store mask overlays if layer is mask
+        if layer==self.mask_overlay:
+            self.parent.frame.stored_mask_overlay=[layer[0].image, layer[1].image]
 
         layer[0].setImage(mask_overlay)
         layer[1].setImage(opaque_mask)
@@ -171,12 +181,19 @@ class PyQtGraphCanvas(QWidget):
 
         # Get the specified overlay layer: selection for highlighting, mask for colored masks
         layer = getattr(self, f'{layer}_overlay')
-
+        
         cell_mask=masks == cell_index + 1
         cell_mask=np.rot90(cell_mask, 3)
         cell_mask=np.fliplr(cell_mask)
 
-        if color=='none':
+        for l in layer:
+            if l.image is None: # initialize the overlay
+                l.image=np.zeros(cell_mask.shape+(4,))
+
+        if isinstance(color, int):
+            color=self.cell_cmap(color)
+
+        elif isinstance(color, str) and color=='none':
             # remove the cell from the overlay
             layer[0].image[cell_mask] = 0
             layer[1].image[cell_mask] = 0
@@ -199,10 +216,7 @@ class PyQtGraphCanvas(QWidget):
         seg_cell_mask[cell_mask_bbox, -1] = 1
 
         if img_type == 'outlines' or seg_type == 'outlines':
-            outlines=self.parent.frame.outlines
-            outlines=np.rot90(outlines, 3)
-            outlines=np.fliplr(outlines)
-            outlines=outlines[xmin:xmax, ymin:ymax]
+            outlines=self.get_mask_boundary(cell_mask_bbox)
             if img_type == 'outlines':
                 img_cell_mask[~outlines] = 0
             if seg_type == 'outlines':
@@ -216,6 +230,11 @@ class PyQtGraphCanvas(QWidget):
         # Update the overlay images
         layer[0].setImage(layer[0].image)
         layer[1].setImage(layer[1].image)
+
+        # store mask overlays if layer is mask
+        if layer==self.mask_overlay:
+            self.parent.frame.stored_mask_overlay=[layer[0].image, layer[1].image]
+
         return img_cell_mask, seg_cell_mask
     
     def get_bounding_box(self, cell_mask):
@@ -232,15 +251,21 @@ class PyQtGraphCanvas(QWidget):
         if row_indices.size and col_indices.size:
             min_row, max_row = row_indices[[0, -1]]
             min_col, max_col = col_indices[[0, -1]]
-            return min_row, max_row, min_col, max_col
+            return min_row, max_row+1, min_col, max_col+1
         else:
             # If no True values are found, return None
             return None
 
+    def get_mask_boundary(self, mask):
+        # UTIL
+        from skimage.segmentation import find_boundaries
+        boundaries=find_boundaries(mask, mode='inner')
+        return boundaries
+    
     def clear_selection_overlay(self):
         self.selection_overlay[0].clear()
         self.selection_overlay[1].clear()
-
+        
     def clear_mask_overlay(self):
         self.mask_overlay[0].clear()
         self.mask_overlay[1].clear()
@@ -294,15 +319,15 @@ class PyQtGraphCanvas(QWidget):
         #    self.img_data = np.mean(self.img_data, axis=-1) # TODO: incorporate LUTs?
 
         # update segmentation overlay
-        self.overlay_outlines()
+        self.draw_outlines()
 
         # update masks overlay, use the stored overlay if available
-        if hasattr(self.parent.frame, 'mask_overlay') and self.parent.masks_checkbox.isChecked():
-            img_masks, seg_masks=self.parent.frame.mask_overlay
+        if hasattr(self.parent.frame, 'stored_mask_overlay') and self.parent.masks_checkbox.isChecked():
+            img_masks, seg_masks=self.parent.frame.stored_mask_overlay
             self.mask_overlay[0].setImage(img_masks)
             self.mask_overlay[1].setImage(seg_masks)
         else:
-            self.overlay_masks()
+            self.draw_masks()
 
         # turn seg_data from grayscale to RGBA
         self.seg_data=np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1)

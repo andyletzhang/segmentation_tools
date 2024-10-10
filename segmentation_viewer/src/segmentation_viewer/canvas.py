@@ -109,17 +109,22 @@ class PyQtGraphCanvas(QWidget):
 
     def random_cell_color(self, n=1):
         from matplotlib.colors import to_rgb
-        random_colors=np.random.randint(0, self.cell_n_colors, size=n)
+        random_colors=self.cell_cmap(self.random_color_ID(n))
+
+        return [to_rgb(c) for c in random_colors]
+        
+    def random_color_ID(self, n=1):
+        random_IDs=np.random.randint(0, self.cell_n_colors, size=n)
 
         if n==1:
-            return self.cell_cmap(random_colors[0])
+            return random_IDs[0]
         else:
-            return [self.cell_cmap(c) for c in random_colors]
+            return random_IDs
 
     def draw_masks(self, alpha=0.5):
         # get cell colors
         try:
-            cell_colors=self.parent.frame.get_cell_attr('color_ID') # retrieve the stored colors for each cell
+            cell_colors=self.parent.frame.get_cell_attrs('color_ID') # retrieve the stored colors for each cell
         except AttributeError:
             #from monolayer_tracking.networks import color_masks, greedy_color # generate pseudo-random colors
             #random_colors=color_masks(self.parent.frame.masks)

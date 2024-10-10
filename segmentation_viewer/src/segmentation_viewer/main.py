@@ -633,8 +633,8 @@ class MainWidget(QMainWindow):
         ''' Regenerate the cell outlines and cell objects from the new segmentation masks. '''
         frame.has_outlines=False
         frame.outlines=utils.masks_to_outlines(frame.masks)
-        frame.n=np.max(frame.masks)
-        frame.cells = np.array([Cell(n, [], frame_number=frame.frame_number) for n in range(frame.n)])
+        frame.n_cells=np.max(frame.masks)
+        frame.cells = np.array([Cell(n, [], frame_number=frame.frame_number) for n in range(frame.n_cells)])
         if hasattr(frame, 'stored_mask_overlay'):
             del frame.stored_mask_overlay
 
@@ -740,7 +740,7 @@ class MainWidget(QMainWindow):
 
     def clear_FUCCI(self, frames):
         for frame in frames:
-            frame.set_cell_attr(['red', 'green'], [[False, False] for _ in range(frame.n)])
+            frame.set_cell_attrs(['red', 'green'], [[False, False] for _ in range(frame.n_cells)])
         self.FUCCI_overlay()
 
     def vertical_spacer(self, spacing=None, hSizePolicy=QSizePolicy.Policy.Fixed, vSizePolicy=QSizePolicy.Policy.Fixed):
@@ -928,21 +928,21 @@ class MainWidget(QMainWindow):
         print(f'Tracked centroids for stack {self.stack.name}')
         self.tracking_range.setText(f'{self.stack.tracking_range:.2f}')
         self.statusBar().showMessage(f'Tracked centroids for stack {self.stack.name}.', 2000)
-        self.tracked_recolor()
+        self.recolor_tracks()
         self.canvas.draw_masks()
 
-    def tracked_recolor(self):
+    def recolor_tracks(self):
         # recolor cells so each particle has one color over time
         for frame in self.stack.frames:
             if hasattr(frame, 'stored_mask_overlay'):
                 del frame.stored_mask_overlay # remove the mask_overlay attribute to force recoloring
             
         t=self.stack.tracked_centroids
-        colors=np.random.randint(0, self.canvas.cell_n_colors, size=t['particle'].max()+1)
+        colors=self.canvas.random_color_ID(t['particle'].max()+1)
         t['color']=colors[t['particle']]
         for frame in self.stack.frames:
             tracked_frame=t[t.frame==frame.frame_number].sort_values('cell_number')
-            frame.set_cell_attr('color_ID', self.canvas.cell_cmap(tracked_frame['color']))
+            frame.set_cell_attrs('color_ID', self.canvas.cell_cmap(tracked_frame['color']))
 
     def LUT_slider_changed(self, event):
         ''' Update the LUTs when the sliders are moved. '''
@@ -985,7 +985,7 @@ class MainWidget(QMainWindow):
         self.selected_particle_n=new_particle
         
         # assign a random color to the new particle
-        new_color=self.canvas.random_cell_color()
+        new_color=self.canvas.random_color_ID()
         for cell in self.stack.get_particle(self.selected_particle_n):
             cell.color_ID=new_color
 
@@ -1002,11 +1002,11 @@ class MainWidget(QMainWindow):
                 merged_color=self.stack.get_particle(first_particle)[0].color_ID
                 new_head, new_tail=self.stack.merge_particle_tracks(first_particle, second_particle, self.frame_number)
                 if new_head is not None:
-                    new_head_color=self.canvas.random_cell_color()
+                    new_head_color=self.canvas.random_color_ID()
                     for cell in self.stack.get_particle(new_head):
                         cell.color_ID=new_head_color
                 if new_tail is not None:
-                    new_tail_color=self.canvas.random_cell_color()
+                    new_tail_color=self.canvas.random_color_ID()
                     for cell in self.stack.get_particle(new_tail):
                         cell.color_ID=new_tail_color
                 if hasattr(self.stack, 'tracked_centroids'):
@@ -1329,14 +1329,14 @@ class MainWidget(QMainWindow):
         return colors
         
     def add_cell_mask(self, enclosed_pixels):
-        new_mask_n=self.frame.n
+        new_mask_n=self.frame.n_cells
         cell_mask=np.zeros_like(self.frame.masks, dtype=bool)
         cell_mask[enclosed_pixels[:,0], enclosed_pixels[:,1]]=True
         new_mask=cell_mask & (self.frame.masks==0)
         self.new_mask=new_mask
         if new_mask.sum()>4: # if the mask is larger than 4 pixels (minimum for cellpose to generate an outline)
             self.frame.masks[new_mask]=new_mask_n+1
-            self.frame.n+=1
+            self.frame.n_cells+=1
             print(f'Added cell {new_mask_n}')
 
             cell_color_n=np.random.randint(0, self.canvas.cell_n_colors)
@@ -1468,9 +1468,10 @@ class MainWidget(QMainWindow):
             return
         
         self.stack.tracked_centroids=self.load_tracking_data(file_path)
+        self.stack.tracked_centroids=self.fix_tracked_centroids(self.stack.tracked_centroids)
         self.statusBar().showMessage(f'Loaded tracking data from {file_path}', 2000)
         self.propagate_FUCCI_checkbox.setEnabled(True)
-        self.tracked_recolor()
+        self.recolor_tracks()
 
     def load_tracking_data(self, file_path):
         tracked_centroids=pd.read_csv(file_path, dtype={'frame':int, 'particle':int, 'cell_number':int}, index_col=False)
@@ -1536,12 +1537,12 @@ class MainWidget(QMainWindow):
             frames=self.stack.frames
         for frame in frames:
             try:
-                green, red=np.array(frame.get_cell_attr(['green', 'red'])).T
+                green, red=np.array(frame.get_cell_attrs(['green', 'red'])).T
             except AttributeError:
                 self.get_red_green(frame)
-                green, red=np.array(frame.get_cell_attr(['green', 'red'])).T
+                green, red=np.array(frame.get_cell_attrs(['green', 'red'])).T
             frame.cell_cycles=green+2*red
-            frame.set_cell_attr('cycle_stage', frame.cell_cycles)
+            frame.set_cell_attrs('cycle_stage', frame.cell_cycles)
 
     def FUCCI_overlay_changed(self):
         if not self.file_loaded:
@@ -1583,14 +1584,14 @@ class MainWidget(QMainWindow):
             self.canvas.clear_selection_overlay() # clear basic selection during FUCCI labeling
             if overlay_color == 'all':
                 colors=np.array(['g','r','orange'])
-                green, red=np.array(self.frame.get_cell_attr(['green', 'red'])).T
+                green, red=np.array(self.frame.get_cell_attrs(['green', 'red'])).T
                 colored_cells=np.where(red | green)[0] # cells that are either red or green
                 cell_cycle=green+2*red-1
                 cell_colors=colors[cell_cycle[colored_cells]] # map cell cycle state to green, red, orange
                 self.canvas.highlight_cells(colored_cells, alpha=1, cell_colors=cell_colors, img_type='outlines', layer='FUCCI')
 
             else:
-                colored_cells=np.where(self.frame.get_cell_attr(overlay_color))[0]
+                colored_cells=np.where(self.frame.get_cell_attrs(overlay_color))[0]
                 self.canvas.highlight_cells(colored_cells, alpha=1, color=overlay_color, img_type='outlines', layer='FUCCI')
 
     def reset_display(self):
@@ -1904,16 +1905,44 @@ class MainWidget(QMainWindow):
         files = [u.toLocalFile() for u in event.mimeData().urls()]
         self.open_stack(natsorted(files))
 
+    def fix_tracked_centroids(self, t):
+        ''' make sure every cell is accounted for in the tracking data. '''
+        for frame in self.stack.frames:
+            tracked_frame=t[t.frame==frame.frame_number]
+            tracked_cells=tracked_frame['cell_number']
+            tracked_ns=frame.get_cell_attrs('n')
+
+            missing_tracks=set(tracked_ns)-set(tracked_cells)
+            if len(missing_tracks)>0:
+                print(f'Frame {frame.frame_number} is missing {len(missing_tracks)} cells: {missing_tracks}')
+                new_particle_numbers=np.arange(len(missing_tracks))+t['particle'].max()+1
+                new_particles=pd.DataFrame([[cell.n, cell.centroid[0], cell.centroid[1], frame.frame_number, particle_number] for cell, particle_number in zip(frame.cells[list(missing_tracks)], new_particle_numbers)], columns=['cell_number', 'y', 'x', 'frame', 'particle'])
+                if 'color' in t.columns:
+                    new_particles['color']=self.canvas.random_color_ID(len(new_particles))
+                t=pd.concat([t, new_particles])
+
+            extra_tracks=set(tracked_cells)-set(tracked_ns)
+            if len(extra_tracks)>0:
+                print(f'Frame {frame.frame_number} has {len(extra_tracks)} extra tracks: {extra_tracks}')
+                t.drop(tracked_frame[tracked_frame.cell_number.isin(extra_tracks)].index, inplace=True)
+        
+        t=t.sort_values(['frame', 'particle'])
+        t['particle']=t.groupby('particle').ngroup() # renumber particles contiguously
+
+        return t
+
     def open_stack(self, files):
         self.stack, tracked_centroids=self.load_files(files)
+        self.globals_dict['stack']=self.stack
         if not self.stack:
             return
         
         self.file_loaded=True
         if tracked_centroids is not None:
             self.stack.tracked_centroids=tracked_centroids
+            self.stack.tracked_centroids=self.fix_tracked_centroids(self.stack.tracked_centroids)
             self.propagate_FUCCI_checkbox.setEnabled(True)
-            self.tracked_recolor()
+            self.recolor_tracks()
         else:
             self.propagate_FUCCI_checkbox.setEnabled(False)
 
@@ -1941,7 +1970,6 @@ class MainWidget(QMainWindow):
 
         self.imshow(self.frame)
         self.canvas.img_plot.autoRange()
-        self.globals_dict['stack']=self.stack
         self.frame_slider.setRange(0, len(self.stack.frames)-1)
 
         # set slider ranges

@@ -98,10 +98,14 @@ class PyQtGraphCanvas(QWidget):
         self.img_outline_overlay.setImage(overlay)
 
     def overlay_masks(self):
-        if not hasattr(self.parent.frame, 'stored_mask_overlay'):
-            self.draw_masks()
         for l in self.mask_overlay:
             l.setVisible(self.parent.masks_checkbox.isChecked())
+
+        if not hasattr(self.parent.frame, 'stored_mask_overlay'):
+            self.draw_masks()
+        else:
+            for l, overlay in zip(self.mask_overlay, self.parent.frame.stored_mask_overlay):
+                l.setImage(overlay)
 
     def random_cell_color(self, n=1):
         from matplotlib.colors import to_rgb
@@ -167,12 +171,13 @@ class PyQtGraphCanvas(QWidget):
         opaque_mask=np.rot90(opaque_mask, 3)
         opaque_mask=np.fliplr(opaque_mask)
         
-        # store mask overlays if layer is mask
-        if layer==self.mask_overlay:
-            self.parent.frame.stored_mask_overlay=[layer[0].image, layer[1].image]
-
         layer[0].setImage(mask_overlay)
         layer[1].setImage(opaque_mask)
+
+        # store mask overlays if layer is mask
+        if layer==self.mask_overlay:
+            self.parent.frame.stored_mask_overlay=[mask_overlay, opaque_mask]
+
         return mask_overlay, opaque_mask
 
     def add_cell_highlight(self, cell_index, layer='selection', alpha=0.3, color='white', img_type='masks', seg_type='masks'):
@@ -322,12 +327,7 @@ class PyQtGraphCanvas(QWidget):
         self.draw_outlines()
 
         # update masks overlay, use the stored overlay if available
-        if hasattr(self.parent.frame, 'stored_mask_overlay') and self.parent.masks_checkbox.isChecked():
-            img_masks, seg_masks=self.parent.frame.stored_mask_overlay
-            self.mask_overlay[0].setImage(img_masks)
-            self.mask_overlay[1].setImage(seg_masks)
-        else:
-            self.draw_masks()
+        self.overlay_masks()
 
         # turn seg_data from grayscale to RGBA
         self.seg_data=np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1)

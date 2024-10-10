@@ -538,7 +538,7 @@ class Image:
 
         # Fetch metadata from seg.npy
         self.name = file_path  # File name
-        self.n = np.max(data['masks'])  # Number of detected cells in field of view (FOV)
+        self.n_cells = np.max(data['masks'])  # Number of detected cells in field of view (FOV)
 
         for attr in set(data.keys()).difference(['img', 'masks', 'outlines', 'outlines_list']):
             setattr(self, attr, data[attr])  # Load all attributes aside from stuff treated later on
@@ -603,7 +603,7 @@ class Image:
             np.save(file_path, export)
         
         # Instantiate Cell objects for each cell labeled in the image
-        self.cells = np.array([Cell(n, outlines_list[n], frame_number=frame_number) for n in range(self.n)])
+        self.cells = np.array([Cell(n, outlines_list[n], frame_number=frame_number) for n in range(self.n_cells)])
         
         # assign cell cycle to cell objects
         if hasattr(self, 'cell_cycles'):
@@ -647,7 +647,7 @@ class Image:
         self.cells=np.delete(self.cells, cell_number)
 
         self.masks=preprocessing.renumber_masks(self.masks)
-        self.n=self.masks.max()
+        self.n_cells=self.masks.max()
 
         for n, cell in enumerate(self.cells):
             cell.n=n
@@ -700,14 +700,14 @@ class Image:
         return cc_stage_number
     
     def fetch_cell_cycle(self):
-        return self.get_cell_attr('cycle_stage')
+        return self.get_cell_attrs('cycle_stage')
 
     def write_cell_cycle(self, cell_cycle_stages):
-        self.set_cell_attr('cycle_stage', cell_cycle_stages)
+        self.set_cell_attrs('cycle_stage', cell_cycle_stages)
     
     # -------------Metrics---------------
     # generalized methods for getting and setting cell attributes
-    def get_cell_attr(self, attributes, fill_value=None):
+    def get_cell_attrs(self, attributes, fill_value=None):
         ret=[]
         for cell in self.cells:
             if isinstance(attributes, str):
@@ -731,13 +731,19 @@ class Image:
                 ret.append(cell_attrs)
         return ret
 
-    def set_cell_attr(self, attributes, values):
+    def set_cell_attrs(self, attributes, values):
+        # TODO: make sure values and cells are same length
+        if isinstance(attributes, str): # if only one attribute is being set
+            self.set_cell_attr(attributes, values)
+        else: # if multiple attributes are being set
+            for attribute, val in zip(attributes, values):
+                self.set_cell_attr(attribute, val)
+
+    def set_cell_attr(self, attribute, values):
+        if len(values)!=len(self.cells):
+            raise ValueError(f'Length of values ({len(values)}) must match the number of cells ({len(self.cells)}) in the image')
         for cell, value in zip(self.cells, values):
-            if isinstance(attributes, str): # if only one attribute is being set
-                setattr(cell, attributes, value)
-            else: # if multiple attributes are being set
-                for attribute, val in zip(attributes, value):
-                    setattr(cell, attribute, val)
+            setattr(cell, attribute, value)
 
     def cell_areas(self, scaled=True):
         """
@@ -782,15 +788,7 @@ class Image:
         if len(self.cells)==0:
             return np.empty((0,2)) # no cells in this frame
         
-        elif not hasattr(self.cells[-1], 'centroid'): # check if centroids have been calculated just by checking the last cell
-            self.get_centroids()
-        
-        return np.array(self.get_cell_attr('centroid'))
-    
-    def get_centroids(self):
-        '''adds centroid attribute to each Cell in the Image.'''
-        centroids=np.array(ndimage.center_of_mass(np.ones(self.resolution),self.masks,np.arange(1,self.n+1)))
-        self.set_cell_attr('centroid', centroids)
+        return np.array(self.get_cell_attrs('centroid'))
     
     # -------------Fit Ellipses to Cells-------------
     def fit_ellipses(self):
@@ -817,14 +815,11 @@ class Image:
         from scipy.signal import convolve2d
         # find good cells
         self.bad_cell_indices=np.unique(self.masks[np.where(convolve2d(self.masks!=0,[[0,1,0],[1,1,1],[0,1,0]])[1:-1,1:-1]<5)])[1:]-1 # indices of cells without full set of neighbors
-        self.good_cell_indices=np.delete(np.arange(self.n),self.bad_cell_indices) # indices of cells with full set of neighbors (can reconstruct vertices from TCJs)
+        self.good_cell_indices=np.delete(np.arange(self.n_cells),self.bad_cell_indices) # indices of cells with full set of neighbors (can reconstruct vertices from TCJs)
         
         if len(self.cells)==0:
             self.TCJs=np.empty((0,2))
             return self.TCJs
-        
-        elif not hasattr(self.cells[0], 'centroid'): # get centroids if they're not already found
-            self.get_centroids() # need centroids to order vertices
 
         # get bottom-right corners of every non-zero square of pixels
         cc_junctions=np.column_stack(np.where(convolve2d(self.outlines,np.array([[1,1],[1,1]]))==4))
@@ -916,7 +911,7 @@ class HeightMap(Image):
             self.read_NORI()
         self.NORI_density=np.array([ndimage.mean(self.NORI[...,i], labels=self.masks_3d, index=range(1,self.masks.max()+1)) for i in range(3)])
         self.NORI_density_std=np.array([ndimage.standard_deviation(self.NORI[...,i], labels=self.masks_3d, index=range(1,self.masks.max()+1)) for i in range(3)])
-        self.set_cell_attr('NORI_density', self.NORI_density.T)
+        self.set_cell_attrs('NORI_density', self.NORI_density.T)
         return self.NORI_density
     
     def get_NORI_mass(self):
@@ -925,7 +920,7 @@ class HeightMap(Image):
             self.read_NORI()
         self.NORI_mass=np.array([ndimage.sum(self.NORI[...,i], labels=self.masks_3d, index=range(1,self.masks.max()+1)) for i in range(3)])
         self.NORI_mass*=self.scale**2*self.z_scale
-        self.set_cell_attr('NORI_mass', self.NORI_mass.T)
+        self.set_cell_attrs('NORI_mass', self.NORI_mass.T)
         return self.NORI_mass
     
     
@@ -933,8 +928,8 @@ class HeightMap(Image):
         #self.heights=self.get_heights()
         self.volumes=ndimage.sum(self.z, labels=self.masks, index=range(1,self.masks.max()+1))*self.scale**2
         self.mean_heights=ndimage.mean(self.z, labels=self.masks, index=range(1,self.masks.max()+1))
-        self.set_cell_attr('volume', self.volumes)
-        self.set_cell_attr('height', self.mean_heights)
+        self.set_cell_attrs('volume', self.volumes)
+        self.set_cell_attrs('height', self.mean_heights)
 
         return self.volumes
 
@@ -964,7 +959,21 @@ class Cell:
     def circularity(self):
         circularity=4*np.pi*self.area/self.perimeter**2
         return circularity
-    
+
+    @property
+    def centroid(self):
+        if hasattr(self, '_centroid'):
+            return self._centroid
+        else: # centroid via Green's theorem
+            self.get_centroid()
+            return self._centroid
+
+    def get_centroid(self):
+        x=self.outline[:,0]
+        y=self.outline[:,1]
+        A=self.area
+        self._centroid=np.array([np.sum((x+np.roll(x,1))*(y-np.roll(y,1))),np.sum((y+np.roll(y,1))*(x-np.roll(x,1)))]).T/(6*A)
+
     def sort_vertices(self):
         '''
         determines which vertices are connected by ordering polar angles to each vertex w.r.t. the centroid.

@@ -881,6 +881,10 @@ class Image:
         return cell_collection
     
 class HeightMap(Image):
+    nori_R=8192
+    lipid_density=1.010101 # g/mL
+    protein_density=1.364256 # g/mL
+
     def __init__(self, seg_path, mesh_path=None, zero_to_nan=True, scale=0.1625, z_scale=0.3225, NORI=False, **kwargs):
         if mesh_path is None:
             mesh_path=seg_path.replace('segmented','heights').replace('seg.npy', 'binarized.tif')
@@ -898,13 +902,16 @@ class HeightMap(Image):
         from skimage import io
         if file_path is None:
             file_path=self.name.replace('segmented','NORI').replace('seg.npy', 'NORI.tif')
-        self.NORI=io.imread(file_path).astype(float)
+        self.NORI=io.imread(file_path).astype(float)/self.nori_R
+        self.NORI[...,0]=self.NORI[...,0]*self.protein_density
+        self.NORI[...,1]=self.NORI[...,1]*self.lipid_density
         if mask_nan_z:
             #np.ma.masked_where(np.repeat(np.isnan(self.z)[np.newaxis], self.NORI.shape[0], axis=0), self.NORI, copy=False)
             self.NORI[:, np.isnan(self.z)]=np.nan
         return self.NORI
     
     def get_NORI_density(self):
+        ''' NORI density in g/mL '''
         if not hasattr(self, 'NORI'):
             self.read_NORI()
         self.NORI_density=np.array([ndimage.mean(self.NORI[...,i], labels=self.masks_3d, index=range(1,self.masks.max()+1)) for i in range(3)])
@@ -913,9 +920,11 @@ class HeightMap(Image):
         return self.NORI_density
     
     def get_NORI_mass(self):
+        ''' NORI mass in picograms'''
         if not hasattr(self, 'NORI'):
             self.read_NORI()
         self.NORI_mass=np.array([ndimage.sum(self.NORI[...,i], labels=self.masks_3d, index=range(1,self.masks.max()+1)) for i in range(3)])
+        self.NORI_mass*=self.scale**2*self.z_scale
         self.set_cell_attr('NORI_mass', self.NORI_mass.T)
         return self.NORI_mass
     

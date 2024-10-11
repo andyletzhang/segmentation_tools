@@ -14,13 +14,14 @@ from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics
 from superqt import QRangeSlider
 import pyqtgraph as pg
 
-from monolayer_tracking.segmented_comprehension import TimeSeries, Cell
+from segmentation_tools.segmented_comprehension import TimeSeries, Cell
 from segmentation_viewer.canvas import PyQtGraphCanvas, CellMaskPolygon
 from segmentation_viewer.command_line import CommandLineWindow
 
 import importlib.resources
 from tqdm import tqdm
 
+# TODO: add a "save tracking" button to the save menu
 # TODO: buttons to clear masks, clear tracking
 # TODO: mouseover shows pixel RGB values
 # TODO: add mouse and keyboard shortcuts to interface

@@ -4,6 +4,7 @@ from multiprocessing import Pool
 from functools import partial
 from skimage import io
 
+
 def convert_GUI_seg(seg, multiprocess=False, remove_edge_masks=True, mend=False, max_gap_size=20, export=False, out_path=None):
     ''' convert a segmentation image from the GUI to a format that can be used by the tracking algorithm '''
     from cellpose.utils import masks_to_outlines
@@ -75,16 +76,17 @@ def mend_gaps(masks, max_gap_size):
     cellpose sometimes leaves a few 0-pixels between segmented cells.
     this method finds gaps below the max gap size and fills them using their neighboring cell IDs.
     '''
+    # TODO: implement numba version of this function
     from statistics import multimode
     from scipy.signal import convolve2d
 
     background=ndimage.label(masks==0)[0]
-    background_sizes=np.unique(background, return_counts=True)
-    gap_IDs=background_sizes[0][background_sizes[1]<max_gap_size] # gaps below maximal spurious size
+    bg_labels, bg_counts=np.unique(background, return_counts=True)
+    gap_labels=bg_labels[bg_counts<max_gap_size] # gaps below maximal spurious size
     
-    if len(gap_IDs)!=0: # found at least one gap, proceed to mend (and subsequently overwrite the outlines channel, etc.)
-        for gap_ID in gap_IDs:
-            gap_pixels=np.array(np.where(background==gap_ID))
+    if len(gap_labels)!=0: # found at least one gap, proceed to mend (and subsequently overwrite the outlines channel, etc.)
+        for gap_label in gap_labels:
+            gap_pixels=np.array(np.where(background==gap_label))
             while 0 in masks[gap_pixels[0], gap_pixels[1]]: # still some pixels are empty
                 gap_pixels_bbox=np.array([gap_pixels.min(axis=1), gap_pixels.max(axis=1)]).T # bounding box of the gap
                 masks_ROI=masks[gap_pixels_bbox[0,0]-1:gap_pixels_bbox[0,1]+2,gap_pixels_bbox[1,0]-1:gap_pixels_bbox[1,1]+2] # region of interest in the masks channel (zeroes the ROI at the top left corner)

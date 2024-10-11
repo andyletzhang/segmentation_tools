@@ -9,7 +9,7 @@ import pandas as pd
 from pathlib import Path
 from tqdm.notebook import tqdm
 
-from monolayer_tracking import preprocessing
+from segmentation_tools import preprocessing
 
 def plot_trajectories(stack, output_path=None, trail_length=10, linewidth=1, markersize=1, figsize=10, show_labels=True, tracking_kwargs={}):
     '''display trajectories superimposed over images.'''
@@ -44,7 +44,7 @@ def plot_trajectories(stack, output_path=None, trail_length=10, linewidth=1, mar
         trails=[] # particle trajectories as plotted on each frame
         for particle, trajectory in trajectories[trajectories.frame<=n].groupby('particle'): # get tracking data up to the current frame for one particle at a time
             trails.append(Polygon(trajectory[['x','y']].iloc[-trail_length:]+frame_drift,
-                                  closed=False, linewidth=linewidth*figsize/5, fc='None', ec='C{}'.format(particle)))
+                                  closed=False, linewidth=linewidth*figsize/5, fc='none', ec='C{}'.format(particle)))
 
             if show_labels:
                 in_frame=trajectory.index[trajectory['frame']==n] # get the cell number of the particle in this frame
@@ -74,7 +74,7 @@ def plot_trajectories(stack, output_path=None, trail_length=10, linewidth=1, mar
         plt.close()
 
 
-def highlight_mitoses(stack, output_path=None, show_labels=True, figsize=6):
+def highlight_mitoses(stack, output_path=None, show_labels=True, tail_lengths=5, figsize=6):
     """
     Highlight mitotic events in each frame of a stack, and output tifs.
 
@@ -101,18 +101,18 @@ def highlight_mitoses(stack, output_path=None, show_labels=True, figsize=6):
         
         # Extract data for the mother cell
         mother = stack.tracked_centroids[stack.tracked_centroids['particle'] == particle_IDs[0]]
-        mother_firstframe = mother.frame.max() - 5
+        mother_firstframe = mother.frame.max() - tail_lengths
         mother = mother[mother['frame'] >= mother_firstframe]
-        mother['alpha'] = (mother.frame - mother.frame.min() + 1) / 6  # Calculate alpha for plotting
+        mother['alpha'] = (mother.frame - mother.frame.min() + 1) / (tail_lengths+1)  # Calculate alpha for plotting
         mother['color'] = 'r'  # Set color for plotting
         extended_mitoses.append(mother)  # Append to extended mitoses list
         
         # Extract data for each daughter cell
         for particle_ID in particle_IDs[1:]:
             daughter = stack.tracked_centroids[stack.tracked_centroids['particle'] == particle_ID]
-            daughter_firstframe = daughter.frame.min() + 5
+            daughter_firstframe = daughter.frame.min() + tail_lengths
             daughter = daughter[daughter['frame'] <= daughter_firstframe]
-            daughter['alpha'] = (daughter.frame.max() - daughter.frame + 1) / 6  # Calculate alpha for plotting
+            daughter['alpha'] = (daughter.frame.max() - daughter.frame + 1) / (tail_lengths+1)  # Calculate alpha for plotting
             daughter['color'] = 'lime'  # Set color for plotting
             extended_mitoses.append(daughter)  # Append to extended mitoses list
 
@@ -162,7 +162,7 @@ def highlight_mitoses(stack, output_path=None, show_labels=True, figsize=6):
         output_path.mkdir(parents=True, exist_ok=True)
         
         # Save the plot as an image
-        plt.savefig(output_path / f'{output_path.stem}-{frame_number}.tif', dpi=300)
+        plt.savefig(output_path / f'{output_path.stem}-{frame_number}.tif', dpi=300, bbox_inches='tight', pad_inches=0)
         plt.close()
 
 
@@ -512,7 +512,7 @@ def cell_cycle_plot(volumes, labels=None, axes=None, figsize=(6,6), hide_NS=True
 def hist_median(v, histtype='step', weights='default', zorder=None, ax=None, bins=30, range=(0,6000), linewidth=1.4, alpha=1, **kwargs):
     if not ax:
         ax=plt.gca()
-    if weights=='default':
+    if isinstance(weights, str) and weights=='default':
         hist_weights=np.ones_like(v)/len(v)
     else:
         hist_weights=weights

@@ -2,7 +2,6 @@ pyproject.toml
 src/segmentation_viewer/__init__.py
 src/segmentation_viewer/canvas.py
 src/segmentation_viewer/command_line.py
-src/segmentation_viewer/main-ANDY-DESKTOP.py
 src/segmentation_viewer/main.py
 src/segmentation_viewer.egg-info/PKG-INFO
 src/segmentation_viewer.egg-info/SOURCES.txt

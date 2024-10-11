@@ -4,7 +4,7 @@ from scipy import ndimage
 from natsort import natsorted
 from glob import glob
 from pathlib import Path
-from monolayer_tracking import preprocessing # from my module
+from segmentation_tools import preprocessing # from my module
 
 '''
     Stacks are collections of time lapse images on a single stage.

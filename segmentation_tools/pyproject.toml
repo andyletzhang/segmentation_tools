@@ -1,5 +1,5 @@
 [project]
-name = "monolayer_tracking"
+name = "segmentation_tools"
 
 version = "0.0.1"
 

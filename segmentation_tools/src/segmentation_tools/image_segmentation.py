@@ -41,7 +41,7 @@ def segment_img(img, cp_model, size_model, color_channels=[0,0], mend=True, max_
     masks=masks.astype(np.min_scalar_type(masks.max()))
     
     # pull boundary values from masks
-    outlines=preprocessing.masks_to_outlines(masks)
+    outlines=utils.masks_to_outlines(masks)
     
     outlines_list=utils.outlines_list_multi(masks)
     export={'img':img, 'masks':masks, 'outlines':outlines, 'outlines_list':outlines_list} # my reduced export: just the image, masks, and outlines. Flows, diams, colors etc. are just for cellpose's own reference so I toss them.

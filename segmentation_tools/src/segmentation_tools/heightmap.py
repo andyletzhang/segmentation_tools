@@ -1,8 +1,7 @@
 import numpy as np
 from scipy import ndimage
 from cupyx.scipy import ndimage as cp_ndimage
-from numba import jit, prange
-import time
+from numba import jit
 
 try:
     import cupy as cp
@@ -127,29 +126,15 @@ def connect_adjacent_components(adjacencies, heights, labels):
     return connected_regions
 
 def get_outliers(heights, min_region_size=1000):
-    start=time.time()
-    print("Relabeling components...")
     integer_labels, height_values=relabel_components(heights)
-    print(f"Relabeling took {time.time()-start:.2f} seconds.")
-
-    start=time.time()
-    print("Finding adjacent components...")
     adjacencies=find_adjacent_components(integer_labels)
-    print(f"Adjacent component search took {time.time()-start:.2f} seconds.")
-
-    start=time.time()
-    print("Connecting adjacent components...")
     connected_regions=connect_adjacent_components(adjacencies, height_values, integer_labels)
-    print(f"Connected component search took {time.time()-start:.2f} seconds.")
 
-    start=time.time()
-    print("Masking outliers...")
     labels, counts=np.unique(connected_regions, return_counts=True)
     outliers=labels[counts<min_region_size]
 
     masked=heights.copy()
     masked[np.isin(connected_regions, outliers)]=-1
-    print(f"Outlier masking took {time.time()-start:.2f} seconds.")
     return masked
 
 def interpolate_outliers(masked_outliers):
@@ -167,23 +152,6 @@ def interpolate_outliers(masked_outliers):
         interpolated[ylim, xlim][outlier_mask]=interp_value
     return interpolated
 
-def expand_slice(s, size=1):
-    return slice(max(0, s.start-size), s.stop+size)
-
-def get_heights(membrane, min_region_size=1000, peak_prominence=0.004):
-    start=time.time()
-    print("Computing heights...")
-    heights=process_zstack_gpu(membrane, peak_prominence)
-    print(f"Height computation took {time.time()-start:.2f} seconds.")
-
-    masked_outliers=get_outliers(heights, min_region_size)
-
-    start=time.time()
-    print("Interpolating outliers...")
-    interpolated=interpolate_outliers(masked_outliers)
-    print(f"Outlier interpolation took {time.time()-start:.2f} seconds.")
-    return interpolated
-
 def height_to_3d_mask(heights, max_height=None):
     height, width=heights.shape
     if max_height is None:
@@ -194,3 +162,14 @@ def height_to_3d_mask(heights, max_height=None):
         output[i]=heights>i
 
     return output
+
+def expand_slice(s, size=1):
+    return slice(max(0, s.start-size), s.stop+size)
+
+def get_heights(membrane, min_region_size=1000, peak_prominence=0.004):
+    heights=process_zstack_gpu(membrane, peak_prominence)
+
+    masked_outliers=get_outliers(heights, min_region_size)
+
+    interpolated=interpolate_outliers(masked_outliers)
+    return interpolated

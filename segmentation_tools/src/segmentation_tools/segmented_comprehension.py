@@ -607,7 +607,7 @@ class Image:
         
         # assign cell cycle to cell objects
         if hasattr(self, 'cell_cycles'):
-            self.write_cell_cycle(self.cell_cycles)
+            self.set_cell_attrs('cycle_stage', self.cell_cycles)
 
     
      # -------------Image Processing-------------    
@@ -628,7 +628,7 @@ class Image:
             
         export={'img':img, 'masks':self.masks, 'outlines':self.outlines, 'outlines_list':outlines_list}
 
-        optional_attrs=['FUCCI','cell_cycles','volumes','masks_3d','scale','z_scale', 'units'] # if any of these exist, may as well export them
+        optional_attrs=['FUCCI','cell_cycles','volumes','masks_3d','scale','z_scale', 'units', 'heights'] # if any of these exist, may as well export them
         for attr in optional_attrs:
             if hasattr(self, attr):
                 write_attrs.append(attr)
@@ -695,15 +695,10 @@ class Image:
         fluor_nuclei[red_or_green, np.argmin(fluor_percentages[red_or_green,:2], axis=1)]=0 # if not orange, pick red or green based on which has a higher percentage
         cc_stage_number=np.argmax(fluor_nuclei, axis=1)+1 # G1->1, S->2, G2->3
         cc_stage_number[np.sum(fluor_nuclei, axis=1)==0]=0 # no signal->0
+        self.cell_cycles=cc_stage_number
         for cell, cycle_stage in zip(self.cells, cc_stage_number):
             cell.cycle_stage=cycle_stage
         return cc_stage_number
-    
-    def fetch_cell_cycle(self):
-        return self.get_cell_attrs('cycle_stage')
-
-    def write_cell_cycle(self, cell_cycle_stages):
-        self.set_cell_attrs('cycle_stage', cell_cycle_stages)
     
     # -------------Metrics---------------
     # generalized methods for getting and setting cell attributes
@@ -880,18 +875,25 @@ class HeightMap(Image):
     lipid_density=1.010101 # g/mL
     protein_density=1.364256 # g/mL
 
-    def __init__(self, seg_path, mesh_path=None, zero_to_nan=True, scale=0.1625, z_scale=0.3225, NORI=False, **kwargs):
-        if mesh_path is None:
-            mesh_path=seg_path.replace('segmented','heights').replace('seg.npy', 'binarized.tif')
-        self.z_scale=z_scale
-        self.z, self.height_img=preprocessing.read_height_tif(mesh_path, z_scale=z_scale, zero_to_nan=zero_to_nan)
+    def __init__(self, seg_path, mesh_path=None, zero_to_nan=True, scale=0.1625, z_scale=1, NORI=False, **kwargs):
         super().__init__(seg_path, scale=scale, **kwargs)
+        self.z_scale=z_scale
+        if not hasattr(self, 'heights'):
+            # for NoRI, or backward compatibility to MGX. New segmentations should have heights in them.
+            if mesh_path is None:
+                mesh_path=seg_path.replace('segmented','heights').replace('seg.npy', 'binarized.tif')
+            self.heights, self.height_img=preprocessing.read_height_tif(mesh_path, z_scale=self.z_scale, zero_to_nan=zero_to_nan)
+            
+            if NORI:
+                self.masks_3d=np.repeat(self.masks[np.newaxis], self.height_img.shape[0], axis=0)
+                self.masks_3d[~self.height_img]=0
+                self.read_NORI()
 
-        self.masks_3d=np.repeat(self.masks[np.newaxis], self.height_img.shape[0], axis=0)
-        self.masks_3d[~self.height_img]=0
-
-        if NORI:
-            self.read_NORI()
+        else:
+            self.heights*=self.z_scale
+            self.heights=self.heights.astype(float)
+            if zero_to_nan:
+                self.heights[self.heights==0]=np.nan
     
     def read_NORI(self, file_path=None, mask_nan_z=True):
         from skimage import io
@@ -902,7 +904,7 @@ class HeightMap(Image):
         self.NORI[...,1]=self.NORI[...,1]*self.lipid_density
         if mask_nan_z:
             #np.ma.masked_where(np.repeat(np.isnan(self.z)[np.newaxis], self.NORI.shape[0], axis=0), self.NORI, copy=False)
-            self.NORI[:, np.isnan(self.z)]=np.nan
+            self.NORI[:, np.isnan(self.heights)]=np.nan
         return self.NORI
     
     def get_NORI_density(self):
@@ -926,8 +928,8 @@ class HeightMap(Image):
     
     def get_volumes(self):
         #self.heights=self.get_heights()
-        self.volumes=ndimage.sum(self.z, labels=self.masks, index=range(1,self.masks.max()+1))*self.scale**2
-        self.mean_heights=ndimage.mean(self.z, labels=self.masks, index=range(1,self.masks.max()+1))
+        self.volumes=ndimage.sum(self.heights, labels=self.masks, index=range(1,self.masks.max()+1))*self.scale**2
+        self.mean_heights=ndimage.mean(self.heights, labels=self.masks, index=range(1,self.masks.max()+1))
         self.set_cell_attrs('volume', self.volumes)
         self.set_cell_attrs('height', self.mean_heights)
 
@@ -967,13 +969,18 @@ class Cell:
         else: # centroid via Green's theorem
             self.get_centroid()
             return self._centroid
+        
+    @centroid.setter
+    def centroid(self, centroid):
+        self._centroid=centroid
 
     def get_centroid(self):
         x=self.outline[:,0]
         y=self.outline[:,1]
         A=self.area
         self._centroid=np.array([np.sum((x+np.roll(x,1))*(y-np.roll(y,1))),np.sum((y+np.roll(y,1))*(x-np.roll(x,1)))]).T/(6*A)
-
+        return self._centroid
+        
     def sort_vertices(self):
         '''
         determines which vertices are connected by ordering polar angles to each vertex w.r.t. the centroid.

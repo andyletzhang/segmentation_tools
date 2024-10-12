@@ -96,6 +96,7 @@ class PyQtGraphCanvas(QWidget):
         overlay=np.rot90(overlay, 3)
         overlay=np.fliplr(overlay)
         self.img_outline_overlay.setImage(overlay)
+        self.overlay_outlines()
 
     def overlay_masks(self):
         for l in self.mask_overlay:
@@ -108,10 +109,12 @@ class PyQtGraphCanvas(QWidget):
                 l.setImage(overlay)
 
     def random_cell_color(self, n=1):
-        from matplotlib.colors import to_rgb
         random_colors=self.cell_cmap(self.random_color_ID(n))
 
-        return [to_rgb(c) for c in random_colors]
+        if n==1:
+            return random_colors[:3]
+        else:
+            return random_colors[:,:3]
         
     def random_color_ID(self, n=1):
         random_IDs=np.random.randint(0, self.cell_n_colors, size=n)
@@ -323,10 +326,6 @@ class PyQtGraphCanvas(QWidget):
             for i, check in enumerate(RGB_checks):
                 if not check:
                     self.img_data[..., i] = 0
-            
-        # Grayscale checkbox
-        #if not self.parent.show_grayscale and self.parent.show_grayscale.isChecked():
-        #    self.img_data = np.mean(self.img_data, axis=-1) # TODO: incorporate LUTs?
 
         # update segmentation overlay
         self.draw_outlines()
@@ -410,7 +409,6 @@ class RGB_ImageItem():
             self.red.setImage(self.img_data[..., 0])
             self.green.setImage(self.img_data[..., 1])
             self.blue.setImage(self.img_data[..., 2])
-            self.setLookupTable('RGB')
 
     def toggle_grayscale(self):
         if self.show_grayscale:

@@ -12,7 +12,7 @@ dependencies = [
     "numpy",
     "cellpose",
     "superqt",
-    "monolayer_tracking", # You may need to manually install this since it's local.
+    "segmentation_tools", # You may need to manually install this since it's local.
 ]
 
 [project.scripts]

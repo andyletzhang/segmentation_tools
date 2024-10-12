@@ -1,9 +1,0 @@
-numpy
-cellpose
-pandas
-trackpy
-matplotlib
-scipy
-scikit-image
-networkx
-natsort

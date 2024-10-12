@@ -644,13 +644,20 @@ class Image:
     
     def delete_cell(self, cell_number):
         '''deletes a cell from the image.'''
-        self.cells=np.delete(self.cells, cell_number)
+        to_clear=self.masks==cell_number+1
+        self.masks[to_clear]=0
+        self.masks[self.masks==self.masks.max()]=cell_number
+        self.outlines[to_clear]=False
+        
+        if cell_number!=self.n_cells-1:
+            new_indices=np.arange(self.n_cells)
+            new_indices[cell_number]=new_indices[-1]
 
-        self.masks=preprocessing.renumber_masks(self.masks)
-        self.n_cells=self.masks.max()
+            self.cells=self.cells[new_indices[:-1]]
+            self.cells[cell_number].n=cell_number
 
-        for n, cell in enumerate(self.cells):
-            cell.n=n
+        self.n_cells-=1
+
     # ------------FUCCI----------------        
     def measure_FUCCI(self, percent_threshold=0.15, red_fluor_threshold=None, green_fluor_threshold=None, orange_brightness=1.5, threshold_offset=0, noise_score=0.02):
         """

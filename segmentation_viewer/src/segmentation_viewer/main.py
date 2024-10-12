@@ -444,6 +444,7 @@ class MainWidget(QMainWindow):
         self.remove_edge_masks_button=QPushButton("Remove Edge Masks", self)
         mend_remove_layout.addWidget(self.mend_gaps_button)
         mend_remove_layout.addWidget(self.remove_edge_masks_button)
+        self.ROIs_label=QLabel("0 ROIs", self)
         gap_size_layout=QHBoxLayout()
         gap_size_label=QLabel("Gap Size:", self)
         self.gap_size=QLineEdit(self)
@@ -464,6 +465,7 @@ class MainWidget(QMainWindow):
         segment_frame_layout.addLayout(self.cell_diameter_layout)
         segment_frame_layout.addWidget(self.segmentation_channels_widget)
         segment_frame_layout.addSpacerItem(self.vertical_spacer())
+        segment_frame_layout.addWidget(self.ROIs_label)
         segment_frame_layout.addLayout(segmentation_button_layout)
 
         segmentation_utils_layout.addWidget(operate_on_label)
@@ -475,7 +477,6 @@ class MainWidget(QMainWindow):
         segmentation_layout.addWidget(segment_frame_widget)
         segmentation_layout.addWidget(segmentation_utils_widget)
 
-        self.circle_mask=None
         self.mend_gaps_button.clicked.connect(self.mend_gaps)
         self.remove_edge_masks_button.clicked.connect(self.remove_edge_masks)
         self.cell_diameter.textChanged.connect(self.update_cell_diameter)
@@ -484,9 +485,16 @@ class MainWidget(QMainWindow):
         self.segment_stack_button.clicked.connect(self.segment_stack_pressed)
         regenerate_outlines_button.clicked.connect(self.regenerate_outlines_list)
         clear_masks_button.clicked.connect(self.clear_masks)
+        self.circle_mask=None
 
         return segmentation_tab
     
+    def update_ROIS_label(self):
+        if not self.file_loaded:
+            return
+        
+        self.ROIs_label.setText(f'{self.frame.n_cells} ROIs')
+
     def cell_prompt_changed(self, cell_n):
         if not self.file_loaded:
             return
@@ -634,6 +642,9 @@ class MainWidget(QMainWindow):
             masks, _, _=self.cellpose_model.eval(frame.img, channels=channels, diameter=diameter)
             frame.masks=masks
             self.replace_segmentation(frame)
+
+            if frame==self.frame:
+                self.update_ROIS_label()
 
     def clear_masks(self):
         if not self.file_loaded:
@@ -1520,8 +1531,8 @@ class MainWidget(QMainWindow):
 
             self.frame.outlines[outline[:,1], outline[:,0]]=True
             centroid=np.mean(enclosed_pixels, axis=0)
-            self.frame.cells=np.append(self.frame.cells, Cell(new_mask_n, outline, color_ID=cell_color, centroid=centroid, red=False, green=False, frame_number=self.frame_number))
-            
+            self.add_cell(new_mask_n, outline, color_ID=cell_color_n, frame_number=self.frame_number)
+
             if hasattr(self.stack, 'tracked_centroids'):
                 t=self.stack.tracked_centroids
                 new_particle_ID=t['particle'].max()+1
@@ -1533,6 +1544,7 @@ class MainWidget(QMainWindow):
             self.highlight_track_ends()
             self.canvas.add_cell_highlight(new_mask_n, alpha=0.5, color=cell_color, layer='mask')
 
+            self.update_ROIS_label()
             return True
         else:
             return False
@@ -1542,7 +1554,6 @@ class MainWidget(QMainWindow):
         self.frame.cells=np.append(self.frame.cells, Cell(n, outline, color_ID=color_ID, red=red, green=green, frame_number=frame_number))
     
     def add_outline(self, mask):
-        
         outline=utils.outlines_list(mask)[0]
         self.frame.outlines[outline[:,1], outline[:,0]]=True
 
@@ -1575,6 +1586,7 @@ class MainWidget(QMainWindow):
         self.highlight_track_ends()
         self.canvas.draw_outlines()
         self.plot_particle_statistic()
+        self.update_ROIs_label()
         self.update_display()
 
     def regenerate_outlines_list(self):
@@ -1598,14 +1610,10 @@ class MainWidget(QMainWindow):
 
         if frame==self.frame:
             self.canvas.add_cell_highlight(cell_n, alpha=0.5, color='none', img_type='outlines', layer='mask')
-
-        to_clear=frame.masks==cell_n+1
-        frame.masks[to_clear]=0
-        frame.outlines[to_clear]=False
-        print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
         
-        frame.delete_cell(cell_n)
         self.remove_tracking_data(cell_n, frame_number=frame.frame_number)
+        frame.delete_cell(cell_n)
+        print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
 
         if frame==self.frame:
             if self.selected_cell_n==cell_n:
@@ -1615,6 +1623,7 @@ class MainWidget(QMainWindow):
             self.canvas.draw_outlines()
             self.highlight_track_ends()
             self.update_display()
+            self.update_ROIS_label()
 
     def remove_tracking_data(self, cell_number, frame_number=None):
         ''' Remove a cell from one frame of the tracking data. Renumber the cell numbers in the frame to align with the new cell masks. '''
@@ -1623,11 +1632,10 @@ class MainWidget(QMainWindow):
             return
         if frame_number is None:
             frame_number=self.frame_number
+
         t=self.stack.tracked_centroids
         t.drop(t[(t.frame==frame_number)&(t.cell_number==cell_number)].index, inplace=True)
-        cell_numbers=np.unique(t[t.frame==frame_number]['cell_number'])
-        new_cell_numbers=np.searchsorted(cell_numbers, t.loc[t.frame==frame_number, 'cell_number'])
-        t.loc[t.frame==frame_number, 'cell_number']=new_cell_numbers.astype(t['cell_number'].dtype)
+        t.loc[(t.frame==frame_number)&(t.cell_number==self.stack.frames[frame_number].n_cells), 'cell_number']=cell_number
 
     def save_tracking(self, event=None, file_path=None):
         if not self.file_loaded:
@@ -1833,6 +1841,7 @@ class MainWidget(QMainWindow):
 
         self.canvas.draw_outlines()
         self.highlight_track_ends()
+        self.update_ROIS_label()
         self.update_display()
 
     def get_RGB(self):

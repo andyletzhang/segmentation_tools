@@ -5,11 +5,22 @@ from tqdm.notebook import tqdm
 import numpy as np
 from pathlib import Path
 
+def get_nd2_zstack(nd2_file, v=0, **kwargs):
+    ''' fetch a zstack from an ND2 file at the specified stage position.'''
+    zstack=[]
+    for i in range(nd2_file.sizes['z']):
+        zstack.append(nd2_file.get_frame_2D(v=v, z=i, **kwargs))
+    return np.array(zstack)
+
+def get_nd2_RGB(nd2_file, v=0, z=9, **kwargs):
+    RGB=[nd2_file.get_frame_2D(v=v, z=z, c=i, **kwargs) for i in range(3)]
+    return np.array(RGB).transpose(1,2,0)
+
 def get_stitched_boundary(membrane, radius=2):
     from scipy.signal import convolve2d
 
-    boundary=convolve2d(membrane==0, np.ones((2*radius+1,2*radius+1)), mode='same')!=0
-    boundary[0]=boundary[-1]=boundary[:,0]=boundary[:,-1]=True
+    boundary=convolve2d(membrane==0, np.ones((2*radius+1,2*radius+1)), mode='same')!=0 # find pixels that are adjacent to zeros
+    boundary[0]=boundary[-1]=boundary[:,0]=boundary[:,-1]=True # edge pixels are also considered boundary
 
     return boundary
 
@@ -23,13 +34,14 @@ def remove_edge_masks(membrane, masks, radius=2):
     new_masks=np.unique(new_masks, return_inverse=True)[1].reshape(masks.shape) # renumber masks to consecutive integers with edge masks removed
     return new_masks
 
-def segment_img(img, cp_model, size_model, color_channels=[0,0], mend=True, max_gap_size=300, tiled_edge=False, membrane_channel=None):
+def segment_img(img, cp_model, size_model=None, diameter=30, color_channels=[0,0], mend=True, max_gap_size=300, tiled_edge=False, membrane_channel=-1, **kwargs):
     # COMPUTE SEGMENTATION
-    diameter, style_diams=size_model.eval(img, channels=color_channels)
-    masks, flows = cp_model.eval(img, diameter=diameter, channels=color_channels)[:2] # segment data, toss outputted styles and diams
+    if size_model is not None:
+        diameter, style_diams=size_model.eval(img, channels=color_channels)
+    masks, flows = cp_model.eval(img, diameter=diameter, channels=color_channels, **kwargs)[:2] # segment data, toss outputted styles and diams
     masks=utils.remove_edge_masks(masks)
     if tiled_edge:
-        if membrane_channel:
+        if membrane_channel and img.ndim>2:
             membrane=img[...,membrane_channel]
         else:
             membrane=img
@@ -43,7 +55,7 @@ def segment_img(img, cp_model, size_model, color_channels=[0,0], mend=True, max_
     # pull boundary values from masks
     outlines=utils.masks_to_outlines(masks)
     
-    outlines_list=utils.outlines_list_multi(masks)
+    outlines_list=utils.outlines_list(masks)
     export={'img':img, 'masks':masks, 'outlines':outlines, 'outlines_list':outlines_list} # my reduced export: just the image, masks, and outlines. Flows, diams, colors etc. are just for cellpose's own reference so I toss them.
     return export
 

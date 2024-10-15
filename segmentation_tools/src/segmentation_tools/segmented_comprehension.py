@@ -538,6 +538,9 @@ class Image:
 
         # Fetch metadata from seg.npy
         self.name = file_path  # File name
+        if len(np.unique(data['masks']))!=data['masks'].max()+1:
+            print(f'WARNING: {self.name} masks are not contiguous. Renumbering...')
+            data['masks']=preprocessing.renumber_masks(data['masks'])
         self.n_cells = np.max(data['masks'])  # Number of detected cells in field of view (FOV)
 
         for attr in set(data.keys()).difference(['img', 'masks', 'outlines', 'outlines_list']):
@@ -607,7 +610,10 @@ class Image:
         
         # assign cell cycle to cell objects
         if hasattr(self, 'cell_cycles'):
-            self.set_cell_attrs('cycle_stage', self.cell_cycles)
+            try:
+                self.set_cell_attrs('cycle_stage', self.cell_cycles)
+            except ValueError:
+                print(f'{self.name} cell cycle data does not match the number of cells in the image: {self.n_cells} cells in the image, {len(self.cell_cycles)} cell cycle values.')
 
     
      # -------------Image Processing-------------    
@@ -629,12 +635,12 @@ class Image:
         export={'img':img, 'masks':self.masks, 'outlines':self.outlines, 'outlines_list':outlines_list}
 
         optional_attrs=['FUCCI','cell_cycles','volumes','masks_3d','scale','z_scale', 'units', 'heights'] # if any of these exist, may as well export them
-        for attr in optional_attrs:
-            if hasattr(self, attr):
-                write_attrs.append(attr)
-
-        for attr in set(write_attrs): # write any additional attributes. Set is used to avoid duplicates.
-            export[attr]=getattr(self, attr)
+        write_attrs=set(write_attrs+optional_attrs) # add optional attrs to write_attrs
+        for attr in write_attrs:
+            try:
+                export[attr]=getattr(self, attr)
+            except AttributeError:
+                continue
 
         if export_path is None: # if no export path is given, overwrite existing file
             export_path=self.name
@@ -646,14 +652,14 @@ class Image:
         '''deletes a cell from the image.'''
         to_clear=self.masks==cell_number+1
         self.masks[to_clear]=0
-        self.masks[self.masks==self.masks.max()]=cell_number
+        self.masks[self.masks==self.masks.max()]=cell_number+1
         self.outlines[to_clear]=False
         
-        if cell_number!=self.n_cells-1:
-            new_indices=np.arange(self.n_cells)
-            new_indices[cell_number]=new_indices[-1]
+        if cell_number!=self.n_cells-1: # didn't delete the last cell, so we have to reposition the cell object in the list
+            new_indices=np.arange(self.n_cells-1)
+            new_indices[cell_number]=self.n_cells-1
 
-            self.cells=self.cells[new_indices[:-1]]
+            self.cells=self.cells[new_indices]
             self.cells[cell_number].n=cell_number
 
         self.n_cells-=1

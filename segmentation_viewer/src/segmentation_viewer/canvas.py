@@ -441,7 +441,7 @@ class RGB_ImageItem():
         return [self.create_lut(QColor(255, 255, 255))]*3
 
     def RGB_lut(self):
-        return [self.create_lut(QColor(255, 0, 0)), self.create_lut(QColor(0, 255, 0)), self.create_lut(QColor(0, 0, 255))]
+        return [self.create_lut(QColor(255, 0, 0)), self.create_lut(QColor(0, 255, 0)), self.create_lut(QColor(255, 255, 255))]
 
     def set_grayscale(self, grayscale):
         self.show_grayscale=grayscale

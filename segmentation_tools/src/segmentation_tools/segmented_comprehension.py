@@ -4,6 +4,7 @@ from scipy import ndimage
 from natsort import natsorted
 from glob import glob
 from pathlib import Path
+import cellpose.utils as cp_utils
 from segmentation_tools import preprocessing # from my module
 
 '''
@@ -18,9 +19,15 @@ class TimeSeries:
     '''
     a stack of images as Image objects, identified as a series of seg.npy files in the same folder and presumed to be in chronological order when sorted by name.
     '''
-    def __init__(self, stack_path=None, frame_paths=None, coarse_grain=1, first_frame=0, last_frame=None, verbose_load=False, progress_bar=lambda x: x, **kwargs):
+    def __init__(self, stack_path=None, frame_paths=None, coarse_grain=1, first_frame=0, last_frame=None, verbose_load=False, from_frames=[], progress_bar=lambda x: x, **kwargs):
         '''takes the path to the stack and sets up the Stack, an array of Images representing each slice.'''
-        if stack_path:
+        if len(from_frames)>0:
+            self.frames=from_frames
+            self.name=str(Path(self.frames[0].name).parent)+'/'
+            for n, frame in enumerate(self.frames):
+                frame.frame_number=n
+
+        elif stack_path:
             self.frame_paths=natsorted(glob(stack_path+'/*seg.npy'))[0::coarse_grain] # find and alphanumerically sort all segmented images at the given path
             if len(self.frame_paths)==0:
                 raise FileNotFoundError('No seg.npy files found at {}'.format(stack_path)) # warn me if I can't find anything (probably a formatting error)
@@ -36,7 +43,7 @@ class TimeSeries:
             self.name=str(Path(frame_paths[0]).parent)+'/'
             
         else:
-            raise ValueError('Either stack_path or frame_paths must be provided.')
+            raise ValueError('Either from_frames, stack_path or frame_paths must be provided to load a TimeSeries.')
     
      # -------------Particle Tracking-------------
     def track_centroids(self, memory=3, v_quantile=0.97, filter_stubs=False, **kwargs):
@@ -510,7 +517,7 @@ class Image:
         else:
             pass
 
-    def __init__(self, file_path, frame_number=None, mend=False, max_gap_size=300, verbose=False, overwrite=False, load_img=False, normalize=False, scale=None, units=None):
+    def __init__(self, file_path, frame_number=None, mend=False, max_gap_size=300, verbose=False, overwrite=False, load_img=False, normalize=False, scale=None, units=None, from_img=None, from_zstack=None, **kwargs):
         '''
         takes a file path and loads the data.
         
@@ -521,30 +528,14 @@ class Image:
         load_img=True loads the image into the img attribute. Defaults to False to save memory.
         Normalize=True sets the maximum img value to 1.
         '''
-        import cellpose.utils as cp_utils
         
         # Print debug statements if verbose mode is enabled
         self.verbose = verbose
 
-        # Print loading information
-        self.vprint('loading {}'.format(file_path))
-
-        # Load data from file
-        data = np.load(file_path, allow_pickle=True).item()
-
-        if not 'img' in data.keys() and 'filename' in data.keys():
-            # this seg.npy was made with the cellpose GUI
-            data=preprocessing.convert_GUI_seg(data)
-
-        # Fetch metadata from seg.npy
         self.name = file_path  # File name
-        if len(np.unique(data['masks']))!=data['masks'].max()+1:
-            print(f'WARNING: {self.name} masks are not contiguous. Renumbering...')
-            data['masks']=preprocessing.renumber_masks(data['masks'])
-        self.n_cells = np.max(data['masks'])  # Number of detected cells in field of view (FOV)
 
-        for attr in set(data.keys()).difference(['img', 'masks', 'outlines', 'outlines_list']):
-            setattr(self, attr, data[attr])  # Load all attributes aside from stuff treated later on
+        for key, value in kwargs.items(): # Set any additional attributes passed as keyword arguments
+            setattr(self, key, value)
 
         # Set pixel units and scale (if specified)
         if units is not None:
@@ -552,15 +543,46 @@ class Image:
         if scale is not None:
             self.scale = scale  # Scale factor for converting pixels to desired units
         self.frame_number = frame_number  # Frame number for the image sequence
+
+        if from_img is not None: # load data from img
+            self.img=from_img
+            shape=self.img.shape[:2]
+            from_array=True
+            
+        elif from_zstack is not None: # load data from zstack
+            self.zstack=from_zstack
+            shape=self.zstack.shape[1:3]
+            from_array=True
+        
+        else:
+            from_array=False
+
+        if from_array:
+            self.masks=np.zeros(shape, dtype=np.uint16)
+            self.outlines=np.zeros(shape, dtype=bool)
+            self.outlines_list=[]
+
+        else: # load data from file
+            # Print loading information
+            self.vprint('loading {}'.format(file_path))
+
+            # Load data from file
+            data = np.load(file_path, allow_pickle=True).item()
+            if not 'img' in data.keys() and 'filename' in data.keys():
+                # this seg.npy was made with the cellpose GUI
+                data=preprocessing.convert_GUI_seg(data)
+
+            # Load all other entries as attributes
+            for attr in set(data.keys()).difference(['img']):
+                setattr(self, attr, data[attr])
+
+            if load_img or overwrite:
+                self.img = data['img']  # Load image data
+            
         
         # Load image if specified or for overwriting
-        if load_img or overwrite:
-            self.img = data['img']  # Load image data
-            if normalize:
-                self.img = preprocessing.normalize(self.img, dtype=np.float32)  # Normalize image data if specified
-        
-        # Load masks and set resolution
-        self.masks = data['masks']  # Masks for cell detection
+        if hasattr(self, 'img') and normalize:
+            self.img = preprocessing.normalize(self.img, dtype=np.float32)  # Normalize image data if specified
         
         # set masks datatype
         if self.masks.max() < 65535: # there will always be fewer than 65535 cells in a single frame, just a failsafe
@@ -577,23 +599,19 @@ class Image:
             mended = False
         
         # Generate outlines channel or load from file
-        if mended or 'outlines' not in data.keys():
+        if mended or not hasattr(self, 'outlines'):
             self.outlines = cp_utils.masks_to_outlines(self.masks)  # Generate outlines from masks
-        else:
-            self.outlines = data['outlines']  # Load outlines from data file
         
         try:
             self.outlines=self.outlines.todense()
         except AttributeError: # if it's already dense, carry on
             pass
-        self.outlines=self.outlines!=0
+        self.outlines=self.outlines!=0 # convert to boolean
         
         # Generate outlines_list or load from file
-        if mended or 'outlines_list' not in data.keys():
+        if mended or not hasattr(self, 'outlines_list'):
             self.vprint('creating new outlines_list from masks')
             outlines_list = cp_utils.outlines_list_multi(self.masks)  # Generate outlines_list
-        else:
-            outlines_list = data['outlines_list']  # Load outlines_list from file
         
         # Overwrite file if specified
         if overwrite:
@@ -605,16 +623,24 @@ class Image:
             self.vprint('overwriting old file at {}'.format(file_path))
             np.save(file_path, export)
         
+
+        cells=np.unique(self.masks)
+        cells=cells[cells!=0]-1
+        self.n_cells = len(cells)  # Number of detected cells in field of view (FOV)
+
         # Instantiate Cell objects for each cell labeled in the image
         self.cells = np.array([Cell(n, outlines_list[n], frame_number=frame_number) for n in range(self.n_cells)])
-        
+
         # assign cell cycle to cell objects
         if hasattr(self, 'cell_cycles'):
-            try:
-                self.set_cell_attrs('cycle_stage', self.cell_cycles)
-            except ValueError:
-                print(f'{self.name} cell cycle data does not match the number of cells in the image: {self.n_cells} cells in the image, {len(self.cell_cycles)} cell cycle values.')
+            if len(self.cell_cycles)!=len(cells):
+                print(f'warning: {self.name} cell cycle data does not match the number of cells in the image: {self.n_cells} cells in the image, {len(self.cell_cycles)} cell cycle values.')
+                self.cell_cycles=self.cell_cycles[cells]
+            self.set_cell_attrs('cycle_stage', self.cell_cycles)
 
+        if len(cells)!=self.masks.max():
+            print(f'WARNING: {self.name} masks are not contiguous. Renumbering...')
+            self.masks=preprocessing.renumber_masks(self.masks)
     
      # -------------Image Processing-------------    
     def load_img(self, normalize=False):

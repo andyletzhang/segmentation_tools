@@ -14,13 +14,14 @@ from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics
 from superqt import QRangeSlider
 import pyqtgraph as pg
 
-from segmentation_tools.segmented_comprehension import TimeSeries, Cell
+from segmentation_tools.segmented_comprehension import TimeSeries, Image, HeightMap, Cell
 from segmentation_viewer.canvas import PyQtGraphCanvas, CellMaskPolygon
 from segmentation_viewer.command_line import CommandLineWindow
 
 import importlib.resources
 from tqdm import tqdm
 
+# TODO: fine-scrub LUTs on right click or something
 # TODO: add mouse and keyboard shortcuts to interface
 # TODO: normalize the summed channels when show_grayscale
 # TODO: add num_ROIs to segmentation tab
@@ -249,15 +250,18 @@ class MainWidget(QMainWindow):
         particle_stat_layout.addWidget(self.cell_cycle_button)
 
         #----------------Frame Slider----------------
-        self.frame_slider=QSlider(Qt.Orientation.Horizontal, self)
-        # Customize the slider to look like a scroll bar
-        self.frame_slider.setFixedHeight(15)  # Make the slider shorter in height
-        self.frame_slider.setTickPosition(QSlider.TickPosition.NoTicks)  # No tick marks
-        self.frame_slider.setStyleSheet("""
+        slider_stylesheet="""
             QSlider::groove:horizontal {
                 background: #888;
                 border: 1px solid #444;
                 height: 16px; /* Groove height */
+                margin: 0px;
+            }
+
+            QSlider::groove:vertical {
+                background: #888;
+                border: 1px solid #444;
+                width: 16px; /* Groove width */
                 margin: 0px;
             }
 
@@ -269,7 +273,27 @@ class MainWidget(QMainWindow):
                 margin: -8px 0; /* Adjust positioning to align with groove */
                 border-radius: 2px; /* Slightly round edges */
             }
-        """)
+            
+            QSlider::handle:vertical {
+                background: #ccc;
+                border: 1px solid #777;
+                height: 40px; /* Handle height */
+                width: 16px; /* Handle width */
+                margin: -8px 0; /* Adjust positioning to align with groove */
+                border-radius: 2px; /* Slightly round edges */
+            }
+        """
+        self.frame_slider=QSlider(Qt.Orientation.Horizontal, self)
+        self.zstack_slider=QSlider(Qt.Orientation.Vertical, self)
+        self.zstack_slider.setVisible(False)
+        # Customize the slider to look like a scroll bar
+        self.frame_slider.setFixedHeight(15)  # Make the slider shorter in height
+        self.frame_slider.setTickPosition(QSlider.TickPosition.NoTicks)  # No tick marks
+        self.frame_slider.setStyleSheet(slider_stylesheet)
+
+        self.zstack_slider.setFixedWidth(15)  # Make the slider shorter in height
+        self.zstack_slider.setTickPosition(QSlider.TickPosition.NoTicks)  # No tick marks
+        self.zstack_slider.setStyleSheet(slider_stylesheet)
 
         #----------------Layout----------------
         # Main layout
@@ -291,8 +315,10 @@ class MainWidget(QMainWindow):
         #self.left_toolbar.setFixedWidth(250)
 
         self.canvas_widget = QWidget()
-        canvas_layout = QVBoxLayout(self.canvas_widget)
-        canvas_layout.setContentsMargins(0, 0, 0, 0)
+        canvas_VBoxLayout = QVBoxLayout(self.canvas_widget)
+        canvas_VBoxLayout.setContentsMargins(0, 0, 0, 0)
+        canvas_HBoxLayout = QHBoxLayout()
+        canvas_HBoxLayout.setContentsMargins(0, 0, 0, 0)
         self.canvas = PyQtGraphCanvas(parent=self)
         self.globals_dict['canvas']=self.canvas
 
@@ -300,8 +326,10 @@ class MainWidget(QMainWindow):
         self.cell_roi.last_handle_pos = None
         self.canvas.img_plot.addItem(self.cell_roi)
 
-        canvas_layout.addWidget(self.canvas)
-        canvas_layout.addWidget(self.frame_slider)
+        canvas_HBoxLayout.addWidget(self.canvas)
+        canvas_HBoxLayout.addWidget(self.zstack_slider)
+        canvas_VBoxLayout.addLayout(canvas_HBoxLayout)
+        canvas_VBoxLayout.addWidget(self.frame_slider)
 
         main_widget.addWidget(self.left_toolbar)
         main_widget.addWidget(self.canvas_widget)
@@ -346,6 +374,7 @@ class MainWidget(QMainWindow):
 
         #----------------Connections----------------
         self.frame_slider.valueChanged.connect(self.update_frame_number)
+        self.zstack_slider.valueChanged.connect(self.update_zstack_number)
         # click event
         self.canvas.img_plot.scene().sigMouseClicked.connect(self.on_click)
         self.canvas.seg_plot.scene().sigMouseClicked.connect(self.on_click)
@@ -489,7 +518,7 @@ class MainWidget(QMainWindow):
 
         return segmentation_tab
     
-    def update_ROIS_label(self):
+    def update_ROIs_label(self):
         if not self.file_loaded:
             return
         
@@ -592,7 +621,14 @@ class MainWidget(QMainWindow):
             self.size_model_path=models.size_model_path(model_type)
             self.size_model=models.SizeModel(self.cellpose_model, pretrained_size=self.size_model_path)
 
-        diam, style_diam=self.size_model.eval(img, channels=channels)
+        if channels[1]==4: # FUCCI channel
+            from segmentation_tools.preprocessing import combine_FUCCI_channels
+            membrane=img[...,channels[0]]
+            nuclei=combine_FUCCI_channels(img)
+            img=np.stack([nuclei, membrane], axis=-1)
+            diam, style_diam=self.size_model.eval(img, channels=[2,1])
+        else:
+            diam, style_diam=self.size_model.eval(img, channels=channels)
 
         return diam
 
@@ -639,12 +675,19 @@ class MainWidget(QMainWindow):
             if diameter is None:
                 diameter=self.calibrate_cell_diameter(frame.img, channels)
             frame.cell_diameter=diameter
-            masks, _, _=self.cellpose_model.eval(frame.img, channels=channels, diameter=diameter)
+            if channels[1]==4: # FUCCI channel
+                from segmentation_tools.preprocessing import combine_FUCCI_channels
+                membrane=frame.img[...,channels[0]]
+                nuclei=combine_FUCCI_channels(frame.img)
+                img=np.stack([nuclei, membrane], axis=-1)
+                masks, _, _=self.cellpose_model.eval(img, channels=[2,1], diameter=diameter)
+            else:
+                masks, _, _=self.cellpose_model.eval(frame.img, channels=channels, diameter=diameter)
             frame.masks=masks
             self.replace_segmentation(frame)
 
             if frame==self.frame:
-                self.update_ROIS_label()
+                self.update_ROIs_label()
 
     def clear_masks(self):
         if not self.file_loaded:
@@ -1030,18 +1073,43 @@ class MainWidget(QMainWindow):
     def wheelEvent(self, event):
         if not self.file_loaded:
             return
-        if event.angleDelta().y() < 0: # scroll down = next frame
-            self.frame_number = min(self.frame_number + 1, len(self.stack.frames) - 1)
-        else: # scroll up = previous frame
-            self.frame_number = max(self.frame_number - 1, 0)
-        self.frame_slider.setValue(self.frame_number)
+        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier: # shift+scroll = z-stack
+            if self.is_zstack:
+                if event.angleDelta().y() > 0: # scroll up = higher in z-stack
+                    self.zstack_slider.setValue(min(self.zstack_slider.value() + 1, len(self.frame.zstack) - 1))
+                else:
+                    self.zstack_slider.setValue(max(self.zstack_slider.value() - 1, 0))
+        else: # scroll = frame
+            if event.angleDelta().y() < 0: # scroll down = next frame
+                self.frame_number = min(self.frame_number + 1, len(self.stack.frames) - 1)
+            else: # scroll up = previous frame
+                self.frame_number = max(self.frame_number - 1, 0)
+            self.frame_slider.setValue(self.frame_number)
+
+    def update_zstack_number(self, zstack_number):
+        if not self.file_loaded:
+            return
+        self.zstack_number = zstack_number
+        self.frame.img=self.frame.zstack[self.zstack_number]
+        self.imshow(self.frame, reset=False)
 
     def update_frame_number(self, frame_number):
         if not self.file_loaded:
             return
         self.frame_number = frame_number
-        self.imshow(self.stack.frames[self.frame_number], reset=False)
+        self.frame=self.stack.frames[self.frame_number]
         
+        if self.is_zstack:
+            self.frame.img=self.frame.zstack[self.zstack_slider.value()]
+            self.zstack_slider.setVisible(True)
+            self.zstack_slider.setRange(0, self.frame.zstack.shape[0]-1)
+            self.is_zstack=True
+        else:
+            self.zstack_slider.setVisible(False)
+            self.is_zstack=False
+
+        self.imshow(self.frame, reset=False)
+
         # frame marker on stat plot
         self.stat_plot_frame_marker.setPos(self.frame_number)
 
@@ -1049,7 +1117,10 @@ class MainWidget(QMainWindow):
         ''' Update the status bar with the current cursor coordinates. '''
         self.status_coordinates.setText(f"Coordinates: ({x}, {y})")
         pixel_value=self.get_pixel_value(x, y)
-        pixel_string=', '.join(f'{color}: {str(p)}' for color, p in zip(('R','G','B'),pixel_value))
+        if self.is_grayscale:
+            pixel_string=f'Gray: {pixel_value[0]}'
+        else:
+            pixel_string=', '.join(f'{color}: {str(p)}' for color, p in zip(('R','G','B'),pixel_value))
         self.status_pixel_value.setText(pixel_string)
     
     def get_pixel_value(self, x, y):
@@ -1057,9 +1128,13 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return None, None, None
         img=self.frame.img
-        if x<0 or y<0 or x>=img.shape[1] or y>=img.shape[0]:
+
+        if x<0 or y<0 or x>=img.shape[1] or y>=img.shape[0]: # outside image bounds
             return None, None, None
         
+        if self.is_grayscale:
+            return [img[y, x]]
+
         hidden_channels=np.where(~np.array(self.get_RGB()))[0]
         pixel_value=list(img[y, x])
         for channel in hidden_channels:
@@ -1531,7 +1606,7 @@ class MainWidget(QMainWindow):
 
             self.frame.outlines[outline[:,1], outline[:,0]]=True
             centroid=np.mean(enclosed_pixels, axis=0)
-            self.add_cell(new_mask_n, outline, color_ID=cell_color_n, frame_number=self.frame_number)
+            self.add_cell(new_mask_n, outline, color_ID=cell_color_n, frame_number=self.frame_number, red=False, green=False)
 
             if hasattr(self.stack, 'tracked_centroids'):
                 t=self.stack.tracked_centroids
@@ -1544,7 +1619,7 @@ class MainWidget(QMainWindow):
             self.highlight_track_ends()
             self.canvas.add_cell_highlight(new_mask_n, alpha=0.5, color=cell_color, layer='mask')
 
-            self.update_ROIS_label()
+            self.update_ROIs_label()
             return True
         else:
             return False
@@ -1585,6 +1660,7 @@ class MainWidget(QMainWindow):
 
         self.highlight_track_ends()
         self.canvas.draw_outlines()
+        self.select_cell(cell_n1)
         self.plot_particle_statistic()
         self.update_ROIs_label()
         self.update_display()
@@ -1623,7 +1699,7 @@ class MainWidget(QMainWindow):
             self.canvas.draw_outlines()
             self.highlight_track_ends()
             self.update_display()
-            self.update_ROIS_label()
+            self.update_ROIs_label()
 
     def remove_tracking_data(self, cell_number, frame_number=None):
         ''' Remove a cell from one frame of the tracking data. Renumber the cell numbers in the frame to align with the new cell masks. '''
@@ -1675,6 +1751,10 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         
+        if self.unsaved: # loaded a new file, need to save the segmentation to a new location
+            self.save_as_segmentation()
+            return
+
         if self.also_save_tracking.isChecked():
             self.save_tracking(file_path=self.stack.name+'tracking.csv')
 
@@ -1706,6 +1786,8 @@ class MainWidget(QMainWindow):
             file_path=QFileDialog.getSaveFileName(self, 'Save frame as...', filter='*_seg.npy')[0]
             if file_path=='':
                 return
+            if not file_path.endswith('_seg.npy'):
+                file_path=file_path[:-4]+'_seg.npy'
             self.save_frame(self.frame, file_path)
 
     def save_frame(self, frame, file_path=None):
@@ -1741,6 +1823,8 @@ class MainWidget(QMainWindow):
             except AttributeError:
                 self.get_red_green(frame)
                 green, red=np.array(frame.get_cell_attrs(['green', 'red'])).T
+            except ValueError: # no cells in the frame
+                continue
             frame.cell_cycles=green+2*red
             frame.set_cell_attrs('cycle_stage', frame.cell_cycles)
 
@@ -1811,6 +1895,7 @@ class MainWidget(QMainWindow):
         # reset toolbar
         self.status_frame_number.setText(f'Frame: {frame.frame_number}')
         self.frame = frame
+
         self.globals_dict['frame']=frame
         if reset: 
             self.reset_display()
@@ -1841,7 +1926,7 @@ class MainWidget(QMainWindow):
 
         self.canvas.draw_outlines()
         self.highlight_track_ends()
-        self.update_ROIS_label()
+        self.update_ROIs_label()
         self.update_display()
 
     def get_RGB(self):
@@ -2013,13 +2098,13 @@ class MainWidget(QMainWindow):
     
     def add_channel_layout(self, channel_layout):
         self.membrane_channel=QComboBox(self)
+        self.membrane_channel_label=QLabel("Membrane Channel:", self)
         self.membrane_channel.addItems(["Gray", "Red", "Green", "Blue"])
         self.membrane_channel.setFixedWidth(70)
-        self.membrane_channel_label=QLabel("Membrane Channel:", self)
         self.nuclear_channel=QComboBox(self)
-        self.nuclear_channel.addItems(["None", "Red", "Green", "Blue"])
-        self.nuclear_channel.setFixedWidth(70)
         self.nuclear_channel_label=QLabel("Nuclear Channel:", self)
+        self.nuclear_channel.addItems(["None", "Red", "Green", "Blue", "FUCCI"])
+        self.nuclear_channel.setFixedWidth(70)
 
         membrane_tab_layout=QHBoxLayout()
         membrane_tab_layout.setSpacing(10)
@@ -2172,11 +2257,23 @@ class MainWidget(QMainWindow):
             raise ValueError(f'Image has {self.frame.img.ndim} dimensions, must be 2 (grayscale) or 3 (RGB).')
 
         self.imshow(self.frame)
+        if hasattr(self.frame, 'zstack'):
+            self.zstack_slider.setVisible(True)
+            self.zstack_slider.setRange(0, self.frame.zstack.shape[0]-1)
+            self.zstack_slider.setValue(0)
+            self.is_zstack=True
+        else:
+            self.zstack_slider.setVisible(False)
+            self.is_zstack=False
+
         self.canvas.img_plot.autoRange()
         self.frame_slider.setRange(0, len(self.stack.frames)-1)
 
         # set slider ranges
-        all_imgs=np.array([frame.img for frame in self.stack.frames]).reshape(-1, n_colors)
+        if self.is_zstack:
+            all_imgs=np.array([frame.zstack for frame in self.stack.frames]).reshape(-1, n_colors)
+        else:
+            all_imgs=np.array([frame.img for frame in self.stack.frames]).reshape(-1, n_colors)
         if len(all_imgs)>1e6:
             # downsample to speed up calculation
             random_pixels=np.random.choice(all_imgs.shape[0], size=int(1e6), replace=True)
@@ -2200,16 +2297,41 @@ class MainWidget(QMainWindow):
         Load a stack of segmented images. 
         If a tracking.csv is found, the tracking data is returned as well
         '''
+        # TODO: maybe load things only when they are needed?
+        
         self.file_loaded = True
         tracked_centroids=None
 
         seg_files=[f for f in files if f.endswith('seg.npy')]
+        tif_files=[f for f in files if f.endswith('tif') or f.endswith('tiff')]
         if len(seg_files)>0: # segmented file paths
             stack=TimeSeries(frame_paths=seg_files, load_img=True, progress_bar=self.progress_bar)
             for file in files:
                 if file.endswith('tracking.csv'):
                     tracked_centroids=self.load_tracking_data(file)
                     print(f'Loaded tracking data from {file}')
+            self.unsaved=False
+            return stack, tracked_centroids
+
+        elif len(tif_files)>0: # tif files (only checks if no seg.npy files are found)
+            from segmentation_tools.io import read_tif, tiffpage_zstack, tiffpage_frame
+            from pathlib import Path
+
+            frames=[]
+            for file_path in self.progress_bar(tif_files):
+                tif_file=read_tif(file_path)
+                file_stem=Path(file_path).stem
+                for T in self.progress_bar(range(len(tif_file))):
+                    if tif_file.shape[1]>1:
+                        img=tiffpage_zstack(tif_file, t=T)
+                        frames.append(Image(from_zstack=img, img=img[0], file_path=file_stem+f'-{T}_seg.npy'))
+                    else:
+                        img=tiffpage_frame(tif_file, t=T)
+                        frames.append(Image(from_img=img, file_path=file_stem+f'-{T}_seg.npy'))
+            stack=TimeSeries(from_frames=frames)
+            self.unsaved=True
+            return stack, None
+        
         else: # no seg.npy files specified, maybe it's a folder of segmented files?
             try:
                 stack=TimeSeries(stack_path=files[0], verbose_load=True, progress_bar=self.progress_bar, load_img=True)
@@ -2219,9 +2341,8 @@ class MainWidget(QMainWindow):
                     print(f'Loaded tracking data from {tracking_path}')
             except FileNotFoundError: # nope, just reject it
                 self.statusBar().showMessage(f'ERROR: File {files[0]} is not a seg.npy file, cannot be loaded.', 4000)
+                self.unsaved=False
                 return False, None
-            
-        return stack, tracked_centroids
 
     def get_red_green(self, frame=None):
         ''' Fetch or create red and green attributes for cells in the current frame. '''

@@ -9,8 +9,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog,
     QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter, QProgressBar
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics
+from PyQt6.QtCore import Qt, QPointF
+from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics, QMouseEvent
 from superqt import QRangeSlider
 import pyqtgraph as pg
 
@@ -21,10 +21,11 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
-# TODO: fine-scrub LUTs on right click or something
+# TODO: some continued issue with adding cells and merging cells in conjunction. Other cell IDs are merged in the process.
+# TODO: stack level operations should use current z slice
+# TODO: overlay colormapped cell attributes on segmentation plot
 # TODO: add mouse and keyboard shortcuts to interface
 # TODO: normalize the summed channels when show_grayscale
-# TODO: add num_ROIs to segmentation tab
 
 # TODO: get_mitoses, visualize mitoses, edit mitoses
 
@@ -32,7 +33,6 @@ from tqdm import tqdm
 # TODO: expand/collapse segmentation plot
 # TODO: undo/redo
 # TODO: load TIFs
-# TODO: segmentation channel 2 "FUCCI" option which blends R and G channels
 # TODO: some image pyramid approach to speed up work on large images??
 
 darktheme_stylesheet = """
@@ -622,7 +622,7 @@ class MainWidget(QMainWindow):
             self.size_model=models.SizeModel(self.cellpose_model, pretrained_size=self.size_model_path)
 
         if channels[1]==4: # FUCCI channel
-            from segmentation_tools.preprocessing import combine_FUCCI_channels
+            from segmentation_tools.image_segmentation import combine_FUCCI_channels
             membrane=img[...,channels[0]]
             nuclei=combine_FUCCI_channels(img)
             img=np.stack([nuclei, membrane], axis=-1)
@@ -778,6 +778,15 @@ class MainWidget(QMainWindow):
         green_threshold_layout.addWidget(green_threshold_label)
         green_threshold_layout.addWidget(self.green_threshold)
 
+        percent_threshold_layout=QHBoxLayout()
+        percent_threshold_label=QLabel("Minimum N/C Ratio:", self)
+        self.percent_threshold=QLineEdit(self)
+        self.percent_threshold.setFixedWidth(40)
+        self.percent_threshold.setPlaceholderText('0.15')
+        self.percent_threshold.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
+        percent_threshold_layout.addWidget(percent_threshold_label)
+        percent_threshold_layout.addWidget(self.percent_threshold)
+
         FUCCI_button_layout=QHBoxLayout()
         FUCCI_button_layout.setSpacing(5)
         FUCCI_frame_button=QPushButton("Measure Frame", self)
@@ -805,6 +814,7 @@ class MainWidget(QMainWindow):
 
         measure_FUCCI_layout.addLayout(red_threshold_layout)
         measure_FUCCI_layout.addLayout(green_threshold_layout)
+        measure_FUCCI_layout.addLayout(percent_threshold_layout)
         measure_FUCCI_layout.addSpacerItem(self.vertical_spacer())
         measure_FUCCI_layout.addLayout(FUCCI_button_layout)
 
@@ -874,6 +884,8 @@ class MainWidget(QMainWindow):
     def get_FUCCI_thresholds(self):
         red_threshold=self.red_threshold.text()
         green_threshold=self.green_threshold.text()
+        percent_threshold=self.percent_threshold.text()
+
         if red_threshold=='':
             red_threshold=None
         else:
@@ -882,15 +894,19 @@ class MainWidget(QMainWindow):
             green_threshold=None
         else:
             green_threshold=float(green_threshold)
-        return red_threshold, green_threshold
+        if percent_threshold=='':
+            percent_threshold=0.15
+        else:
+            percent_threshold=float(percent_threshold)
+        return red_threshold, green_threshold, percent_threshold
     
     def measure_FUCCI(self, frames):
-        red_threshold, green_threshold=self.get_FUCCI_thresholds()
+        red_threshold, green_threshold, percent_threshold=self.get_FUCCI_thresholds()
         for frame in self.progress_bar(frames, desc='Measuring FUCCI'):
             if not hasattr(frame, 'FUCCI'):
                 frame.FUCCI=frame.img[...,0], frame.img[...,1] # use the red and green channels
 
-            frame.measure_FUCCI(red_fluor_threshold=red_threshold, green_fluor_threshold=green_threshold, orange_brightness=1)
+            frame.measure_FUCCI(red_fluor_threshold=red_threshold, green_fluor_threshold=green_threshold, orange_brightness=1, percent_threshold=percent_threshold)
             self.get_red_green(frame)
         
         red_threshold=self.frame.red_fluor_threshold
@@ -2143,7 +2159,7 @@ class MainWidget(QMainWindow):
             slider_label=QLabel(slider_name)
             labels_and_slider.addWidget(slider_label)
         
-        slider=QRangeSlider(orientation=Qt.Orientation.Horizontal, parent=self)
+        slider=FineScrubQRangeSlider(orientation=Qt.Orientation.Horizontal, parent=self)
         slider.setRange(0, 65535)
         slider.setValue((0, 65535))
 
@@ -2298,12 +2314,20 @@ class MainWidget(QMainWindow):
         If a tracking.csv is found, the tracking data is returned as well
         '''
         # TODO: maybe load things only when they are needed?
-        
+
         self.file_loaded = True
         tracked_centroids=None
 
-        seg_files=[f for f in files if f.endswith('seg.npy')]
-        tif_files=[f for f in files if f.endswith('tif') or f.endswith('tiff')]
+        # check if files[0] is a folder
+        if os.path.isdir(files[0]):
+            seg_files=[f for f in os.listdir(files[0]) if f.endswith('seg.npy')]
+            tif_files=[f for f in os.listdir(files[0]) if f.endswith('tif') or f.endswith('tiff')]
+            seg_files=[os.path.join(files[0], f) for f in seg_files]
+            tif_files=[os.path.join(files[0], f) for f in tif_files]
+        else:
+            seg_files=[f for f in files if f.endswith('seg.npy')]
+            tif_files=[f for f in files if f.endswith('tif') or f.endswith('tiff')]
+
         if len(seg_files)>0: # segmented file paths
             stack=TimeSeries(frame_paths=seg_files, load_img=True, progress_bar=self.progress_bar)
             for file in files:
@@ -2333,16 +2357,9 @@ class MainWidget(QMainWindow):
             return stack, None
         
         else: # no seg.npy files specified, maybe it's a folder of segmented files?
-            try:
-                stack=TimeSeries(stack_path=files[0], verbose_load=True, progress_bar=self.progress_bar, load_img=True)
-                tracking_path=os.path.join(files[0], 'tracking.csv')
-                if os.path.exists(tracking_path):
-                    tracked_centroids=self.load_tracking_data(tracking_path)
-                    print(f'Loaded tracking data from {tracking_path}')
-            except FileNotFoundError: # nope, just reject it
-                self.statusBar().showMessage(f'ERROR: File {files[0]} is not a seg.npy file, cannot be loaded.', 4000)
-                self.unsaved=False
-                return False, None
+            self.statusBar().showMessage(f'ERROR: File {files[0]} is not a seg.npy or tiff file, cannot be loaded.', 4000)
+            self.unsaved=False
+            return False, None
 
     def get_red_green(self, frame=None):
         ''' Fetch or create red and green attributes for cells in the current frame. '''
@@ -2362,9 +2379,73 @@ class MainWidget(QMainWindow):
         if hasattr(self, 'cli_window'):
             self.cli_window.close()
         event.accept()
-    
+
+class FineScrubQRangeSlider(QRangeSlider):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fine_scrubbing = False
+        self.fine_scrub_factor = 0.1  # Adjust this to change sensitivity
+        self.original_press_pos = None
+
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.RightButton:
+            # Create a modified left-click event at the same position
+            self.fine_scrubbing = True
+            self.original_press_pos = event.position()
+            
+            modified_event = QMouseEvent(
+                event.type(),
+                event.position(),
+                event.globalPosition(),
+                Qt.MouseButton.LeftButton,  # Convert right click to left
+                Qt.MouseButton.LeftButton,  # Active buttons
+                event.modifiers()
+            )
+            super().mousePressEvent(modified_event)
+        else:
+            super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.RightButton and self.fine_scrubbing:
+            # Create a modified left-button release event
+            modified_event = QMouseEvent(
+                event.type(),
+                event.position(),
+                event.globalPosition(),
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.NoButton,  # No buttons pressed after release
+                event.modifiers()
+            )
+            self.fine_scrubbing = False
+            self.original_press_pos = None
+            super().mouseReleaseEvent(modified_event)
+        else:
+            super().mouseReleaseEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if self.fine_scrubbing and self.original_press_pos is not None:
+            # Calculate the scaled movement
+            delta = event.position() - self.original_press_pos
+            scaled_delta = delta * self.fine_scrub_factor
+            
+            # Create new position that applies the scaled movement to the original position
+            fine_pos = self.original_press_pos + scaled_delta
+            
+            # Create modified move event with scaled position
+            modified_event = QMouseEvent(
+                event.type(),
+                QPointF(fine_pos),
+                event.globalPosition(),
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton,
+                event.modifiers()
+            )
+            super().mouseMoveEvent(modified_event)
+        else:
+            super().mouseMoveEvent(event)
+
 def main():
-    #pg.setConfigOptions(useOpenGL=True)
+    pg.setConfigOptions(useOpenGL=True)
     #pg.setConfigOptions(enableExperimental=True)
 
     if not QApplication.instance():

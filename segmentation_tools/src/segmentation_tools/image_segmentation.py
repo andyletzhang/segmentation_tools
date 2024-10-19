@@ -5,17 +5,6 @@ from tqdm.notebook import tqdm
 import numpy as np
 from pathlib import Path
 
-def get_nd2_zstack(nd2_file, v=0, **kwargs):
-    ''' fetch a zstack from an ND2 file at the specified stage position.'''
-    zstack=[]
-    for i in range(nd2_file.sizes['z']):
-        zstack.append(nd2_file.get_frame_2D(v=v, z=i, **kwargs))
-    return np.array(zstack)
-
-def get_nd2_RGB(nd2_file, v=0, z=9, **kwargs):
-    RGB=[nd2_file.get_frame_2D(v=v, z=z, c=i, **kwargs) for i in range(3)]
-    return np.array(RGB).transpose(1,2,0)
-
 def get_stitched_boundary(membrane, radius=2):
     from scipy.signal import convolve2d
 
@@ -59,6 +48,19 @@ def segment_img(img, cp_model, size_model=None, diameter=30, color_channels=[0,0
     export={'img':img, 'masks':masks, 'outlines':outlines, 'outlines_list':outlines_list} # my reduced export: just the image, masks, and outlines. Flows, diams, colors etc. are just for cellpose's own reference so I toss them.
     return export
 
+def combine_FUCCI_channels(imgs):
+    membrane=imgs[...,2]
+    red_bounds=np.quantile(imgs[...,0], [0.01, 0.99])
+    green_bounds=np.quantile(imgs[...,1], [0.01, 0.99])
+
+    red=(imgs[...,0]-red_bounds[0])/(red_bounds[1]-red_bounds[0])
+    green=(imgs[...,1]-green_bounds[0])/(green_bounds[1]-green_bounds[0])
+
+    nuclei=red+green/2
+
+    imgs=np.stack([nuclei, membrane], axis=-1)
+    return imgs
+    
 def segment_stack(stack_path, output_path=None, segmentation_channel='membrane', geminin_path=None, pip_path=None, initial_frame_number=0, **kwargs):
     # load model
     if segmentation_channel=="membrane" or segmentation_channel=='FUCCI':

@@ -2,6 +2,17 @@ import xml.etree.ElementTree as ET
 import numpy as np
 from tifffile import TiffFile
 
+def get_nd2_zstack(nd2_file, v=0, **kwargs):
+    ''' fetch a zstack from an ND2 file at the specified stage position.'''
+    zstack=[]
+    for i in range(nd2_file.sizes['z']):
+        zstack.append(nd2_file.get_frame_2D(v=v, z=i, **kwargs))
+    return np.array(zstack)
+
+def get_nd2_RGB(nd2_file, v=0, z=0, **kwargs):
+    RGB=[nd2_file.get_frame_2D(v=v, z=z, c=i, **kwargs) for i in range(3)]
+    return np.array(RGB).transpose(1,2,0)
+
 # Function to convert XML elements into a dictionary
 def xml_to_dict(element):
     data_dict = {element.tag.split('}')[-1]: {} if element.attrib or list(element) else element.text}
@@ -41,6 +52,9 @@ def read_tif_shape(tif_file):
             shape.append(int(metadata_dict["Image"]['Pixels'][key]))
 
         dimension_order=metadata_dict["Image"]['Pixels']['@DimensionOrder']
+
+    else:
+        raise ValueError('Unknown TIFF format (not saved as OME TIFF or ImageJ TIFF)')
     
     return tuple(shape), dimension_order
 

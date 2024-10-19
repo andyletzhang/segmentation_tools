@@ -611,11 +611,11 @@ class Image:
         # Generate outlines_list or load from file
         if mended or not hasattr(self, 'outlines_list'):
             self.vprint('creating new outlines_list from masks')
-            outlines_list = cp_utils.outlines_list_multi(self.masks)  # Generate outlines_list
+            self.outlines_list = cp_utils.outlines_list_multi(self.masks)  # Generate outlines_list
         
         # Overwrite file if specified
         if overwrite:
-            export = {'img': data['img'], 'masks': self.masks, 'outlines': self.outlines, 'outlines_list': outlines_list}
+            export = {'img': data['img'], 'masks': self.masks, 'outlines': self.outlines, 'outlines_list': self.outlines_list}
             if hasattr(self, 'FUCCI'):  # Export FUCCI channels if present
                 export['FUCCI'] = self.FUCCI
             
@@ -629,7 +629,7 @@ class Image:
         self.n_cells = len(cells)  # Number of detected cells in field of view (FOV)
 
         # Instantiate Cell objects for each cell labeled in the image
-        self.cells = np.array([Cell(n, outlines_list[n], frame_number=frame_number) for n in range(self.n_cells)])
+        self.cells = np.array([Cell(n, self.outlines_list[n], frame_number=frame_number) for n in range(self.n_cells)])
 
         # assign cell cycle to cell objects
         if hasattr(self, 'cell_cycles'):
@@ -649,13 +649,17 @@ class Image:
             self.img=preprocessing.normalize(self.img, dtype=np.float32) # normalize
 
     def to_seg_npy(self, export_path=None, overwrite_img=False, write_attrs=[]):
-        data=np.load(self.name, allow_pickle=True).item()
-        outlines_list=[cell.outline for cell in self.cells]
+        try:
+            data=np.load(self.name, allow_pickle=True).item()
 
-        if not overwrite_img and 'img' in data.keys(): # take unmodified img from the original file
-            img=data['img']
-        else: # if img is not in the data or we're overwriting it
+            if not overwrite_img and 'img' in data.keys(): # take unmodified img from the original file
+                img=data['img']
+            else: # if img is not in the data or we're overwriting it
+                img=self.img
+        except FileNotFoundError: # if the file doesn't exist, we'll just use the img we have
             img=self.img
+
+        outlines_list=[cell.outline for cell in self.cells]
 
             
         export={'img':img, 'masks':self.masks, 'outlines':self.outlines, 'outlines_list':outlines_list}
@@ -1017,7 +1021,11 @@ class Cell:
         x=self.outline[:,0]
         y=self.outline[:,1]
         A=self.area
-        self._centroid=np.array([np.sum((x+np.roll(x,1))*(y-np.roll(y,1))),np.sum((y+np.roll(y,1))*(x-np.roll(x,1)))]).T/(6*A)
+        Cx = np.sum((x + np.roll(x, 1)) * (x * np.roll(y, 1) - np.roll(x, 1) * y))
+        Cy = np.sum((y + np.roll(y, 1)) * (x * np.roll(y, 1) - np.roll(x, 1) * y))
+
+        self._centroid = np.array([Cx, Cy]) / (6 * A)
+        
         return self._centroid
         
     def sort_vertices(self):

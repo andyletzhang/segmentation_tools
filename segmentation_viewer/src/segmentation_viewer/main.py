@@ -14,13 +14,15 @@ from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics, QM
 from superqt import QRangeSlider
 import pyqtgraph as pg
 
-from segmentation_tools.segmented_comprehension import TimeSeries, Image, HeightMap, Cell
+from segmentation_tools.segmented_comprehension import Cell
+from segmentation_tools.io import load_stack, stack_from_frames, segmentation_from_img, segmentation_from_zstack
 from segmentation_viewer.canvas import PyQtGraphCanvas, CellMaskPolygon
 from segmentation_viewer.command_line import CommandLineWindow
 
 import importlib.resources
 from tqdm import tqdm
 
+# TODO: adding a new cell mask resets the LUTs (only for Heather)
 # TODO: some continued issue with adding cells and merging cells in conjunction. Other cell IDs are merged in the process.
 # TODO: stack level operations should use current z slice
 # TODO: overlay colormapped cell attributes on segmentation plot
@@ -623,8 +625,12 @@ class MainWidget(QMainWindow):
 
         if channels[1]==4: # FUCCI channel
             from segmentation_tools.image_segmentation import combine_FUCCI_channels
-            membrane=img[...,channels[0]]
-            nuclei=combine_FUCCI_channels(img)
+            if channels[0]==0:
+                membrane=np.mean(img, axis=-1) # grayscale
+            else:
+                membrane=img[...,channels[0]-1] # fetch specified channel
+
+            nuclei=combine_FUCCI_channels(img)[..., 0]
             img=np.stack([nuclei, membrane], axis=-1)
             diam, style_diam=self.size_model.eval(img, channels=[2,1])
         else:
@@ -676,9 +682,14 @@ class MainWidget(QMainWindow):
                 diameter=self.calibrate_cell_diameter(frame.img, channels)
             frame.cell_diameter=diameter
             if channels[1]==4: # FUCCI channel
-                from segmentation_tools.preprocessing import combine_FUCCI_channels
-                membrane=frame.img[...,channels[0]]
-                nuclei=combine_FUCCI_channels(frame.img)
+                img=frame.img.copy()
+                from segmentation_tools.image_segmentation import combine_FUCCI_channels
+                if channels[0]==0:
+                    membrane=np.mean(img, axis=-1) # grayscale
+                else:
+                    membrane=img[...,channels[0]-1] # fetch specified channel
+
+                nuclei=combine_FUCCI_channels(img)[..., 0]
                 img=np.stack([nuclei, membrane], axis=-1)
                 masks, _, _=self.cellpose_model.eval(img, channels=[2,1], diameter=diameter)
             else:
@@ -1217,6 +1228,7 @@ class MainWidget(QMainWindow):
     def LUT_slider_changed(self, event):
         ''' Update the LUTs when the sliders are moved. '''
         if not self.file_loaded:
+            self.update_LUT_labels()
             return
         self.normalize_custom_button.setChecked(True)
         self.set_LUTs()
@@ -1906,7 +1918,7 @@ class MainWidget(QMainWindow):
         self.canvas.clear_selection_overlay() # remove any overlays (highlighting, outlines)
         self.canvas.img_plot.autoRange()
 
-    def imshow(self, frame, reset=True):
+    def imshow(self, frame, reset=False):
         ''' Change the displayed frame. Run upon loading a new file or advancing the frame slider. '''
         # reset toolbar
         self.status_frame_number.setText(f'Frame: {frame.frame_number}')
@@ -2152,6 +2164,8 @@ class MainWidget(QMainWindow):
         self.add_RGB_checkboxes(self.RGB_checkbox_layout)
         self.add_RGB_sliders(self.slider_layout)
         self.segmentation_channels_widget.show()
+        self.show_grayscale_checkbox.setChecked(False)
+        self.show_grayscale_toggled()
 
     def labeled_LUT_slider(self, slider_name=None):
         labels_and_slider=QHBoxLayout()
@@ -2195,7 +2209,6 @@ class MainWidget(QMainWindow):
         self.LUT_range_labels=[]
         
         layout.addLayout(self.labeled_LUT_slider())
-        #self.set_LUTs()
 
     # Drag and drop event
     def dragEnterEvent(self, event):
@@ -2272,7 +2285,7 @@ class MainWidget(QMainWindow):
         else:
             raise ValueError(f'Image has {self.frame.img.ndim} dimensions, must be 2 (grayscale) or 3 (RGB).')
 
-        self.imshow(self.frame)
+        self.imshow(self.frame, reset=True)
         if hasattr(self.frame, 'zstack'):
             self.zstack_slider.setVisible(True)
             self.zstack_slider.setRange(0, self.frame.zstack.shape[0]-1)
@@ -2329,7 +2342,7 @@ class MainWidget(QMainWindow):
             tif_files=[f for f in files if f.endswith('tif') or f.endswith('tiff')]
 
         if len(seg_files)>0: # segmented file paths
-            stack=TimeSeries(frame_paths=seg_files, load_img=True, progress_bar=self.progress_bar)
+            stack=load_stack(frame_paths=seg_files, load_img=True, progress_bar=self.progress_bar)
             for file in files:
                 if file.endswith('tracking.csv'):
                     tracked_centroids=self.load_tracking_data(file)
@@ -2345,14 +2358,14 @@ class MainWidget(QMainWindow):
             for file_path in self.progress_bar(tif_files):
                 tif_file=read_tif(file_path)
                 file_stem=Path(file_path).stem
-                for T in self.progress_bar(range(len(tif_file))):
+                for v in self.progress_bar(range(len(tif_file))):
                     if tif_file.shape[1]>1:
-                        img=tiffpage_zstack(tif_file, t=T)
-                        frames.append(Image(from_zstack=img, img=img[0], file_path=file_stem+f'-{T}_seg.npy'))
+                        img=tiffpage_zstack(tif_file, v=v)
+                        frames.append(segmentation_from_zstack(img, name=file_stem+f'-{v}_seg.npy'))
                     else:
-                        img=tiffpage_frame(tif_file, t=T)
-                        frames.append(Image(from_img=img, file_path=file_stem+f'-{T}_seg.npy'))
-            stack=TimeSeries(from_frames=frames)
+                        img=tiffpage_frame(tif_file, v=v)
+                        frames.append(segmentation_from_img(img, name=file_stem+f'-{v}_seg.npy'))
+            stack=stack_from_frames(from_frames=frames)
             self.unsaved=True
             return stack, None
         

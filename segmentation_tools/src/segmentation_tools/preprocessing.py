@@ -4,46 +4,8 @@ from multiprocessing import Pool
 from functools import partial
 from skimage import io
 
-
-def convert_GUI_seg(seg, multiprocess=False, remove_edge_masks=True, mend=False, max_gap_size=20, export=False, out_path=None):
-    ''' convert a segmentation image from the GUI to a format that can be used by the tracking algorithm '''
-    from cellpose.utils import masks_to_outlines
-
-    img_path=seg['filename']
-    img=io.imread(img_path)
-    masks=seg['masks']
-    if remove_edge_masks:
-        if img.ndim==2:
-            membrane=img
-        elif img.ndim==3:
-            color_channel=np.argmin(img.shape)
-            membrane=img.take(-1, axis=color_channel)
-        masks=remove_edge_masks_tile(membrane, masks)
-
-    if mend:
-        masks, _ =mend_gaps(masks, max_gap_size)
-
-    if multiprocess:
-        from cellpose.utils import outlines_list_multi
-        outlines_list=outlines_list_multi(masks)
-    else:
-        from cellpose.utils import outlines_list
-        outlines_list=outlines_list(masks)
-
-    outlines=masks_to_outlines(masks)
-
-    out_dict={'img':img, 'masks':masks, 'outlines':outlines, 'outlines_list':outlines_list}
-    if export:
-        if out_path is None:
-            out_path=seg.replace('.tif', '_seg.npy')
-        
-        if not out_path.endswith('seg.npy'):
-            out_path+='_seg.npy'
-        np.save(out_path, out_dict)
-    
-    return out_dict
-
 def get_stitched_boundary(membrane, radius=2):
+    ''' get the boundary of a stitched image by identifying zero values (not just the edge of the image because tiles can be staggered). '''
     from scipy.signal import convolve2d
 
     boundary=convolve2d(membrane==0, np.ones((2*radius+1,2*radius+1)), mode='same')!=0
@@ -52,6 +14,7 @@ def get_stitched_boundary(membrane, radius=2):
     return boundary
 
 def remove_edge_masks_tile(membrane, masks, radius=2):
+    ''' remove masks that touch the edge of an image, including touching the edge of a tile in a stitched image '''
     boundary=get_stitched_boundary(membrane, radius)
     # remove all masks that touch the edge
     edge_masks=np.unique(masks[boundary])[1:]
@@ -76,10 +39,10 @@ def mend_gaps(masks, max_gap_size):
     cellpose sometimes leaves a few 0-pixels between segmented cells.
     this method finds gaps below the max gap size and fills them using their neighboring cell IDs.
     '''
-    # TODO: implement numba version of this function
+    # TODO: implement numba version of this function?
     from statistics import multimode
     from scipy.signal import convolve2d
-
+    mended_masks=masks.copy()
     background=ndimage.label(masks==0)[0]
     bg_labels, bg_counts=np.unique(background, return_counts=True)
     gap_labels=bg_labels[bg_counts<max_gap_size] # gaps below maximal spurious size
@@ -87,27 +50,19 @@ def mend_gaps(masks, max_gap_size):
     if len(gap_labels)!=0: # found at least one gap, proceed to mend (and subsequently overwrite the outlines channel, etc.)
         for gap_label in gap_labels:
             gap_pixels=np.array(np.where(background==gap_label))
-            while 0 in masks[gap_pixels[0], gap_pixels[1]]: # still some pixels are empty
+            while 0 in mended_masks[gap_pixels[0], gap_pixels[1]]: # still some pixels are empty
                 gap_pixels_bbox=np.array([gap_pixels.min(axis=1), gap_pixels.max(axis=1)]).T # bounding box of the gap
-                masks_ROI=masks[gap_pixels_bbox[0,0]-1:gap_pixels_bbox[0,1]+2,gap_pixels_bbox[1,0]-1:gap_pixels_bbox[1,1]+2] # region of interest in the masks channel (zeroes the ROI at the top left corner)
+                masks_ROI=mended_masks[gap_pixels_bbox[0,0]-1:gap_pixels_bbox[0,1]+2,gap_pixels_bbox[1,0]-1:gap_pixels_bbox[1,1]+2] # region of interest in the masks channel (zeroes the ROI at the top left corner)
                 gap_boundary=np.array(np.where((masks_ROI==0)&(convolve2d(masks_ROI!=0,[[0,1,0],[1,0,1],[0,1,0]])[1:-1,1:-1]>0))) # pixels on the edge of the gap: these will be filled with neighbors
                 gap_boundary=np.add(gap_boundary.T,np.array([gap_pixels_bbox[0,0]-1,gap_pixels_bbox[1,0]-1])) # transpose back to full image coordinates
                 for x,y in gap_boundary:
-                    neighbors=masks[[x+1,x,x-1,x],[y,y+1,y,y-1]]
+                    neighbors=mended_masks[[x+1,x,x-1,x],[y,y+1,y,y-1]]
                     fill_value=np.random.choice(multimode(neighbors[neighbors!=0]))
-                    masks[x,y]=fill_value
+                    mended_masks[x,y]=fill_value
         mended=True
     else:
         mended=False
-    return masks, mended
-
-def masks_to_outlines(masks):
-    from cellpose.utils import masks_to_outlines
-    from scipy.sparse import csc_matrix
-    boundaries=masks_to_outlines(masks) # have cellpose find new outlines
-    mended_outlines=np.zeros(masks.shape, dtype=np.uint16)
-    mended_outlines[boundaries]=masks[boundaries] # attach labels to outlines
-    return csc_matrix(mended_outlines)
+    return mended_masks, mended
 
 def gaussian_parallel(imgs, n_processes=8, progress_bar=None, sigma=5, **kwargs):
     p=Pool(processes=n_processes)
@@ -166,7 +121,6 @@ def renumber_masks(masks):
     renumbered_masks = np.searchsorted(unique_labels, masks)
     return renumbered_masks
 
-
 from scipy.optimize import minimize_scalar
 def get_fluor_threshold(img, size_threshold, noise_score=0.02, quantile=(0.5, 0.95), tolerance=1):
     ret=minimize_scalar(nuclear_threshold_loss, bounds=np.quantile(img, quantile), args=(img, size_threshold, noise_score), options={'xatol':tolerance})
@@ -182,7 +136,7 @@ def fluorescent_percentages(masks, thresholded_img):
     areas=ndimage.sum_labels(np.ones(thresholded_img.shape), labels=masks, index=np.unique(masks)[1:])
     return fluor/areas
 
-# test
+# used in suspended dataset
 def frame_FUCCI(args, percent_threshold=0.15):
     mask, threshold_red, threshold_green, threshold_orange=args
     #threshold_orange=threshold_red&threshold_green

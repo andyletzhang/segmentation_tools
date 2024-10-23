@@ -13,14 +13,15 @@ from segmentation_tools import preprocessing # from my module
     Cells are generated for each cell mask identified by segmentation.
 '''
 
-#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#   
 
-class TimeSeries:
+class SegmentedStack:
     '''
-    a stack of images as Image objects, identified as a series of seg.npy files in the same folder and presumed to be in chronological order when sorted by name.
+    A base class for time lapse or multipoint data.
     '''
-    def __init__(self, stack_path=None, frame_paths=None, coarse_grain=1, first_frame=0, last_frame=None, verbose_load=False, from_frames=[], progress_bar=lambda x: x, **kwargs):
+    def __init__(self, stack_path=None, frame_paths=None, coarse_grain=1, verbose_load=False, from_frames=[], progress_bar=lambda x: x, **kwargs):
         '''takes the path to the stack and sets up the Stack, an array of Images representing each slice.'''
+        from segmentation_tools.io import load_segmentation
         if len(from_frames)>0:
             self.frames=from_frames
             self.name=str(Path(self.frames[0].name).parent)+'/'
@@ -33,18 +34,123 @@ class TimeSeries:
                 raise FileNotFoundError('No seg.npy files found at {}'.format(stack_path)) # warn me if I can't find anything (probably a formatting error)
             if verbose_load:
                 print(f'{len(self.frame_paths)} segmented files found at {stack_path}, loading...')
-            self.frames=np.array([Image(frame_path, frame_number=n, **kwargs) for n, frame_path in enumerate(progress_bar(self.frame_paths))]) # load all segmented images
+            self.frames=np.array([load_segmentation(frame_path, frame_number=n, **kwargs) for n, frame_path in enumerate(progress_bar(self.frame_paths))]) # load all segmented images
             if not stack_path.endswith('/') or not stack_path.endswith('\\'):
                 stack_path+='/'
             self.name=stack_path
 
         elif frame_paths:
-            self.frames=np.array([Image(frame_path, frame_number=n, **kwargs) for n, frame_path in enumerate(progress_bar(frame_paths))]) # load all segmented images
+            self.frames=np.array([load_segmentation(frame_path, frame_number=n, **kwargs) for n, frame_path in enumerate(progress_bar(frame_paths))]) # load all segmented images
             self.name=str(Path(frame_paths[0]).parent)+'/'
             
         else:
-            raise ValueError('Either from_frames, stack_path or frame_paths must be provided to load a TimeSeries.')
+            raise ValueError('Either from_frames, stack_path or frame_paths must be provided to load a Stack.')
     
+     # -------------Indexing Lower Objects-------------
+    def densities(self):
+        '''returns an array of densities for each frame in chronological order'''
+        return np.array([frame.mean_density() for frame in self.frames])
+        
+    def centroids(self):
+        '''returns a DataFrame of cell centroids, with additional columns specifying the cell and frame numbers. Used for particle tracking.'''
+        all_centroids=[]
+        for frame_number, frame in enumerate(self.frames): # iterate through frames
+            centroids=pd.DataFrame(frame.centroids(), columns=['y','x']) # get centroids
+            centroids['frame']=frame_number # label each set of centroids with their frame number
+            all_centroids.append(centroids)
+        all_centroids=pd.concat(all_centroids).rename_axis('cell_number').reset_index()
+        return all_centroids
+    
+    def shape_parameters(self):
+        '''returns a DataFrame of shape parameters, with additional columns specifying the cell and frame numbers. Only returns cells with a full set of neighbors'''
+        all_q=[]
+        for frame_number, frame in enumerate(self.frames): # iterate through frames
+            q=pd.DataFrame(frame.shape_parameters(), columns=['q',]) # get shape parameter
+            q['frame']=frame_number # label each set of shape parameters with their frame number
+            all_q.append(q)
+        all_q=pd.concat(all_q).rename_axis('cell_number').reset_index()
+        return all_q
+    
+    def load_img(self, **kwargs):
+        for frame in self.frames:
+            frame.load_img(**kwargs)
+
+    def __len__(self):
+        return len(self.frames)
+    
+    def __getitem__(self, idx):
+        return self.frames[idx]
+    
+class SuspendedStack(SegmentedStack):
+    def __init__(self, path, scale=0.1625, preprocess_FUCCI=False, blur_sigma=5, mask_zeros=False, quantile=(0.01,0.99), **kwargs):
+        super().__init__(path=path, scale=scale, **kwargs)
+        imgs=np.array([frame.img for frame in self.frames])
+        color_ax=np.where(np.array(imgs.shape[1:])==3)[0][0]+1 # identify the color axis (in case the image has a weird shape)
+        self.red=imgs.take(0, axis=color_ax)
+        self.green=imgs.take(1, axis=color_ax)
+        self.membrane=imgs.take(2, axis=color_ax)
+
+        if preprocess_FUCCI:
+            if preprocess_FUCCI==True or preprocess_FUCCI=='blur':
+                self.red, self.green=self._blur_FUCCI(blur_sigma)
+            if preprocess_FUCCI==True or preprocess_FUCCI=='normalize':
+                self.red, self.green=self._normalize_FUCCI(*self._blur_FUCCI(blur_sigma), mask_zeros=mask_zeros, quantile=quantile)
+        for frame, red, green in zip(self.frames, self.red, self.green):
+            frame.FUCCI=[red, green]
+
+    def _blur_FUCCI(self, sigma=5):
+        from segmentation_tools.preprocessing import gaussian_parallel
+        red=gaussian_parallel(self.red, sigma=sigma)
+        green=gaussian_parallel(self.green, sigma=sigma)
+        return np.array(red), np.array(green)
+    
+    def _normalize_FUCCI(self, red, green, **kwargs):
+        from segmentation_tools.preprocessing import normalize_grayscale
+        red=normalize_grayscale(red, **kwargs)
+        green=normalize_grayscale(green, **kwargs)
+        return red, green
+
+    def measure_FUCCI(self, red_threshold=0.3, green_threshold=0.3, orange_brightness=1.5, percent_threshold=0.15):
+        for frame in self.frames:
+            frame.measure_FUCCI(red_threshold, green_threshold, orange_brightness, percent_threshold)
+    
+    def get_outlines(self):
+        try:
+            self.outlines=[frame.get_cell_attrs('outline') for frame in self.frames]
+        except AttributeError:
+            self.outlines=[cp_utils.outlines_list(frame.masks) for frame in self.frames]
+        return self.outlines
+    
+    def get_volumes(self, circ_threshold=0.85):
+        if not hasattr(self, 'cell_cycles'):
+            try:
+                self.cell_cycles=[frame.cell_cycles for frame in self.frames]
+            except AttributeError:
+                self.measure_FUCCI()
+        if not hasattr(self, 'outlines'):
+            self.get_outlines()
+        
+        all_cells=np.concatenate([frame.cells for frame in self.frames])
+        all_cc_stages=np.concatenate(self.cell_cycles)
+
+        circs=np.array([cell.circularity for cell in all_cells])
+        self.circs=circs
+        self.circ_threshold=circ_threshold
+        circular_cells=all_cells[circs>circ_threshold]
+        circular_cc=all_cc_stages[circs>circ_threshold]
+
+        volumes=[]
+        for stage in range(4):
+            volumes.append([cell.spherical_volume for cell, cc in zip(circular_cells, circular_cc) if cc==stage])
+        self.volumes=volumes
+        return self.volumes
+    
+
+class TimeStack(SegmentedStack):
+    ''' Time lapse data. Provides methods for tracking cells through time, identifying cell cycle and mitotic events. '''
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
      # -------------Particle Tracking-------------
     def track_centroids(self, memory=3, v_quantile=0.97, filter_stubs=False, **kwargs):
         '''
@@ -477,38 +583,9 @@ class TimeSeries:
         self.mitoses = mitoses
         return self.mitoses
     
-     # -------------Indexing Lower Objects-------------
-    def densities(self):
-        '''returns an array of densities for each frame in chronological order'''
-        return np.array([frame.mean_density() for frame in self.frames])
-        
-    def centroids(self):
-        '''returns a DataFrame of cell centroids, with additional columns specifying the cell and frame numbers. Used for particle tracking.'''
-        all_centroids=[]
-        for frame_number, frame in enumerate(self.frames): # iterate through frames
-            centroids=pd.DataFrame(frame.centroids(), columns=['y','x']) # get centroids
-            centroids['frame']=frame_number # label each set of centroids with their frame number
-            all_centroids.append(centroids)
-        all_centroids=pd.concat(all_centroids).rename_axis('cell_number').reset_index()
-        return all_centroids
-    
-    def shape_parameters(self):
-        '''returns a DataFrame of shape parameters, with additional columns specifying the cell and frame numbers. Only returns cells with a full set of neighbors'''
-        all_q=[]
-        for frame_number, frame in enumerate(self.frames): # iterate through frames
-            q=pd.DataFrame(frame.shape_parameters(), columns=['q',]) # get shape parameter
-            q['frame']=frame_number # label each set of shape parameters with their frame number
-            all_q.append(q)
-        all_q=pd.concat(all_q).rename_axis('cell_number').reset_index()
-        return all_q
-    
-    def load_img(self, **kwargs):
-        for frame in self.frames:
-            frame.load_img(**kwargs)
-
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
 
-class Image:
+class SegmentedImage:
     ''' takes one segmented image as a seg.npy file path and runs the numbers. '''
     verbose=False
     def vprint(self, obj):
@@ -517,23 +594,20 @@ class Image:
         else:
             pass
 
-    def __init__(self, file_path, frame_number=None, mend=False, max_gap_size=300, verbose=False, overwrite=False, load_img=False, normalize=False, scale=None, units=None, from_img=None, from_zstack=None, **kwargs):
+    def __init__(self, data, name=None, frame_number=None, verbose=False, scale=None, units=None, **kwargs):
         '''
-        takes a file path and loads the data.
-        
-        verbose=True makes the Image print out updates on what it's doing.
-        mend=True checks for and closes any pixel-sized holes in the monolayer. (~3x slower).
-        max_gapsize (int) is the upper limit on contiguous empty pixels that will be mended with nearby data.
-        overwrite=True rewrites the seg.npy at file_path with whatever processing has been applied.
-        load_img=True loads the image into the img attribute. Defaults to False to save memory.
-        Normalize=True sets the maximum img value to 1.
+        takes a dictionary of data from a seg.npy file and loads it into the Image object.
         '''
         
+        if not 'masks' in data.keys():
+            raise ValueError('Failed to instantiate SegmentedImage: segmented data must contain masks.')
+        
+        if not 'outlines' in data.keys():
+            data['outlines']=cp_utils.masks_to_outlines(data['masks'])
+
         # Print debug statements if verbose mode is enabled
         self.verbose = verbose
-
-        self.name = file_path  # File name
-
+        
         for key, value in kwargs.items(): # Set any additional attributes passed as keyword arguments
             setattr(self, key, value)
 
@@ -544,63 +618,25 @@ class Image:
             self.scale = scale  # Scale factor for converting pixels to desired units
         self.frame_number = frame_number  # Frame number for the image sequence
 
-        if from_img is not None: # load data from img
-            self.img=from_img
-            shape=self.img.shape[:2]
-            from_array=True
-            
-        elif from_zstack is not None: # load data from zstack
-            self.zstack=from_zstack
-            shape=self.zstack.shape[1:3]
-            from_array=True
+        # Load the dictionary data into the Image object
+        for attr in set(data.keys()):
+            setattr(self, attr, data[attr])
         
-        else:
-            from_array=False
+        if name is None:
+            try:
+                name=data['name']
+            except KeyError:
+                raise ValueError('SegmentedImage data must contain a name attribute or a name must be provided.')
 
-        if from_array:
-            self.masks=np.zeros(shape, dtype=np.uint16)
-            self.outlines=np.zeros(shape, dtype=bool)
-            self.outlines_list=[]
-
-        else: # load data from file
-            # Print loading information
-            self.vprint('loading {}'.format(file_path))
-
-            # Load data from file
-            data = np.load(file_path, allow_pickle=True).item()
-            if not 'img' in data.keys() and 'filename' in data.keys():
-                # this seg.npy was made with the cellpose GUI
-                data=preprocessing.convert_GUI_seg(data)
-
-            # Load all other entries as attributes
-            for attr in set(data.keys()).difference(['img']):
-                setattr(self, attr, data[attr])
-
-            if load_img or overwrite:
-                self.img = data['img']  # Load image data
-            
-        
-        # Load image if specified or for overwriting
-        if hasattr(self, 'img') and normalize:
-            self.img = preprocessing.normalize(self.img, dtype=np.float32)  # Normalize image data if specified
+        self.name=name
         
         # set masks datatype
-        if self.masks.max() < 65535: # there will always be fewer than 65535 cells in a single frame, just a failsafe
-            self.masks = self.masks.astype(np.uint16)
+        if self.masks.max() < 65535: # there will always be fewer than 65535 cells in a single frame (surely), just a failsafe
+            self.masks = self.masks.astype(np.uint16) # this mostly covers the case where otherwise the masks would default to uint8
         else:
             self.masks = self.masks.astype(np.uint32)
 
         self.resolution = self.masks.shape  # Image resolution
-
-        # Check for and mend gaps in masks
-        if mend:
-            self.masks, mended = preprocessing.mend_gaps(self.masks, max_gap_size)
-        else:
-            mended = False
-        
-        # Generate outlines channel or load from file
-        if mended or not hasattr(self, 'outlines'):
-            self.outlines = cp_utils.masks_to_outlines(self.masks)  # Generate outlines from masks
         
         try:
             self.outlines=self.outlines.todense()
@@ -609,20 +645,9 @@ class Image:
         self.outlines=self.outlines!=0 # convert to boolean
         
         # Generate outlines_list or load from file
-        if mended or not hasattr(self, 'outlines_list'):
+        if not hasattr(self, 'outlines_list'):
             self.vprint('creating new outlines_list from masks')
             self.outlines_list = cp_utils.outlines_list_multi(self.masks)  # Generate outlines_list
-        
-        # Overwrite file if specified
-        if overwrite:
-            export = {'img': data['img'], 'masks': self.masks, 'outlines': self.outlines, 'outlines_list': self.outlines_list}
-            if hasattr(self, 'FUCCI'):  # Export FUCCI channels if present
-                export['FUCCI'] = self.FUCCI
-            
-            # Export the data and overwrite the segmentation file
-            self.vprint('overwriting old file at {}'.format(file_path))
-            np.save(file_path, export)
-        
 
         cells=np.unique(self.masks)
         cells=cells[cells!=0]-1
@@ -634,7 +659,7 @@ class Image:
         # assign cell cycle to cell objects
         if hasattr(self, 'cell_cycles'):
             if len(self.cell_cycles)!=len(cells):
-                print(f'warning: {self.name} cell cycle data does not match the number of cells in the image: {self.n_cells} cells in the image, {len(self.cell_cycles)} cell cycle values.')
+                print(f'WARNING: {self.name} cell cycle data does not match the number of cells in the image: {self.n_cells} cells in the image, {len(self.cell_cycles)} cell cycle values.')
                 self.cell_cycles=self.cell_cycles[cells]
             self.set_cell_attrs('cycle_stage', self.cell_cycles)
 
@@ -657,6 +682,9 @@ class Image:
             else: # if img is not in the data or we're overwriting it
                 img=self.img
         except FileNotFoundError: # if the file doesn't exist, we'll just use the img we have
+            img=self.img
+        except:
+            print(f'Error loading {self.name}. Using current img data.')
             img=self.img
 
         outlines_list=[cell.outline for cell in self.cells]
@@ -811,11 +839,12 @@ class Image:
             return FOV_pixels*self.scale**2
         else:
             return FOV_pixels
-        
+    
     def mean_cell_length(self, scaled=True):
         '''characteristic length scale for particle tracking and mitosis detection'''
         return np.sqrt(self.mean_cell_area(scaled))
 
+    @property
     def mean_density(self):
         '''cells per square mm, measured by taking inverse of mean cell area'''
         return 1e6/self.mean_cell_area() # (1e6 mm^2/um^2)/(um^2 per cell)=cells per mm^2
@@ -913,7 +942,7 @@ class Image:
         cell_collection=PatchCollection(cell_polygons, edgecolor=ec,facecolor=fc,linewidths=linewidths,**kwargs)
         return cell_collection
     
-class HeightMap(Image):
+class HeightMap(SegmentedImage):
     nori_R=8192
     lipid_density=1.010101 # g/mL
     protein_density=1.364256 # g/mL
@@ -936,7 +965,7 @@ class HeightMap(Image):
             self.heights*=self.z_scale
             self.heights=self.heights.astype(float)
             if zero_to_nan:
-                self.heights[self.heights==0]=np.nan
+                self.heights[self.heights<=0]=np.nan
     
     def read_NORI(self, file_path=None, mask_nan_z=True):
         from skimage import io
@@ -995,6 +1024,10 @@ class Cell:
         area=0.5*np.abs(np.dot(self.outline.T[0],np.roll(self.outline.T[1],1))-np.dot(self.outline.T[1],np.roll(self.outline.T[0],1)))
         return area
     
+    @property
+    def spherical_volume(self):
+        '''returns the volume of the cell if the area were a maximal cross-section of a sphere.'''
+        return 4/3*np.pi*(self.area/np.pi)**(3/2)
     @property
     def perimeter(self):
         perimeter=np.sum(np.linalg.norm(np.diff(self.outline, axis=0, append=[self.outline[0]]).T, axis=0))

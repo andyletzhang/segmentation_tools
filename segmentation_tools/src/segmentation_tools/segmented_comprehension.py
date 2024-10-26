@@ -19,9 +19,9 @@ class SegmentedStack:
     '''
     A base class for time lapse or multipoint data.
     '''
-    def __init__(self, stack_path=None, frame_paths=None, coarse_grain=1, verbose_load=False, from_frames=[], progress_bar=lambda x: x, **kwargs):
+    def __init__(self, stack_path=None, frame_paths=None, coarse_grain=1, verbose_load=False, from_frames=[], progress_bar=lambda x: x, stack_type='time', **kwargs):
         '''takes the path to the stack and sets up the Stack, an array of Images representing each slice.'''
-        from segmentation_tools.io import load_segmentation
+        self.progress_bar=progress_bar
         if len(from_frames)>0:
             self.frames=from_frames
             self.name=str(Path(self.frames[0].name).parent)+'/'
@@ -34,17 +34,28 @@ class SegmentedStack:
                 raise FileNotFoundError('No seg.npy files found at {}'.format(stack_path)) # warn me if I can't find anything (probably a formatting error)
             if verbose_load:
                 print(f'{len(self.frame_paths)} segmented files found at {stack_path}, loading...')
-            self.frames=np.array([load_segmentation(frame_path, frame_number=n, **kwargs) for n, frame_path in enumerate(progress_bar(self.frame_paths))]) # load all segmented images
+            self.frames=np.array([SegmentedImage(frame_path, frame_number=n, **kwargs) for n, frame_path in enumerate(self.progress_bar(self.frame_paths))]) # load all segmented images
             if not stack_path.endswith('/') or not stack_path.endswith('\\'):
                 stack_path+='/'
             self.name=stack_path
 
         elif frame_paths:
-            self.frames=np.array([load_segmentation(frame_path, frame_number=n, **kwargs) for n, frame_path in enumerate(progress_bar(frame_paths))]) # load all segmented images
+            self.frames=np.array([SegmentedImage(frame_path, frame_number=n, **kwargs) for n, frame_path in enumerate(self.progress_bar(frame_paths))]) # load all segmented images
             self.name=str(Path(frame_paths[0]).parent)+'/'
             
         else:
             raise ValueError('Either from_frames, stack_path or frame_paths must be provided to load a Stack.')
+        
+        if stack_type=='time':
+            self.__class__=TimeStack
+        elif stack_type=='suspended':
+            # TODO: handle kwargs
+            self.__class__=SuspendedStack
+            self.suspended_init()
+        elif stack_type=='multipoint':
+            pass
+        else:
+            raise ValueError('Invalid stack type. Recognized formats are "time", "suspended", or "multipoint".')
     
      # -------------Indexing Lower Objects-------------
     def densities(self):
@@ -82,8 +93,11 @@ class SegmentedStack:
         return self.frames[idx]
     
 class SuspendedStack(SegmentedStack):
-    def __init__(self, path, scale=0.1625, preprocess_FUCCI=False, blur_sigma=5, mask_zeros=False, quantile=(0.01,0.99), **kwargs):
-        super().__init__(path=path, scale=scale, **kwargs)
+    def __init__(self, scale=0.1625, preprocess_FUCCI=False, blur_sigma=5, mask_zeros=False, quantile=(0.01,0.99), progress_bar=lambda x: x, **kwargs):
+        super().__init__(scale=scale, progress_bar=progress_bar, load_img=True, **kwargs)
+        self.suspended_init(preprocess_FUCCI, blur_sigma, mask_zeros, quantile)
+
+    def suspended_init(self, preprocess_FUCCI, blur_sigma, mask_zeros, quantile):
         imgs=np.array([frame.img for frame in self.frames])
         color_ax=np.where(np.array(imgs.shape[1:])==3)[0][0]+1 # identify the color axis (in case the image has a weird shape)
         self.red=imgs.take(0, axis=color_ax)
@@ -111,40 +125,29 @@ class SuspendedStack(SegmentedStack):
         return red, green
 
     def measure_FUCCI(self, red_threshold=0.3, green_threshold=0.3, orange_brightness=1.5, percent_threshold=0.15):
-        for frame in self.frames:
+        for frame in self.progress_bar(self.frames):
             frame.measure_FUCCI(red_threshold, green_threshold, orange_brightness, percent_threshold)
     
-    def get_outlines(self):
-        try:
-            self.outlines=[frame.get_cell_attrs('outline') for frame in self.frames]
-        except AttributeError:
-            self.outlines=[cp_utils.outlines_list(frame.masks) for frame in self.frames]
-        return self.outlines
-    
     def get_volumes(self, circ_threshold=0.85):
-        if not hasattr(self, 'cell_cycles'):
-            try:
-                self.cell_cycles=[frame.cell_cycles for frame in self.frames]
-            except AttributeError:
-                self.measure_FUCCI()
-        if not hasattr(self, 'outlines'):
-            self.get_outlines()
+        try:
+            cell_cycles=np.concatenate([frame.cell_cycles for frame in self.frames])
+        except AttributeError:
+            self.measure_FUCCI()
+            cell_cycles=np.concatenate([frame.cell_cycles for frame in self.frames])
         
         all_cells=np.concatenate([frame.cells for frame in self.frames])
-        all_cc_stages=np.concatenate(self.cell_cycles)
-
+    
         circs=np.array([cell.circularity for cell in all_cells])
         self.circs=circs
         self.circ_threshold=circ_threshold
         circular_cells=all_cells[circs>circ_threshold]
-        circular_cc=all_cc_stages[circs>circ_threshold]
+        circular_cc=cell_cycles[circs>circ_threshold]
 
         volumes=[]
         for stage in range(4):
             volumes.append([cell.spherical_volume for cell, cc in zip(circular_cells, circular_cc) if cc==stage])
         self.volumes=volumes
         return self.volumes
-    
 
 class TimeStack(SegmentedStack):
     ''' Time lapse data. Provides methods for tracking cells through time, identifying cell cycle and mitotic events. '''
@@ -598,6 +601,16 @@ class SegmentedImage:
         '''
         takes a dictionary of data from a seg.npy file and loads it into the Image object.
         '''
+        if isinstance(data, str): # if a string is passed, assume it's a path to a seg.npy file
+            from segmentation_tools.io import load_seg_npy
+            # pull load_seg_npy parameters from kwargs
+            name=data
+            load_seg_npy_kwargs={key: kwargs.pop(key) for key in ['load_img', 'mend', 'max_gap_size'] if key in kwargs}
+            data=load_seg_npy(data, **load_seg_npy_kwargs)
+        elif isinstance(data, dict): # already loaded seg.npy
+            pass
+        else:
+            raise ValueError('data must be a path to a seg.npy file or a dictionary of data from a seg.npy file.')
         
         if not 'masks' in data.keys():
             raise ValueError('Failed to instantiate SegmentedImage: segmented data must contain masks.')
@@ -666,8 +679,19 @@ class SegmentedImage:
         if len(cells)!=self.masks.max():
             print(f'WARNING: {self.name} masks are not contiguous. Renumbering...')
             self.masks=preprocessing.renumber_masks(self.masks)
+
+        if hasattr(self, 'heights'):
+            if not hasattr(self, 'zero_to_nan'):
+                self.zero_to_nan=True
+            self.to_heightmap(zero_to_nan=self.zero_to_nan)
     
-     # -------------Image Processing-------------    
+    # -------------Convert to HeightMap-------------
+    def to_heightmap(self, **kwargs):
+        ''' converts the image to a height map. '''
+        self.__class__=HeightMap
+        self.process_heights(**kwargs)
+
+    # -------------Image Processing-------------    
     def load_img(self, normalize=False):
         self.img=np.load(self.name, allow_pickle=True).item()['img']
         if normalize:
@@ -708,19 +732,25 @@ class SegmentedImage:
     
     def delete_cell(self, cell_number):
         '''deletes a cell from the image.'''
+        # remove mask
         to_clear=self.masks==cell_number+1
         self.masks[to_clear]=0
-        self.masks[self.masks==self.masks.max()]=cell_number+1
+
+        # remove outlines
         self.outlines[to_clear]=False
         
-        if cell_number!=self.n_cells-1: # didn't delete the last cell, so we have to reposition the cell object in the list
-            new_indices=np.arange(self.n_cells-1)
-            new_indices[cell_number]=self.n_cells-1
+        self.n_cells-=1
+        if cell_number==self.n_cells: # deleted last cell, just remove it from the list
+            self.cells=self.cells[:-1]
+        else: # reassign cell numbers to be contiguous
+            self.masks[self.masks==self.masks.max()]=cell_number+1 # reassign mask numbers to be contiguous
+            
+            new_indices=np.arange(self.n_cells)
+            new_indices[cell_number]=self.n_cells
 
             self.cells=self.cells[new_indices]
             self.cells[cell_number].n=cell_number
 
-        self.n_cells-=1
 
     # ------------FUCCI----------------        
     def measure_FUCCI(self, percent_threshold=0.15, red_fluor_threshold=None, green_fluor_threshold=None, orange_brightness=1.5, threshold_offset=0, noise_score=0.02):
@@ -947,14 +977,13 @@ class HeightMap(SegmentedImage):
     lipid_density=1.010101 # g/mL
     protein_density=1.364256 # g/mL
 
-    def __init__(self, seg_path, mesh_path=None, zero_to_nan=True, scale=0.1625, z_scale=1, NORI=False, **kwargs):
-        super().__init__(seg_path, scale=scale, **kwargs)
-        self.z_scale=z_scale
+    def __init__(self, seg_path, mesh_path=None, zero_to_nan=True, NORI=False, **kwargs):
+        super().__init__(seg_path, **kwargs)
         if not hasattr(self, 'heights'):
             # for NoRI, or backward compatibility to MGX. New segmentations should have heights in them.
             if mesh_path is None:
                 mesh_path=seg_path.replace('segmented','heights').replace('seg.npy', 'binarized.tif')
-            self.heights, self.height_img=preprocessing.read_height_tif(mesh_path, z_scale=self.z_scale, zero_to_nan=zero_to_nan)
+            self.heights, self.height_img=preprocessing.read_height_tif(mesh_path, zero_to_nan=zero_to_nan)
             
             if NORI:
                 self.masks_3d=np.repeat(self.masks[np.newaxis], self.height_img.shape[0], axis=0)
@@ -962,10 +991,20 @@ class HeightMap(SegmentedImage):
                 self.read_NORI()
 
         else:
-            self.heights*=self.z_scale
-            self.heights=self.heights.astype(float)
-            if zero_to_nan:
-                self.heights[self.heights<=0]=np.nan
+            self.heights=self.process_heights(zero_to_nan)
+    
+    def process_heights(self, zero_to_nan=True):
+        if not hasattr(self, 'heights'):
+            raise AttributeError('No heights found in this image.')
+        self.heights=self.heights.astype(float)
+        if zero_to_nan:
+            self.heights[self.heights<=0]=np.nan
+        return self.heights
+
+    @property
+    def scaled_heights(self):
+        '''heights in um'''
+        return self.heights*self.z_scale
     
     def read_NORI(self, file_path=None, mask_nan_z=True):
         from skimage import io
@@ -997,11 +1036,15 @@ class HeightMap(SegmentedImage):
         self.set_cell_attrs('NORI_mass', self.NORI_mass.T)
         return self.NORI_mass
     
-    
-    def get_volumes(self):
-        #self.heights=self.get_heights()
-        self.volumes=ndimage.sum(self.heights, labels=self.masks, index=range(1,self.masks.max()+1))*self.scale**2
-        self.mean_heights=ndimage.mean(self.heights, labels=self.masks, index=range(1,self.masks.max()+1))
+    def get_volumes(self, scale=None, z_scale=None):
+        '''returns the volumes of all cells in the image.'''
+        if scale is not None:
+            self.scale=scale
+        if z_scale is not None:
+            self.z_scale=z_scale
+
+        self.volumes=ndimage.sum(self.scaled_heights, labels=self.masks, index=range(1,self.masks.max()+1))*self.scale**2
+        self.mean_heights=ndimage.mean(self.scaled_heights, labels=self.masks, index=range(1,self.masks.max()+1))
         self.set_cell_attrs('volume', self.volumes)
         self.set_cell_attrs('height', self.mean_heights)
 

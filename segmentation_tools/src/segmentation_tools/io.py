@@ -90,27 +90,8 @@ def tiffpage_zstack(tif_pages, v=0):
 
 #----------Creating Segmentation Objects--------------------
 from segmentation_tools.segmented_comprehension import SegmentedStack, SuspendedStack, TimeStack, SegmentedImage, HeightMap
-def load_stack(stack_type='timelapse', **kwargs):
-    if stack_type=='timelapse':
-        return TimeStack(**kwargs)
     
-    elif stack_type=='multipoint':
-        return SegmentedStack(**kwargs)
-    
-    elif stack_type=='suspended':
-        return SuspendedStack(**kwargs)
-
-def stack_from_frames(frames, stack_type='timelapse', **kwargs):
-    if stack_type=='timelapse':
-        return TimeStack(from_frames=frames, **kwargs)
-    
-    elif stack_type=='multipoint':
-        return SegmentedStack(from_frames=frames, **kwargs)
-    
-    elif stack_type=='suspended':
-        return SuspendedStack(from_frames=frames, **kwargs)
-    
-def load_segmentation(file_path, load_img=False, overwrite=False, mend=False, max_gap_size=300, **kwargs):
+def load_seg_npy(file_path, load_img=False, mend=False, max_gap_size=300):
     data=np.load(file_path, allow_pickle=True).item()
     
     if not 'img' in data.keys() and 'filename' in data.keys():
@@ -124,19 +105,12 @@ def load_segmentation(file_path, load_img=False, overwrite=False, mend=False, ma
         from segmentation_tools.preprocessing import mend_gaps
         data['masks'], mended = mend_gaps(data['masks'], max_gap_size)
         if mended:
-            if hasattr(data, 'outlines'):
+            if 'outlines' in data.keys():
                 del data['outlines']
-            if hasattr(data, 'outlines_list'):
+            if 'outlines_list' in data.keys():
                 del data['outlines_list']
 
-    if hasattr(data, 'heights'):
-        img=HeightMap(data, name=file_path, **kwargs)
-    else:
-        img=SegmentedImage(data, name=file_path, **kwargs)
-    
-    if overwrite:
-        img.to_seg_npy(overwrite_img=True)
-    return img
+    return data
 
 def segmentation_from_img(img, name, **kwargs):
     shape=img.shape[:2]
@@ -151,12 +125,14 @@ def segmentation_from_zstack(zstack, name, **kwargs):
     outlines=np.zeros(shape, dtype=bool)
     masks=np.zeros(shape, dtype=np.uint16)
     data={'name':name,'zstack':zstack,'img':zstack[0],'masks':masks,'outlines':outlines}
-    img=HeightMap(data, **kwargs)
+    img=SegmentedImage(data, **kwargs)
     return img
 
 def convert_GUI_seg(seg, multiprocess=False, remove_edge_masks=True, mend=False, max_gap_size=20, export=False, out_path=None):
     ''' convert a segmentation image from the GUI to a format that can be used by the tracking algorithm '''
     from cellpose.utils import masks_to_outlines
+    from segmentation_tools.preprocessing import mend_gaps, remove_edge_masks_tile
+    from skimage import io
 
     img_path=seg['filename']
     try:

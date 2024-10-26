@@ -24,14 +24,11 @@ def remove_edge_masks_tile(membrane, masks, radius=2):
     new_masks=np.unique(new_masks, return_inverse=True)[1].reshape(masks.shape) # renumber masks to consecutive integers with edge masks removed
     return new_masks
 
-def read_height_tif(file_path, z_scale=1, zero_to_nan=True):
+def read_height_tif(file_path, zero_to_nan=True):
     height_img=io.imread(file_path).astype(bool) # binary image
-    #top_surface=img.shape[0]-np.argmax(np.flip(img, axis=0), axis=0).astype(float) # first nonzero value from the top of the z stack
-    #top_surface[img.max(axis=0)==0]=0
     top_surface=np.argmin(height_img, axis=0).astype(float) # first zero in the height image at each pixel is the top surface
     if zero_to_nan:
         top_surface[top_surface==0]=np.nan
-    top_surface*=z_scale
     return top_surface, height_img
 
 def mend_gaps(masks, max_gap_size):

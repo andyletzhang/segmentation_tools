@@ -220,6 +220,8 @@ class PyQtGraphCanvas(QWidget):
         
         # get bounding box of cell mask
         xmin, xmax, ymin, ymax=self.get_bounding_box(cell_mask)
+        if xmin is None:
+            raise IndexError(f"No pixels found for cell number {cell_index}.")
 
         cell_mask_bbox=cell_mask[xmin:xmax, ymin:ymax]
         # Get the mask for the specified cell
@@ -266,8 +268,8 @@ class PyQtGraphCanvas(QWidget):
             min_col, max_col = col_indices[[0, -1]]
             return min_row, max_row+1, min_col, max_col+1
         else:
-            # If no True values are found, return None
-            return None
+            # If no True values are found, raise
+            return None, None, None, None
 
     def get_mask_boundary(self, mask):
         # UTIL
@@ -406,6 +408,8 @@ class RGB_ImageItem():
             self.blue.clear()
             self.setLookupTable('gray')
         else: # RGB image
+            if self.img_data.shape[-1]==2: # two channels--assume RG and convert to RGB
+                self.img_data=np.concatenate((self.img_data, np.zeros((*self.img_data.shape[:-1], 1), dtype=np.uint8)), axis=-1)
             self.red.setImage(self.img_data[..., 0])
             self.green.setImage(self.img_data[..., 1])
             self.blue.setImage(self.img_data[..., 2])

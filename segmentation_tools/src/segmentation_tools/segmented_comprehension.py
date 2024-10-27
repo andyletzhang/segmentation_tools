@@ -716,7 +716,7 @@ class SegmentedImage:
             
         export={'img':img, 'masks':self.masks, 'outlines':self.outlines, 'outlines_list':outlines_list}
 
-        optional_attrs=['FUCCI','cell_cycles','volumes','masks_3d','scale','z_scale', 'units', 'heights'] # if any of these exist, may as well export them
+        optional_attrs=['FUCCI','cell_cycles','volumes','masks_3d','scale','z_scale', 'units', 'heights'] # if any of these exist, export them as well
         write_attrs=set(write_attrs+optional_attrs) # add optional attrs to write_attrs
         for attr in write_attrs:
             try:
@@ -996,15 +996,17 @@ class HeightMap(SegmentedImage):
     def process_heights(self, zero_to_nan=True):
         if not hasattr(self, 'heights'):
             raise AttributeError('No heights found in this image.')
+        self.zero_to_nan=zero_to_nan
         self.heights=self.heights.astype(float)
-        if zero_to_nan:
-            self.heights[self.heights<=0]=np.nan
         return self.heights
 
     @property
     def scaled_heights(self):
         '''heights in um'''
-        return self.heights*self.z_scale
+        scaled=self.heights.copy()
+        if self.zero_to_nan:
+            scaled[scaled==0]=np.nan
+        return scaled*self.z_scale
     
     def read_NORI(self, file_path=None, mask_nan_z=True):
         from skimage import io

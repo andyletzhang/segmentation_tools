@@ -22,6 +22,9 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
+# TODO: mask zeros during measure_heights
+# TODO: get/set coverslip height
+# TODO: stop using frame.img for frontend stuff. Use self.canvas.img_data and keep frame.img as the RGB slice.
 # TODO: stack level operations should use current z slice
 # TODO: overlay colormapped cell attributes on segmentation plot
 # TODO: add mouse and keyboard shortcuts to interface
@@ -120,8 +123,10 @@ class MainWidget(QMainWindow):
 
         self.canvas_widget = QWidget()
         canvas_VBoxLayout = QVBoxLayout(self.canvas_widget)
+        canvas_VBoxLayout.setSpacing(0)
         canvas_VBoxLayout.setContentsMargins(0, 0, 0, 0)
         canvas_HBoxLayout = QHBoxLayout()
+        canvas_HBoxLayout.setSpacing(0)
         canvas_HBoxLayout.setContentsMargins(0, 0, 0, 0)
         self.canvas = PyQtGraphCanvas(parent=self)
         self.globals_dict['canvas']=self.canvas
@@ -142,7 +147,7 @@ class MainWidget(QMainWindow):
         main_widget.addWidget(self.right_toolbar)
         main_widget.setSizes([250, 800, 250])
 
-        self.saved_visual_settings=[self.get_visual_settings() for _ in range(self.tabbed_menu_widget.count())]
+        self.saved_visual_settings=[self.get_visual_settings() for _ in range(4)]
         self.current_tab=0
         self.FUCCI_mode=False
 
@@ -317,7 +322,8 @@ class MainWidget(QMainWindow):
         self.FUCCI_overlay()
     
     def set_visual_settings(self, settings):
-        self.set_RGB(settings[0])
+        if settings[0] is not None: # RGB
+            self.set_RGB(settings[0])
         self.normalize_type=settings[1]
         self.masks_checkbox.setChecked(settings[2])
         self.outlines_checkbox.setChecked(settings[3])
@@ -336,7 +342,7 @@ class MainWidget(QMainWindow):
         segment_frame_layout=QVBoxLayout(segment_frame_widget)
         self.cell_diameter=QLineEdit(self, placeholderText='Auto')
         self.cell_diameter.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
-        self.cell_diameter.setFixedWidth(40)
+        self.cell_diameter.setFixedWidth(60)
         self.cell_diameter_calibrate=QPushButton("Calibrate", self)
         self.cell_diameter_calibrate.setFixedWidth(70)
         self.cell_diameter_layout=QHBoxLayout()
@@ -549,6 +555,10 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         
+        if self.is_zstack: # segment the zstack
+            for frame in self.stack.frames:
+                frame.img=frame.zstack[self.zstack_number]
+
         self.segment(self.stack.frames)
 
         # update the display
@@ -668,7 +678,7 @@ class MainWidget(QMainWindow):
         red_threshold_layout=QHBoxLayout()
         red_threshold_label=QLabel("Red Threshold:", self)
         self.red_threshold=QLineEdit(self, placeholderText='Auto')
-        self.red_threshold.setFixedWidth(40)
+        self.red_threshold.setFixedWidth(60)
         self.red_threshold.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
         red_threshold_layout.addWidget(red_threshold_label)
         red_threshold_layout.addWidget(self.red_threshold)
@@ -676,7 +686,7 @@ class MainWidget(QMainWindow):
         green_threshold_layout=QHBoxLayout()
         green_threshold_label=QLabel("Green Threshold:", self)
         self.green_threshold=QLineEdit(self, placeholderText='Auto')
-        self.green_threshold.setFixedWidth(40)
+        self.green_threshold.setFixedWidth(60)
         self.green_threshold.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
         green_threshold_layout.addWidget(green_threshold_label)
         green_threshold_layout.addWidget(self.green_threshold)
@@ -684,7 +694,7 @@ class MainWidget(QMainWindow):
         percent_threshold_layout=QHBoxLayout()
         percent_threshold_label=QLabel("Minimum N/C Ratio:", self)
         self.percent_threshold=QLineEdit(self, placeholderText='0.15')
-        self.percent_threshold.setFixedWidth(40)
+        self.percent_threshold.setFixedWidth(60)
         self.percent_threshold.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
         percent_threshold_layout.addWidget(percent_threshold_label)
         percent_threshold_layout.addWidget(self.percent_threshold)
@@ -818,6 +828,48 @@ class MainWidget(QMainWindow):
         self.FUCCI_dropdown.setCurrentIndex(3)
         self.FUCCI_overlay()
 
+    def get_volumes_tab(self):
+        self.volumes_tab=QWidget()
+        volumes_layout=QVBoxLayout(self.volumes_tab)
+        volumes_layout.setSpacing(10)
+        volumes_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        operate_on_label=QLabel("Operate on:", self)
+        operate_on_layout=QHBoxLayout()
+        self.volumes_on_frame=QRadioButton("Frame", self)
+        self.volumes_on_stack=QRadioButton("Stack", self)
+        operate_on_layout.addWidget(self.volumes_on_frame)
+        operate_on_layout.addWidget(self.volumes_on_stack)
+        self.volumes_on_frame.setChecked(True)
+        self.get_heights_layout=QHBoxLayout()
+        self.get_heights_button=QPushButton("Measure Heights", self)
+        self.volume_button=QPushButton("Measure Volumes", self)
+        self.get_heights_layout.addWidget(self.get_heights_button)
+        self.get_heights_layout.addWidget(self.volume_button)
+        peak_prominence_label=QLabel("Peak Prominence:", self)
+        self.peak_prominence=QLineEdit(self, text='0.01', placeholderText='0.01')
+        self.peak_prominence.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
+        self.peak_prominence.setFixedWidth(60)
+        self.peak_prominence_layout=QHBoxLayout()
+        self.peak_prominence_layout.addWidget(peak_prominence_label)
+        self.peak_prominence_layout.addWidget(self.peak_prominence)
+
+        self.volume_hist=pg.PlotWidget(title='Cell Volume Histogram', background='transparent')
+        self.volume_hist.setLabel('bottom', 'Volume', 'µm³')
+        self.volume_hist.setLabel('left', 'P(V)', '')
+        self.volume_hist.showGrid(x=True, y=True)
+
+        self.volume_button.clicked.connect(self.measure_volumes)
+        self.get_heights_button.clicked.connect(self.measure_heights)
+
+        volumes_layout.addWidget(operate_on_label)
+        volumes_layout.addLayout(operate_on_layout)
+        volumes_layout.addLayout(self.get_heights_layout)
+        volumes_layout.addLayout(self.peak_prominence_layout)
+        volumes_layout.addWidget(self.volume_hist)
+
+        return self.volumes_tab
+    
     def get_tracking_tab(self):
         tracking_tab = QWidget()
         tracking_tab_layout = QVBoxLayout(tracking_tab)
@@ -987,7 +1039,7 @@ class MainWidget(QMainWindow):
         else:
             self.canvas.clear_tracking_overlay()
 
-    def wheelEvent(self, event):
+    def canvas_wheelEvent(self, event):
         if not self.file_loaded:
             return
         if event.modifiers() & Qt.KeyboardModifier.ShiftModifier: # shift+scroll = z-stack
@@ -1009,6 +1061,64 @@ class MainWidget(QMainWindow):
         self.frame.img=self.frame.zstack[self.zstack_number]
         self.imshow()
 
+    def measure_volumes(self):
+        if not self.file_loaded:
+            return
+        if self.volumes_on_stack.isChecked():
+            frames=self.stack.frames
+        else:
+            frames=[self.frame]
+
+        volumes=[]
+        for frame in self.progress_bar(frames):
+            volumes.extend(self.measure_frame_volume(frame))
+        self.plot_volume_histogram(volumes)
+
+    def measure_frame_volume(self, frame):
+        if not hasattr(frame, 'heights'):
+            if hasattr(frame, 'zstack'):
+                self.measure_heights()
+            else:
+                raise ValueError(f'No heights or z-stack available to measure volumes for {frame.name}.')
+        
+        if not hasattr(frame, 'z_scale'):
+            print(f'No z-scale available for {frame.name}. Defaulting to 1.')
+            frame.z_scale=1 # default z step
+        if not hasattr(frame, 'scale'):
+            print(f'No scale available for {frame.name}. Defaulting to 0.1625.')
+            frame.scale=0.1625 # 40x objective with 0.325 µm/pixel camera
+        frame.get_volumes()
+        return frame.volumes
+
+    def plot_volume_histogram(self, volumes):
+        self.volume_hist.clear()
+        volumes=np.array(volumes)[~np.isnan(volumes)]
+        n, bins=np.histogram(volumes, bins=50, density=True)
+        self.volume_hist.plot(bins, n, stepMode=True, fillLevel=0, brush=(0, 0, 255, 150))
+        self.volume_hist.autoRange()
+
+    def measure_heights(self):
+        if not self.file_loaded:
+            return
+        from segmentation_tools.heightmap import get_heights
+        if self.volumes_on_stack.isChecked():
+            frames=self.stack.frames
+        else:
+            frames=[self.frame]
+        
+        peak_prominence=self.peak_prominence.text()
+        if peak_prominence=='':
+            peak_prominence=0.01
+        else:
+            peak_prominence=float(peak_prominence)
+
+        for frame in self.progress_bar(frames):
+            if not hasattr(frame, 'zstack'):
+                raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
+            else:
+                frame.heights=get_heights(frame.zstack, peak_prominence=peak_prominence)
+                frame.to_heightmap()
+
     def change_current_frame(self, frame_number, reset=False):
         if not self.file_loaded:
             return
@@ -1026,11 +1136,18 @@ class MainWidget(QMainWindow):
             self.is_zstack=False
 
         if self.is_zstack or hasattr(self.frame, 'heights'):
-            pass
-            # create a volumes tab
+            # create the volumes tab if it doesn't exist
+            if not hasattr(self, 'volumes_tab'):
+                self.tabbed_menu_widget.addTab(self.get_volumes_tab(), 'Volumes')
+            
+            if not self.is_zstack:
+                self.get_heights_button.setEnabled(False)
+                self.peak_prominence.setEnabled(False)
         else:
-            pass
             # remove the volumes tab
+            if hasattr(self, 'volumes_tab'):
+                self.tabbed_menu_widget.removeTab(self.tabbed_menu_widget.indexOf(self.volumes_tab))
+                del self.volumes_tab
 
         self.imshow()
 
@@ -2138,7 +2255,9 @@ class MainWidget(QMainWindow):
             min_val=int(range_labels[0].text())
             max_val=int(range_labels[1].text())
 
-            if min_val>max_val:
+            if min_val<slider.minimum():
+                slider.setMinimum(min_val)
+            elif min_val>max_val:
                 min_val=max_val
                 range_labels[0].setText(str(min_val))
             slider.setValue((min_val, max_val))
@@ -2147,7 +2266,9 @@ class MainWidget(QMainWindow):
             min_val=int(range_labels[0].text())
             max_val=int(range_labels[1].text())
 
-            if max_val<min_val:
+            if max_val>slider.maximum():
+                slider.setMaximum(max_val)
+            elif max_val<min_val:
                 max_val=min_val
                 range_labels[1].setText(str(max_val))
             slider.setValue((min_val, max_val))
@@ -2259,7 +2380,13 @@ class MainWidget(QMainWindow):
             self.zstack_slider.setVisible(False)
             self.is_zstack=False
 
+        if len(self.stack.frames)>1:
+            self.frame_slider.setVisible(True)
+        else:
+            self.frame_slider.setVisible(False)
+
         self.frame_slider.setValue(0)
+        self.frame_slider.setRange(0, len(self.stack.frames)-1)
         self.change_current_frame(0, reset=True) # call frame update explicitly (in case the slider value was already at 0)
 
         for frame in self.stack.frames:
@@ -2279,7 +2406,6 @@ class MainWidget(QMainWindow):
             raise ValueError(f'Image has {self.frame.img.ndim} dimensions, must be 2 (grayscale) or 3 (RGB).')
 
         self.canvas.img_plot.autoRange()
-        self.frame_slider.setRange(0, len(self.stack.frames)-1)
 
         # set slider ranges
         if self.is_zstack:
@@ -2292,6 +2418,9 @@ class MainWidget(QMainWindow):
         stack_range=np.array([np.min(all_imgs, axis=0), np.max(all_imgs, axis=0)]).T
         self.stack.min_max=stack_range
         self.set_LUT_slider_ranges(stack_range)
+
+        # reset visual settings
+        self.saved_visual_settings=[self.get_visual_settings() for _ in range(4)]
         
     def open_files(self):
         files = QFileDialog.getOpenFileNames(self, 'Open segmentation file', filter='*seg.npy')[0]

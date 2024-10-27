@@ -28,6 +28,12 @@ QPushButton:pressed {
     background-color: #1c1c1c;
 }
 
+QPushButton:disabled, QLineEdit:disabled {
+    background-color: #2a2a2a;    /* Darker background */
+    color: #666666;               /* Dimmed text */
+    border: 1px solid #3a3a3a;    /* Dimmer border */
+}
+
 /* Menu and toolbar */
 QToolBar {
     background-color: #3e3e3e;
@@ -61,9 +67,13 @@ QTabBar::tab:hover {
 }
 
 /* Common scrollbar/slider properties */
-QScrollBar:vertical, QScrollBar:horizontal,
-QSlider::groove:vertical, QSlider::groove:horizontal {
+QScrollBar:vertical, QScrollBar:horizontal {
     background-color: #2e2e2e;
+    border: none;
+}
+
+QSlider::groove:vertical, QSlider::groove:horizontal {
+    background-color: #000000;
     border: none;
 }
 

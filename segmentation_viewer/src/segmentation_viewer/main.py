@@ -7,7 +7,7 @@ import os
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QComboBox, QPushButton, QRadioButton,
     QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog,
-    QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter, QProgressBar
+    QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter, QProgressBar, QScrollArea
 )
 from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics, QMouseEvent
@@ -357,7 +357,7 @@ class MainWidget(QMainWindow):
         self.voxel_size_widget=QWidget(objectName='bordered')
         self.voxel_size_VLayout=QVBoxLayout(self.voxel_size_widget)
         self.voxel_size_HLayout=QHBoxLayout()
-        voxel_size_label=QLabel("Voxel Size:", self)
+        voxel_size_label=QLabel("Voxel Size (μm):", self)
         xy_size_label=QLabel("XY:", self)
         z_size_label=QLabel("Z:", self)
         self.xy_size=QLineEdit(self, placeholderText='None')
@@ -398,6 +398,11 @@ class MainWidget(QMainWindow):
         
         left_toolbar = QWidget()
         left_toolbar_layout = QVBoxLayout(left_toolbar)
+        scroll_area=QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(left_toolbar)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff) # disable horizontal scroll bar
+        scroll_area.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred) # restore horizontal size policy
         left_toolbar_layout.setSpacing(10)
         left_toolbar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         left_toolbar_layout.addLayout(open_menu)
@@ -428,7 +433,7 @@ class MainWidget(QMainWindow):
         # switch tabs
         self.tabbed_menu_widget.currentChanged.connect(self.tab_switched)
 
-        return left_toolbar
+        return scroll_area
     
     def tab_switched(self, index):
         if not self.file_loaded:
@@ -1574,7 +1579,6 @@ class MainWidget(QMainWindow):
             self.close_cell_roi()
 
     def on_click(self, event):
-        # TODO: split this into separate functions for clarity
         if not self.file_loaded:
             return
         
@@ -1839,7 +1843,6 @@ class MainWidget(QMainWindow):
 
     def remove_tracking_data(self, cell_number, frame_number=None):
         ''' Remove a cell from one frame of the tracking data. Renumber the cell numbers in the frame to align with the new cell masks. '''
-        # TODO: is there a way to only renumber once instead of applying the same algorithm twice in parallel?
         if not hasattr(self.stack, 'tracked_centroids'):
             return
         if frame_number is None:
@@ -2400,26 +2403,34 @@ class MainWidget(QMainWindow):
         If a tracking.csv is found, the tracking data is returned as well
         '''
         # TODO: maybe load images/frames only when they are accessed? (lazy loading)
-
-        self.file_loaded = True
         tracked_centroids=None
+        tracking_file=None
 
-        # check if files[0] is a folder
-        if os.path.isdir(files[0]):
-            seg_files=[f for f in os.listdir(files[0]) if f.endswith('seg.npy')]
-            tif_files=[f for f in os.listdir(files[0]) if f.endswith('tif') or f.endswith('tiff')]
-            seg_files=[os.path.join(files[0], f) for f in seg_files]
-            tif_files=[os.path.join(files[0], f) for f in tif_files]
-        else:
+        if os.path.isdir(files[0]): # check if files[0] is a folder, in which case load whatever's inside
+            from natsort import natsorted
+            seg_files=[]
+            tif_files=[]
+
+            for f in natsorted(os.listdir(files[0])):
+                if f.endswith('seg.npy'):
+                    seg_files.append(os.path.join(files[0], f))
+                elif f.endswith('tif') or f.endswith('tiff'):
+                    tif_files.append(os.path.join(files[0], f))
+                elif f.endswith('tracking.csv'):
+                    tracking_file=os.path.join(files[0], f)
+        else: # treat as list of files
             seg_files=[f for f in files if f.endswith('seg.npy')]
             tif_files=[f for f in files if f.endswith('tif') or f.endswith('tiff')]
+            tracking_files=[f for f in files if f.endswith('tracking.csv')]
+            if len(tracking_files)>0:
+                tracking_file=tracking_files[-1]
 
         if len(seg_files)>0: # segmented file paths
             stack=SegmentedStack(frame_paths=seg_files, load_img=True, progress_bar=self.progress_bar)
-            for file in files:
-                if file.endswith('tracking.csv'):
-                    tracked_centroids=self.load_tracking_data(file)
-                    print(f'Loaded tracking data from {file}')
+            if tracking_file is not None:
+                tracked_centroids=self.load_tracking_data(tracking_file)
+                print(f'Loaded tracking data from {tracking_file}')
+            self.file_loaded = True
             return stack, tracked_centroids
 
         elif len(tif_files)>0: # tif files (only checks if no seg.npy files are found)
@@ -2430,7 +2441,7 @@ class MainWidget(QMainWindow):
             for file_path in self.progress_bar(tif_files):
                 try:
                     tif_file=read_tif(file_path)
-                except ValueError as e:
+                except ValueError as e: # probably an incompatible TIF type (not OME or ImageJ)
                     self.statusBar().showMessage(f'ERROR: Could not load file {file_path}: {e}', 4000)
                     return False, None
                 file_stem=Path(file_path).stem
@@ -2442,6 +2453,7 @@ class MainWidget(QMainWindow):
                         img=tiffpage_frame(tif_file, v=v)
                         frames.append(segmentation_from_img(img, name=file_stem+f'-{v}_seg.npy'))
             stack=SegmentedStack(from_frames=frames)
+            self.file_loaded = True
             return stack, None
         
         else: # can't find any seg.npy or tiff files, ignore

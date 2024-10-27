@@ -18,12 +18,12 @@ class PyQtGraphCanvas(QWidget):
         
         # Create a layout for the widget
         plot_layout = QHBoxLayout(self)
-        plot_layout.setSpacing(5)
+        plot_layout.setSpacing(1)
         plot_layout.setContentsMargins(0, 0, 0, 0)
 
         # Create a PlotWidget for the image and segmentation views
-        self.img_plot = SegPlot(title="Image", border="w")
-        self.seg_plot = SegPlot(title="Segmentation", border="w")
+        self.img_plot = SegPlot(title="Image", border="w", parent=self)
+        self.seg_plot = SegPlot(title="Segmentation", border="w", parent=self)
 
         plot_layout.addWidget(self.img_plot)
         plot_layout.addWidget(self.seg_plot)
@@ -81,6 +81,10 @@ class PyQtGraphCanvas(QWidget):
         self.img_plot.addItem(self.img_hline, ignoreBounds=True)
         self.seg_plot.addItem(self.seg_vline, ignoreBounds=True)
         self.seg_plot.addItem(self.seg_hline, ignoreBounds=True)
+
+    def wheelEvent(self, event):
+        ''' Redirect wheel events to the main window. '''
+        self.parent.canvas_wheelEvent(event)
 
     def overlay_outlines(self):
         self.img_outline_overlay.setVisible(self.parent.outlines_checkbox.isChecked())
@@ -371,7 +375,7 @@ class SegPlot(pg.PlotWidget):
     def wheelEvent(self, event):
         # ctrl+wheel zooms like normal, otherwise send it up to the main window
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            super().wheelEvent(event)
+            super().wheelEvent(event) # PlotWidget handles zooming
         else:
             event.ignore()
 

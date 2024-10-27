@@ -1,0 +1,163 @@
+/* Base styles */
+QWidget, QMainWindow, QMenuBar, QStatusBar {
+    background-color: #2e2e2e;
+    color: #ffffff;
+}
+
+/* Bordered elements */
+QWidget#bordered {
+    border: 2px solid #4b4b4b;
+    border-radius: 5px;
+    padding: 5px;
+}
+
+/* Input elements */
+QPushButton, QLineEdit, QTextEdit {
+    background-color: #3e3e3e;
+    color: #ffffff;
+    border: 1px solid #555555;
+    border-radius: 5px;
+    padding: 5px;
+}
+
+QPushButton:hover, QMenuBar::item:selected {
+    background-color: #4e4e4e;
+}
+
+QPushButton:pressed {
+    background-color: #1c1c1c;
+}
+
+/* Menu and toolbar */
+QToolBar {
+    background-color: #3e3e3e;
+    border: 1px solid #1c1c1c;
+}
+
+QMainWindow, QMenuBar::item {
+    border: 1px solid #1c1c1c;
+}
+
+/* Tab styling */
+QTabWidget::pane {
+    border: 1px solid #4b4b4b;
+}
+
+QTabBar::tab {
+    background-color: #3c3c3c;
+    color: #ffffff;
+    padding: 5px 10px;
+    min-height: 20px;
+    border: 1px solid #4b4b4b;
+}
+
+QTabBar::tab:selected {
+    background-color: #5b5b5b;
+    border-bottom: 2px solid #2b2b2b;
+}
+
+QTabBar::tab:hover {
+    background-color: #6d6d6d;
+}
+
+/* Common scrollbar/slider properties */
+QScrollBar:vertical, QScrollBar:horizontal,
+QSlider::groove:vertical, QSlider::groove:horizontal {
+    background-color: #2e2e2e;
+    border: none;
+}
+
+QScrollBar:vertical, QSlider::groove:vertical {
+    width: 12px;
+}
+
+QScrollBar:horizontal, QSlider::groove:horizontal {
+    height: 12px;
+}
+
+/* Handle styling for both scrollbars and sliders */
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal,
+QSlider::handle:vertical, QSlider::handle:horizontal {
+    background-color: #4e4e4e;
+    border: none;
+    border-radius: 6px;
+}
+
+QSlider::handle:horizontal {
+    width: 80px;
+    height: 12px;
+}
+
+QSlider::handle:vertical {
+    height: 80px;
+    width: 12px;
+}
+
+QScrollBar::handle:vertical {
+    min-height: 30px;
+}
+
+QScrollBar::handle:horizontal {
+    min-width: 30px;
+}
+
+/* Hover and pressed states */
+QScrollBar::handle:vertical:hover,
+QScrollBar::handle:horizontal:hover,
+QSlider::handle:vertical:hover,
+QSlider::handle:horizontal:hover {
+    background-color: #5e5e5e;
+}
+
+QScrollBar::handle:vertical:pressed,
+QScrollBar::handle:horizontal:pressed,
+QSlider::handle:vertical:pressed,
+QSlider::handle:horizontal:pressed {
+    background-color: #3e3e3e;
+}
+
+/* Hide unnecessary scrollbar elements */
+QScrollBar::sub-line:vertical,
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:horizontal,
+QScrollBar::add-line:horizontal,
+QScrollBar::up-arrow:vertical,
+QScrollBar::down-arrow:vertical,
+QScrollBar::up-arrow:horizontal,
+QScrollBar::down-arrow:horizontal,
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical,
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    height: 0px;
+    width: 0px;
+    background: none;
+}
+
+/* Range slider specific */
+QRangeSlider {
+    background: none;
+    height: 12px; /* Total widget height */
+}
+
+QRangeSlider::groove:horizontal {
+    background-color: #21aeff;
+    border: none;
+    height: 4px; /* Groove height */
+    margin: 4px 0; /* Centers the groove vertically within the widget */
+}
+
+QRangeSlider::handle:horizontal {
+    background-color: #ececec;
+    width: 10px;
+    height: 12px;
+    margin: -4px 0; /* Negative margin to make handle extend beyond groove */
+}
+
+QRangeSlider::handle:horizontal:hover {
+    background-color: #c9c9c9;
+}
+
+QRangeSlider::handle:horizontal:pressed {
+    background-color: #979797;
+}

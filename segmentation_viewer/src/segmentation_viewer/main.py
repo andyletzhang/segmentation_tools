@@ -34,102 +34,6 @@ from tqdm import tqdm
 # TODO: undo/redo
 # TODO: some image pyramid approach to speed up work on large images??
 
-darktheme_stylesheet = """
-    QWidget {
-        background-color: #2e2e2e;
-        color: #ffffff;
-    }
-
-    QWidget#bordered {
-            border: 2px solid #4b4b4b;
-            border-radius: 5px;
-            padding: 5px;
-        }
-
-    QMainWindow {
-        background-color: #2e2e2e;
-        border: 1px solid #1c1c1c;
-    }
-
-    QPushButton {
-        background-color: #3e3e3e;
-        color: #ffffff;
-        border: 1px solid #555555;
-        border-radius: 5px;
-        padding: 5px;
-    }
-
-    QPushButton:hover {
-        background-color: #4e4e4e;
-    }
-
-    QPushButton:pressed {
-        background-color: #1c1c1c;
-    }
-
-    QLineEdit {
-        background-color: #3e3e3e;
-        color: #ffffff;
-        border: 1px solid #555555;
-    }
-
-    QTextEdit {
-        background-color: #3e3e3e;
-        color: #ffffff;
-        border: 1px solid #555555;
-    }
-
-    QMenuBar {
-        background-color: #2e2e2e;
-        color: #ffffff;
-    }
-
-    QMenuBar::item {
-        background-color: #2e2e2e;
-        color: #ffffff;
-    }
-
-    QMenuBar::item:selected {
-        background-color: #4e4e4e;
-    }
-
-    QToolBar {
-        background-color: #3e3e3e;
-        border: 1px solid #1c1c1c;
-    }
-
-    QStatusBar {
-        background-color: #2e2e2e;
-        color: #ffffff;
-    }
-
-    QTabWidget::pane {
-        border: 1px solid #4b4b4b;
-    }
-
-    QTabBar::tab {
-        background-color: #3c3c3c;  /* Unselected tab - darker shade */
-        color: #ffffff;
-        padding: 5px 10px;
-        min-height: 20px;
-        border: 1px solid #4b4b4b;
-    }
-
-    QTabBar::tab:selected {
-        background-color: #5b5b5b;  /* Selected tab - medium shade */
-        border-bottom: 2px solid #2b2b2b;
-    }
-
-    QTabBar::tab:hover {
-        background-color: #6d6d6d;  /* Hovered tab - lighter gray */
-    }
-    
-    /* Specific styling for QRangeSlider */
-    QRangeSlider {
-        background-color: transparent; /* Make the background transparent so it doesn't conflict */
-        height: 12px;
-    }
-"""
 
 class MainWidget(QMainWindow):
     def __init__(self):
@@ -191,50 +95,15 @@ class MainWidget(QMainWindow):
         particle_stat_layout.addWidget(self.cell_cycle_button)
 
         #----------------Frame Slider----------------
-        slider_stylesheet="""
-            QSlider::groove:horizontal {
-                background: #888;
-                border: 1px solid #444;
-                height: 16px; /* Groove height */
-                margin: 0px;
-            }
-
-            QSlider::groove:vertical {
-                background: #888;
-                border: 1px solid #444;
-                width: 16px; /* Groove width */
-                margin: 0px;
-            }
-
-            QSlider::handle:horizontal {
-                background: #ccc;
-                border: 1px solid #777;
-                width: 40px; /* Handle width */
-                height: 16px; /* Handle height */
-                margin: -8px 0; /* Adjust positioning to align with groove */
-                border-radius: 2px; /* Slightly round edges */
-            }
-            
-            QSlider::handle:vertical {
-                background: #ccc;
-                border: 1px solid #777;
-                height: 40px; /* Handle height */
-                width: 16px; /* Handle width */
-                margin: -8px 0; /* Adjust positioning to align with groove */
-                border-radius: 2px; /* Slightly round edges */
-            }
-        """
         self.frame_slider=QSlider(Qt.Orientation.Horizontal, self)
         self.zstack_slider=QSlider(Qt.Orientation.Vertical, self)
         self.zstack_slider.setVisible(False)
         # Customize the slider to look like a scroll bar
         self.frame_slider.setFixedHeight(15)  # Make the slider shorter in height
         self.frame_slider.setTickPosition(QSlider.TickPosition.NoTicks)  # No tick marks
-        self.frame_slider.setStyleSheet(slider_stylesheet)
 
         self.zstack_slider.setFixedWidth(15)  # Make the slider shorter in height
         self.zstack_slider.setTickPosition(QSlider.TickPosition.NoTicks)  # No tick marks
-        self.zstack_slider.setStyleSheet(slider_stylesheet)
 
         #----------------Layout----------------
         # Main layout
@@ -2250,12 +2119,49 @@ class MainWidget(QMainWindow):
         slider.setRange(0, 65535)
         slider.setValue((0, 65535))
 
-        range_labels=[QLabel(str(val)) for val in slider.value()]
+        range_labels=[QLineEdit(str(val)) for val in slider.value()]
         for label in range_labels:
-            label.setMinimumWidth(self.three_digit_width)
+            label.setFixedWidth(self.three_digit_width*2)
             label.setAlignment(Qt.AlignTop)
+            label.setValidator(QIntValidator(0, 65535))
+            label.setStyleSheet("""
+                QLineEdit {
+                    border: none;
+                    background: transparent;
+                    padding: 0;
+                }
+            """)
         range_labels[0].setAlignment(Qt.AlignRight)
+
+        # Connect QLineEdit changes to update the slider value
+        def update_min_slider_from_edit():
+            min_val=int(range_labels[0].text())
+            max_val=int(range_labels[1].text())
+
+            if min_val>max_val:
+                min_val=max_val
+                range_labels[0].setText(str(min_val))
+            slider.setValue((min_val, max_val))
         
+        def update_max_slider_from_edit():
+            min_val=int(range_labels[0].text())
+            max_val=int(range_labels[1].text())
+
+            if max_val<min_val:
+                max_val=min_val
+                range_labels[1].setText(str(max_val))
+            slider.setValue((min_val, max_val))
+
+        range_labels[0].editingFinished.connect(update_min_slider_from_edit)
+        range_labels[1].editingFinished.connect(update_max_slider_from_edit)
+
+        # Connect slider value changes to update the QLineEdit text
+        def update_edits_from_slider():
+            min_val, max_val = slider.value()
+            range_labels[0].setText(str(min_val))
+            range_labels[1].setText(str(max_val))
+
+        slider.valueChanged.connect(update_edits_from_slider)
 
         labels_and_slider.addWidget(range_labels[0])
         labels_and_slider.addSpacerItem(QSpacerItem(10, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed))
@@ -2543,6 +2449,10 @@ class FineScrubQRangeSlider(QRangeSlider):
         else:
             super().mouseMoveEvent(event)
 
+def load_stylesheet(file_path):
+    with open(file_path, 'r') as f:
+        return f.read()
+    
 def main():
     pg.setConfigOptions(useOpenGL=True)
     #pg.setConfigOptions(enableExperimental=True)
@@ -2552,6 +2462,7 @@ def main():
     else:
         app = QApplication.instance()
 
+    darktheme_stylesheet=load_stylesheet(importlib.resources.files('segmentation_viewer.assets').joinpath('darktheme.qss'))
     app.setStyleSheet(darktheme_stylesheet)
     app.quitOnLastWindowClosed = True
     ui = MainWidget()

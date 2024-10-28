@@ -65,38 +65,6 @@ class MainWidget(QMainWindow):
         self.statusBar().addPermanentWidget(self.status_coordinates)
         self.statusBar().addPermanentWidget(self.status_pixel_value)
 
-        #----------------Right Toolbar----------------
-        self.particle_stat_plot=pg.PlotWidget(title='Tracked Cell Statistics', background='#2e2e2e')
-        self.particle_stat_plot.setLabel('bottom', 'Frame')
-        self.stat_plot_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
-        self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
-
-        cell_ID_widget=QWidget(objectName='bordered')
-        cell_ID_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        self.cell_ID_layout=QFormLayout(cell_ID_widget)
-        selected_cell_label=QLabel("Cell ID:", self)
-        self.selected_cell_prompt=QLineEdit(self, placeholderText='None')
-        self.selected_cell_prompt.setValidator(QIntValidator(bottom=0)) # non-negative integers only
-        selected_particle_label=QLabel("Tracking ID:", self)
-        self.selected_particle_prompt=QLineEdit(self, placeholderText='None')
-        self.selected_particle_prompt.setValidator(QIntValidator(bottom=0)) # non-negative integers only
-        self.cell_ID_layout.addRow(selected_cell_label, self.selected_cell_prompt)
-        self.cell_ID_layout.addRow(selected_particle_label, self.selected_particle_prompt)
-
-        particle_stat_widget=QWidget(objectName='bordered')
-        particle_stat_layout=QVBoxLayout(particle_stat_widget)
-        particle_stat_layout.setSpacing(0)
-        particle_stat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.area_button=QRadioButton("Area", self)
-        self.perimeter_button=QRadioButton("Perimeter", self)
-        self.circularity_button=QRadioButton("Circularity", self)
-        self.cell_cycle_button=QRadioButton("Cell Cycle", self)
-        self.area_button.setChecked(True)
-        particle_stat_layout.addWidget(self.area_button)
-        particle_stat_layout.addWidget(self.perimeter_button)
-        particle_stat_layout.addWidget(self.circularity_button)
-        particle_stat_layout.addWidget(self.cell_cycle_button)
-
         #----------------Frame Slider----------------
         self.frame_slider=QSlider(Qt.Orientation.Horizontal, self)
         self.zstack_slider=QSlider(Qt.Orientation.Vertical, self)
@@ -113,14 +81,6 @@ class MainWidget(QMainWindow):
         main_widget = QSplitter()
         self.setCentralWidget(main_widget)
 
-        self.right_toolbar = QSplitter()
-        self.right_toolbar.setOrientation(Qt.Orientation.Vertical)
-        right_toolbar_widget = QWidget()
-        right_toolbar_layout = QVBoxLayout(right_toolbar_widget)
-        right_toolbar_layout.setSpacing(10)
-        right_toolbar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        #self.left_toolbar.setFixedWidth(250)
-
         self.canvas_widget = QWidget()
         canvas_VBoxLayout = QVBoxLayout(self.canvas_widget)
         canvas_VBoxLayout.setSpacing(0)
@@ -135,6 +95,7 @@ class MainWidget(QMainWindow):
         self.cell_roi.last_handle_pos = None
         self.canvas.img_plot.addItem(self.cell_roi)
         
+        self.right_toolbar=self.get_right_toolbar()
         self.left_toolbar=self.get_left_toolbar()
 
         canvas_HBoxLayout.addWidget(self.canvas)
@@ -151,31 +112,97 @@ class MainWidget(QMainWindow):
         self.current_tab=0
         self.FUCCI_mode=False
 
-        # Right Toolbar layout
-        self.right_toolbar.addWidget(self.particle_stat_plot)
-        right_toolbar_layout.addWidget(cell_ID_widget)
-        right_toolbar_layout.addWidget(particle_stat_widget)
-        self.right_toolbar.addWidget(right_toolbar_widget)
-        self.right_toolbar.setSizes([100, 200])
-
         #----------------Connections----------------
         self.frame_slider.valueChanged.connect(self.change_current_frame)
         self.zstack_slider.valueChanged.connect(self.update_zstack_number)
+
         # click event
         self.canvas.img_plot.scene().sigMouseClicked.connect(self.on_click)
         self.canvas.seg_plot.scene().sigMouseClicked.connect(self.on_click)
+    
+    def get_right_toolbar(self):
+        self.histogram=pg.PlotWidget(title='Cell Volume Histogram', background='transparent')
+        self.histogram.setLabel('bottom', 'Volume', 'µm³')
+        self.histogram.setLabel('left', 'P(V)', '')
+        self.histogram.showGrid(x=True, y=True)
 
-        # input current cell/particle
+        self.particle_stat_plot=pg.PlotWidget(title='Tracked Cell Statistics', background='#2e2e2e')
+        self.particle_stat_plot.setLabel('bottom', 'Frame')
+        self.stat_plot_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
+        self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
+
+        cell_ID_widget=QWidget(objectName='bordered')
+        #cell_ID_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.cell_ID_layout=QFormLayout(cell_ID_widget)
+        selected_cell_label=QLabel("Cell ID:", self)
+        self.selected_cell_prompt=QLineEdit(self, placeholderText='None')
+        self.selected_cell_prompt.setValidator(QIntValidator(bottom=0)) # non-negative integers only
+        selected_particle_label=QLabel("Tracking ID:", self)
+        self.selected_particle_prompt=QLineEdit(self, placeholderText='None')
+        self.selected_particle_prompt.setValidator(QIntValidator(bottom=0)) # non-negative integers only
+        self.cell_ID_layout.addRow(selected_cell_label, self.selected_cell_prompt)
+        self.cell_ID_layout.addRow(selected_particle_label, self.selected_particle_prompt)
+
+        particle_stat_selection_widget=QWidget(objectName='bordered')
+        particle_stat_selection_layout=QVBoxLayout(particle_stat_selection_widget)
+        particle_stat_selection_layout.setSpacing(0)
+        particle_stat_selection_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.area_button=QRadioButton("Area", self)
+        self.perimeter_button=QRadioButton("Perimeter", self)
+        self.circularity_button=QRadioButton("Circularity", self)
+        self.cell_cycle_button=QRadioButton("Cell Cycle", self)
+        self.area_button.setChecked(True)
+        particle_stat_selection_layout.addWidget(self.area_button)
+        particle_stat_selection_layout.addWidget(self.perimeter_button)
+        particle_stat_selection_layout.addWidget(self.circularity_button)
+        particle_stat_selection_layout.addWidget(self.cell_cycle_button)
+
+        # Create a container widget for all content
+        right_container = QWidget()
+        right_layout = QVBoxLayout(right_container)
+
+        # Create and set up particle stat widget (from original code)
+        particle_stat_widget = QWidget()
+        particle_stat_layout = QVBoxLayout(particle_stat_widget)
+        particle_stat_layout.setSpacing(10)
+        particle_stat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        particle_stat_layout.addWidget(cell_ID_widget)
+        particle_stat_layout.addWidget(particle_stat_selection_widget)
+
+        # Create splitter and add widgets
+        right_toolbar = QSplitter()
+        right_toolbar.setOrientation(Qt.Orientation.Vertical)
+        right_toolbar.addWidget(self.histogram)
+        right_toolbar.addWidget(self.particle_stat_plot)
+        right_toolbar.addWidget(particle_stat_widget)
+        right_toolbar.setSizes([100, 100, 100])
+
+        # Add splitter to the container's layout
+        right_layout.addWidget(right_toolbar)
+
+        # Set up scroll area
+        right_scroll_area = QScrollArea()
+        right_scroll_area.setWidgetResizable(True)
+        right_scroll_area.setWidget(right_container)
+        right_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        right_scroll_area.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred)
+        right_scroll_area.setMinimumWidth(250)
+
+        # connections
+        # cell selection
         self.selected_cell_prompt.textChanged.connect(self.cell_prompt_changed)
         self.selected_cell_prompt.returnPressed.connect(self.cell_prompt_changed)
         self.selected_particle_prompt.textChanged.connect(self.particle_prompt_changed)
         self.selected_particle_prompt.returnPressed.connect(self.particle_prompt_changed)
+
         # particle measurements
         self.area_button.toggled.connect(self.plot_particle_statistic)
         self.perimeter_button.toggled.connect(self.plot_particle_statistic)
         self.circularity_button.toggled.connect(self.plot_particle_statistic)
         self.cell_cycle_button.toggled.connect(self.plot_particle_statistic)
-    
+
+        return right_scroll_area
+
     def get_left_toolbar(self):
         # Open Buttons
         self.open_button = QPushButton("Open Files", self)
@@ -272,11 +299,12 @@ class MainWidget(QMainWindow):
         
         left_toolbar = QWidget()
         left_toolbar_layout = QVBoxLayout(left_toolbar)
-        scroll_area=QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setWidget(left_toolbar)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff) # disable horizontal scroll bar
-        scroll_area.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred) # restore horizontal size policy
+
+        left_scroll_area=QScrollArea()
+        left_scroll_area.setWidgetResizable(True)
+        left_scroll_area.setWidget(left_toolbar)
+        left_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff) # disable horizontal scroll bar
+        left_scroll_area.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred) # restore horizontal size policy
         left_toolbar_layout.setSpacing(10)
         left_toolbar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         left_toolbar_layout.addLayout(open_menu)
@@ -307,7 +335,7 @@ class MainWidget(QMainWindow):
         # switch tabs
         self.tabbed_menu_widget.currentChanged.connect(self.tab_switched)
 
-        return scroll_area
+        return left_scroll_area
     
     def tab_switched(self, index):
         if not self.file_loaded:
@@ -854,11 +882,6 @@ class MainWidget(QMainWindow):
         self.peak_prominence_layout.addWidget(peak_prominence_label)
         self.peak_prominence_layout.addWidget(self.peak_prominence)
 
-        self.volume_hist=pg.PlotWidget(title='Cell Volume Histogram', background='transparent')
-        self.volume_hist.setLabel('bottom', 'Volume', 'µm³')
-        self.volume_hist.setLabel('left', 'P(V)', '')
-        self.volume_hist.showGrid(x=True, y=True)
-
         self.volume_button.clicked.connect(self.measure_volumes)
         self.get_heights_button.clicked.connect(self.measure_heights)
 
@@ -866,7 +889,6 @@ class MainWidget(QMainWindow):
         volumes_layout.addLayout(operate_on_layout)
         volumes_layout.addLayout(self.get_heights_layout)
         volumes_layout.addLayout(self.peak_prominence_layout)
-        volumes_layout.addWidget(self.volume_hist)
 
         return self.volumes_tab
     
@@ -1072,7 +1094,7 @@ class MainWidget(QMainWindow):
         volumes=[]
         for frame in self.progress_bar(frames):
             volumes.extend(self.measure_frame_volume(frame))
-        self.plot_volume_histogram(volumes)
+        self.plot_histogram(volumes)
 
     def measure_frame_volume(self, frame):
         if not hasattr(frame, 'heights'):
@@ -1090,12 +1112,12 @@ class MainWidget(QMainWindow):
         frame.get_volumes()
         return frame.volumes
 
-    def plot_volume_histogram(self, volumes):
-        self.volume_hist.clear()
+    def plot_histogram(self, volumes):
+        self.histogram.clear()
         volumes=np.array(volumes)[~np.isnan(volumes)]
         n, bins=np.histogram(volumes, bins=50, density=True)
-        self.volume_hist.plot(bins, n, stepMode=True, fillLevel=0, brush=(0, 0, 255, 150))
-        self.volume_hist.autoRange()
+        self.histogram.plot(bins, n, stepMode=True, fillLevel=0, brush=(0, 0, 255, 150))
+        self.histogram.autoRange()
 
     def measure_heights(self):
         if not self.file_loaded:

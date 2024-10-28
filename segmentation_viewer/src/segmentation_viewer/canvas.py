@@ -37,6 +37,18 @@ class PyQtGraphCanvas(QWidget):
         self.img = RGB_ImageItem(self.img_data, parent=self, plot=self.img_plot)
         self.seg = pg.ImageItem(self.seg_data)
         self.img_outline_overlay=pg.ImageItem()
+        self.seg_stat_overlay=pg.ImageItem()
+        stat_overlay_lut=get_matplotlib_LUT('viridis')
+        self.seg_stat_overlay.setLookupTable(stat_overlay_lut)
+        self.cb = pg.ColorBarItem(
+            cmap=stat_overlay_lut,
+            interactive=False,
+            orientation='right',
+        )
+        self.seg_plot.scene().addItem(self.cb)
+        # Position relative to plot edges
+        self.cb.setPos(self.seg_plot.width()-40, 50)
+
         self.mask_overlay=[pg.ImageItem(), pg.ImageItem()]
         self.selection_overlay=[pg.ImageItem(), pg.ImageItem()]
         self.FUCCI_overlay=[pg.ImageItem(), pg.ImageItem()]
@@ -49,6 +61,8 @@ class PyQtGraphCanvas(QWidget):
         self.img_plot.addItem(self.mask_overlay[0])
         self.seg_plot.addItem(self.mask_overlay[1])
         
+        self.seg_plot.addItem(self.seg_stat_overlay)
+
         self.img_plot.addItem(self.tracking_overlay[0])
         self.seg_plot.addItem(self.tracking_overlay[1])
 
@@ -498,3 +512,13 @@ class CellMaskPolygon(QGraphicsPolygonItem):
         enclosed_pixels = np.vstack((rr + ymin, cc + xmin)).T
         
         return enclosed_pixels
+
+def get_matplotlib_LUT(name, zero_color='black'):
+    from matplotlib import cm
+    from matplotlib.colors import to_rgb
+    colormap=cm.get_cmap(name)
+    lut = (colormap(np.linspace(0, 1, 255)) * 255).astype(np.uint8)
+    if zero_color is not None:
+        zero_color=to_rgb(zero_color)
+        lut[0]=np.array([*zero_color, 255])
+    return lut

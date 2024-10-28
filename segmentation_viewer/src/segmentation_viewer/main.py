@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog,
     QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter, QProgressBar, QScrollArea
 )
-from PyQt6.QtCore import Qt, QPointF
+from PyQt6.QtCore import Qt, QPointF, QSize, pyqtSignal
 from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics, QMouseEvent
 from superqt import QRangeSlider
 import pyqtgraph as pg
@@ -22,11 +22,8 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
-# TODO: mask zeros during measure_heights
-# TODO: get/set coverslip height
 # TODO: stop using frame.img for frontend stuff. Use self.canvas.img_data and keep frame.img as the RGB slice.
-# TODO: stack level operations should use current z slice
-# TODO: overlay colormapped cell attributes on segmentation plot
+# TODO: related - stack level operations should use current z slice
 # TODO: add mouse and keyboard shortcuts to interface
 # TODO: normalize the summed channels when show_grayscale
 
@@ -68,11 +65,12 @@ class MainWidget(QMainWindow):
         #----------------Frame Slider----------------
         self.frame_slider=QSlider(Qt.Orientation.Horizontal, self)
         self.zstack_slider=QSlider(Qt.Orientation.Vertical, self)
+        self.frame_slider.setVisible(False)
         self.zstack_slider.setVisible(False)
         # Customize the slider to look like a scroll bar
         self.frame_slider.setFixedHeight(15)  # Make the slider shorter in height
         self.frame_slider.setTickPosition(QSlider.TickPosition.NoTicks)  # No tick marks
-
+        
         self.zstack_slider.setFixedWidth(15)  # Make the slider shorter in height
         self.zstack_slider.setTickPosition(QSlider.TickPosition.NoTicks)  # No tick marks
 
@@ -121,16 +119,6 @@ class MainWidget(QMainWindow):
         self.canvas.seg_plot.scene().sigMouseClicked.connect(self.on_click)
     
     def get_right_toolbar(self):
-        self.histogram=pg.PlotWidget(title='Cell Volume Histogram', background='transparent')
-        self.histogram.setLabel('bottom', 'Volume', 'µm³')
-        self.histogram.setLabel('left', 'P(V)', '')
-        self.histogram.showGrid(x=True, y=True)
-
-        self.particle_stat_plot=pg.PlotWidget(title='Tracked Cell Statistics', background='#2e2e2e')
-        self.particle_stat_plot.setLabel('bottom', 'Frame')
-        self.stat_plot_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
-        self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
-
         cell_ID_widget=QWidget(objectName='bordered')
         #cell_ID_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.cell_ID_layout=QFormLayout(cell_ID_widget)
@@ -142,6 +130,141 @@ class MainWidget(QMainWindow):
         self.selected_particle_prompt.setValidator(QIntValidator(bottom=0)) # non-negative integers only
         self.cell_ID_layout.addRow(selected_cell_label, self.selected_cell_prompt)
         self.cell_ID_layout.addRow(selected_particle_label, self.selected_particle_prompt)
+
+        self.stat_tabs=QTabWidget()
+        self.stat_tabs.addTab(self.get_frame_stat_tab(), "Frame")
+        self.stat_tabs.addTab(self.get_particle_stat_tab(), "Particle")
+
+        # Create a container widget for all content
+        particle_stat_widget = QWidget()
+        particle_stat_layout = QVBoxLayout(particle_stat_widget)
+        particle_stat_layout.setSpacing(10)
+        particle_stat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        particle_stat_layout.addWidget(cell_ID_widget)
+        particle_stat_layout.addWidget(self.stat_tabs)
+
+        # Set up scroll area
+        right_scroll_area = QScrollArea()
+        right_scroll_area.setWidgetResizable(True)
+        right_scroll_area.setWidget(particle_stat_widget)
+        right_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        right_scroll_area.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred)
+        right_scroll_area.setMinimumWidth(250)
+
+        # connections
+        # cell selection
+        self.selected_cell_prompt.textChanged.connect(self.cell_prompt_changed)
+        self.selected_cell_prompt.returnPressed.connect(self.cell_prompt_changed)
+        self.selected_particle_prompt.textChanged.connect(self.particle_prompt_changed)
+        self.selected_particle_prompt.returnPressed.connect(self.particle_prompt_changed)
+
+        return right_scroll_area
+    
+    def get_frame_stat_tab(self):
+        class CustomComboBox(QComboBox):
+            dropdownOpened=pyqtSignal()
+            def showPopup(self):
+                self.dropdownOpened.emit()
+                super().showPopup()  # Call the original showPopup method
+
+        self.frame_stat_tab=QWidget()
+        stat_tab_layout=QVBoxLayout(self.frame_stat_tab)
+        stat_tab_layout.setSpacing(10)
+        stat_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.histogram=AspectRatioPlotWidget(title='Cell Volume Histogram', background='transparent')
+        self.histogram.setLabel('bottom', 'Volume', 'µm³')
+        self.histogram.setLabel('left', 'P(V)', '')
+        self.histogram.pw.showGrid(x=True, y=True)
+
+        seg_overlay_layout=QHBoxLayout()
+        self.seg_overlay_label=QLabel("Overlay Statistic:", self)
+        self.frame_stat_tab.seg_overlay_attr=CustomComboBox(self)
+        self.frame_stat_tab.seg_overlay_attr.addItems(['none'])
+        seg_overlay_layout.addWidget(self.seg_overlay_label)
+        seg_overlay_layout.addWidget(self.frame_stat_tab.seg_overlay_attr)
+
+        stat_tab_layout.addWidget(self.histogram)
+        stat_tab_layout.addLayout(seg_overlay_layout)
+
+        self.frame_stat_tab.seg_overlay_attr.dropdownOpened.connect(self.get_overlay_attrs)
+        self.frame_stat_tab.seg_overlay_attr.activated.connect(self.show_seg_overlay)
+        return self.frame_stat_tab
+    
+    def get_overlay_attrs(self):
+        if not self.file_loaded:
+            return
+        self.frame_stat_tab.seg_overlay_attr.setCurrentIndex(0)
+        items=['none']
+        if hasattr(self.frame, 'heights'):
+            items.append('heights')
+
+        if len(self.frame.cells)>0: # add any valid scalar cell attributes
+            common_attrs=set(dir(self.frame.cells[0]))
+            ignored_attrs={'red','green','cycle_stage','n','frame','vertex_area','shape_parameter','sorted_vertices','vertex_perimeter'}
+            test_attrs=common_attrs-ignored_attrs
+            for attr in test_attrs:
+                if attr.startswith('_'):
+                    ignored_attrs.add(attr)
+                try:
+                    val=getattr(self.frame.cells[0], attr)
+                except: # failed to retrieve attribute
+                    ignored_attrs.add(attr)
+                    continue
+                if not np.isscalar(val):
+                    ignored_attrs.add(attr)
+            common_attrs=common_attrs-ignored_attrs
+            for cell in self.frame.cells[1:]:
+                common_attrs=common_attrs.intersection(set(dir(cell)))
+            items.extend(list(common_attrs))
+
+        self.frame_stat_tab.seg_overlay_attr.clear()
+        self.frame_stat_tab.seg_overlay_attr.addItems(items)
+
+    def show_seg_overlay(self, event=None):
+        if not self.file_loaded:
+            return
+        plot_attr=self.frame_stat_tab.seg_overlay_attr.currentText().lower()
+        if plot_attr=='heights':
+            if not hasattr(self.frame, 'z_scale'):
+                print(f'No z scale found for {self.frame.name}, defaulting to 1.')
+                self.z_size.setText('1.0')
+                self.update_voxel_size()
+            self.overlay_seg_stat(self.frame.scaled_heights)
+        elif plot_attr=='none':
+            self.clear_seg_stat()
+        else:
+            try:
+                cell_attrs=np.array(self.frame.get_cell_attrs(plot_attr))
+
+            except AttributeError:
+                print(f'Attribute {plot_attr} not found in cells')
+                return
+            value_map=np.concatenate([[np.nan], cell_attrs.astype(float)])
+            mask_values=value_map[self.frame.masks]
+            self.overlay_seg_stat(mask_values)
+
+    def overlay_seg_stat(self, stat):
+        levels=(np.nanmin(stat), np.nanmax(stat))
+        stat_8bit=(stat-np.nanmin(stat))/(np.nanmax(stat)-np.nanmin(stat))*254+1
+        levels_8bit=(np.nanmin(stat_8bit), np.nanmax(stat_8bit))
+        stat_8bit[np.isnan(stat_8bit)]=0
+        stat_8bit=stat_8bit.astype(np.uint8)
+        stat_8bit=np.rot90(stat_8bit,3)
+        stat_8bit=np.fliplr(stat_8bit)
+        self.canvas.seg_stat_overlay.setImage(stat_8bit)
+        self.canvas.seg_stat_overlay.setLevels(levels_8bit)
+        self.canvas.cb.setLevels(levels)
+
+    def clear_seg_stat(self):
+        self.canvas.seg_stat_overlay.clear()
+
+    def get_particle_stat_tab(self):
+        self.particle_stat_tab=QWidget()
+        stat_tab_layout=QVBoxLayout(self.particle_stat_tab)
+        self.particle_stat_plot=AspectRatioPlotWidget(title='Tracked Cell Statistics', background='#2e2e2e', objectName='bordered')
+        self.particle_stat_plot.setLabel('bottom', 'Frame')
+        self.stat_plot_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
+        self.particle_stat_plot.pw.addItem(self.stat_plot_frame_marker)
 
         particle_stat_selection_widget=QWidget(objectName='bordered')
         particle_stat_selection_layout=QVBoxLayout(particle_stat_selection_widget)
@@ -157,51 +280,16 @@ class MainWidget(QMainWindow):
         particle_stat_selection_layout.addWidget(self.circularity_button)
         particle_stat_selection_layout.addWidget(self.cell_cycle_button)
 
-        # Create a container widget for all content
-        right_container = QWidget()
-        right_layout = QVBoxLayout(right_container)
+        stat_tab_layout.addWidget(self.particle_stat_plot)
+        stat_tab_layout.addWidget(particle_stat_selection_widget)
 
-        # Create and set up particle stat widget (from original code)
-        particle_stat_widget = QWidget()
-        particle_stat_layout = QVBoxLayout(particle_stat_widget)
-        particle_stat_layout.setSpacing(10)
-        particle_stat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        particle_stat_layout.addWidget(cell_ID_widget)
-        particle_stat_layout.addWidget(particle_stat_selection_widget)
-
-        # Create splitter and add widgets
-        right_toolbar = QSplitter()
-        right_toolbar.setOrientation(Qt.Orientation.Vertical)
-        right_toolbar.addWidget(self.histogram)
-        right_toolbar.addWidget(self.particle_stat_plot)
-        right_toolbar.addWidget(particle_stat_widget)
-        right_toolbar.setSizes([100, 100, 100])
-
-        # Add splitter to the container's layout
-        right_layout.addWidget(right_toolbar)
-
-        # Set up scroll area
-        right_scroll_area = QScrollArea()
-        right_scroll_area.setWidgetResizable(True)
-        right_scroll_area.setWidget(right_container)
-        right_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        right_scroll_area.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred)
-        right_scroll_area.setMinimumWidth(250)
-
-        # connections
-        # cell selection
-        self.selected_cell_prompt.textChanged.connect(self.cell_prompt_changed)
-        self.selected_cell_prompt.returnPressed.connect(self.cell_prompt_changed)
-        self.selected_particle_prompt.textChanged.connect(self.particle_prompt_changed)
-        self.selected_particle_prompt.returnPressed.connect(self.particle_prompt_changed)
-
-        # particle measurements
+        # connect particle measurements
         self.area_button.toggled.connect(self.plot_particle_statistic)
         self.perimeter_button.toggled.connect(self.plot_particle_statistic)
         self.circularity_button.toggled.connect(self.plot_particle_statistic)
         self.cell_cycle_button.toggled.connect(self.plot_particle_statistic)
 
-        return right_scroll_area
+        return self.particle_stat_tab
 
     def get_left_toolbar(self):
         # Open Buttons
@@ -324,8 +412,8 @@ class MainWidget(QMainWindow):
         # command line
         self.command_line_button.clicked.connect(self.open_command_line)
         # voxel size
-        self.xy_size.textChanged.connect(self.update_voxel_size)
-        self.z_size.textChanged.connect(self.update_voxel_size)
+        self.xy_size.editingFinished.connect(self.update_voxel_size)
+        self.z_size.editingFinished.connect(self.update_voxel_size)
         # save
         self.save_button.clicked.connect(self.save_segmentation)
         self.save_as_button.clicked.connect(self.save_as_segmentation)
@@ -690,7 +778,8 @@ class MainWidget(QMainWindow):
         frame.has_outlines=False
         frame.outlines=utils.masks_to_outlines(frame.masks)
         frame.n_cells=np.max(frame.masks)
-        frame.cells = np.array([Cell(n, [], frame_number=frame.frame_number) for n in range(frame.n_cells)])
+        outlines_list=utils.outlines_list(frame.masks)
+        frame.cells = np.array([Cell(n, outline, frame_number=frame.frame_number) for n, outline in zip(range(frame.n_cells), outlines_list)])
         if hasattr(frame, 'stored_mask_overlay'):
             del frame.stored_mask_overlay
 
@@ -871,10 +960,19 @@ class MainWidget(QMainWindow):
         self.volumes_on_frame.setChecked(True)
         self.get_heights_layout=QHBoxLayout()
         self.get_heights_button=QPushButton("Measure Heights", self)
+        self.get_coverslip_height_layout=QHBoxLayout()
+        coverslip_height_label=QLabel("Coverslip Height (μm):", self)
+        self.coverslip_height=QLineEdit(self, placeholderText='Auto')
+        self.coverslip_height.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
+        self.coverslip_height.setFixedWidth(60)
+        self.get_coverslip_height=QPushButton("Calibrate", self)
+        self.get_coverslip_height_layout.addWidget(coverslip_height_label)
+        self.get_coverslip_height_layout.addWidget(self.coverslip_height)
+        self.get_coverslip_height_layout.addWidget(self.get_coverslip_height)
         self.volume_button=QPushButton("Measure Volumes", self)
         self.get_heights_layout.addWidget(self.get_heights_button)
         self.get_heights_layout.addWidget(self.volume_button)
-        peak_prominence_label=QLabel("Peak Prominence:", self)
+        peak_prominence_label=QLabel("Peak Prominence (0 to 1):", self)
         self.peak_prominence=QLineEdit(self, text='0.01', placeholderText='0.01')
         self.peak_prominence.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
         self.peak_prominence.setFixedWidth(60)
@@ -884,11 +982,13 @@ class MainWidget(QMainWindow):
 
         self.volume_button.clicked.connect(self.measure_volumes)
         self.get_heights_button.clicked.connect(self.measure_heights)
+        self.get_coverslip_height.clicked.connect(self.calibrate_coverslip_height)
 
         volumes_layout.addWidget(operate_on_label)
         volumes_layout.addLayout(operate_on_layout)
         volumes_layout.addLayout(self.get_heights_layout)
         volumes_layout.addLayout(self.peak_prominence_layout)
+        volumes_layout.addLayout(self.get_coverslip_height_layout)
 
         return self.volumes_tab
     
@@ -1072,9 +1172,9 @@ class MainWidget(QMainWindow):
                     self.zstack_slider.setValue(max(self.zstack_slider.value() - 1, 0))
         else: # scroll = frame
             if event.angleDelta().y() < 0: # scroll down = next frame
-                self.frame_slider.setValue(min(self.frame_number + 1, len(self.stack.frames) - 1))
+                self.change_current_frame(min(self.frame_number + 1, len(self.stack.frames) - 1))
             else: # scroll up = previous frame
-                self.frame_slider.setValue(max(self.frame_number - 1, 0))
+                self.change_current_frame(max(self.frame_number - 1, 0))
 
     def update_zstack_number(self, zstack_number):
         if not self.file_loaded:
@@ -1082,6 +1182,7 @@ class MainWidget(QMainWindow):
         self.zstack_number = zstack_number
         self.frame.img=self.frame.zstack[self.zstack_number]
         self.imshow()
+        self.normalize()
 
     def measure_volumes(self):
         if not self.file_loaded:
@@ -1105,9 +1206,12 @@ class MainWidget(QMainWindow):
         
         if not hasattr(frame, 'z_scale'):
             print(f'No z-scale available for {frame.name}. Defaulting to 1.')
-            frame.z_scale=1 # default z step
+            self.z_size.setText('1.0')
+            self.update_voxel_size()
         if not hasattr(frame, 'scale'):
             print(f'No scale available for {frame.name}. Defaulting to 0.1625.')
+            self.xy_size.setText('0.1625')
+            self.update_voxel_size()
             frame.scale=0.1625 # 40x objective with 0.325 µm/pixel camera
         frame.get_volumes()
         return frame.volumes
@@ -1117,8 +1221,37 @@ class MainWidget(QMainWindow):
         volumes=np.array(volumes)[~np.isnan(volumes)]
         n, bins=np.histogram(volumes, bins=50, density=True)
         self.histogram.plot(bins, n, stepMode=True, fillLevel=0, brush=(0, 0, 255, 150))
-        self.histogram.autoRange()
+        self.histogram.pw.autoRange()
 
+    def calibrate_coverslip_height(self):
+        from segmentation_tools.image_segmentation import get_coverslip_z
+        if not self.file_loaded:
+            return
+        if self.volumes_on_stack.isChecked():
+            frames=self.stack.frames
+            if not all(hasattr(frame, 'zstack') for frame in frames):
+                raise ValueError('No z-stacks available to calibrate coverslip height.')
+            if len(np.unique([frame.zstack.shape[0] for frame in frames]))>1:
+                raise ValueError('Z-stack lengths are not consistent.')
+        else:
+            frames=[self.frame]
+
+        z_profile=[]
+        for z_index in range(frames[0].zstack.shape[0]):
+            z_profile.append(np.mean(np.concatenate([frame.zstack[z_index].flatten() for frame in frames])))
+        
+        if not hasattr(self.frame, 'z_scale'):
+            print(f'No z-scale available for {self.frame.name}. Defaulting to 1.')
+            self.z_size.setText('1.0')
+            self.update_voxel_size()
+        scale=self.frame.z_scale
+
+        coverslip_height=get_coverslip_z(z_profile, scale=scale, precision=0.01)
+        for frame in frames:
+            frame.coverslip_height=coverslip_height
+        self.coverslip_height.setText(f'{coverslip_height:.2f}')
+
+        
     def measure_heights(self):
         if not self.file_loaded:
             return
@@ -1134,22 +1267,31 @@ class MainWidget(QMainWindow):
         else:
             peak_prominence=float(peak_prominence)
 
+        coverslip_height=self.coverslip_height.text()
+        if coverslip_height=='':
+            self.calibrate_coverslip_height()
+            coverslip_height=self.coverslip_height.text()
+        coverslip_height=float(coverslip_height)
+        
         for frame in self.progress_bar(frames):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
             else:
                 frame.heights=get_heights(frame.zstack, peak_prominence=peak_prominence)
                 frame.to_heightmap()
+                frame.coverslip_height=coverslip_height
+                self.show_seg_overlay()
 
     def change_current_frame(self, frame_number, reset=False):
         if not self.file_loaded:
             return
         self.frame_number = frame_number
+        self.frame_slider.setValue(frame_number)
         self.frame=self.stack.frames[self.frame_number]
         self.globals_dict['frame']=self.frame
-        
-        if self.is_zstack:
-            self.frame.img=self.frame.zstack[self.zstack_slider.value()]
+
+        if hasattr(self.frame, 'zstack'):
+            self.frame.img=self.frame.zstack[self.zstack_number]
             self.zstack_slider.setVisible(True)
             self.zstack_slider.setRange(0, self.frame.zstack.shape[0]-1)
             self.is_zstack=True
@@ -1165,6 +1307,14 @@ class MainWidget(QMainWindow):
             if not self.is_zstack:
                 self.get_heights_button.setEnabled(False)
                 self.peak_prominence.setEnabled(False)
+            else:
+                self.get_heights_button.setEnabled(True)
+                self.peak_prominence.setEnabled(True)
+
+            if hasattr(self.frame, 'coverslip_height'):
+                self.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
+            else:
+                self.coverslip_height.setText('')
         else:
             # remove the volumes tab
             if hasattr(self, 'volumes_tab'):
@@ -1397,6 +1547,7 @@ class MainWidget(QMainWindow):
         """Redraw the image data with whatever new settings have been applied from the toolbar."""
         if not self.file_loaded:
             return
+        self.overlay_seg_stat()
         self.canvas.update_display(img_data=self.frame.img, seg_data=self.frame.outlines, RGB_checks=self.get_RGB())
         self.normalize()
     
@@ -1443,11 +1594,13 @@ class MainWidget(QMainWindow):
 
         self.set_voxel_size(xy_size, z_size)
 
-    def set_voxel_size(self, xy_size, z_size):
+    def set_voxel_size(self, xy_size=None, z_size=None):
         if xy_size is not None:
-            self.frame.scale=xy_size
+            for frame in self.stack.frames:
+                frame.scale=xy_size
         if z_size is not None:
-            self.frame.z_scale=z_size
+            for frame in self.stack.frames:
+                frame.z_scale=z_size
         self.update_voxel_size_labels()
     
     def update_voxel_size_labels(self):
@@ -1472,11 +1625,20 @@ class MainWidget(QMainWindow):
             colors=3
         
         if self.normalize_type=='frame': # normalize the frame
-            if hasattr(self.frame, 'bounds'):
-                bounds=self.frame.bounds
+            if self.is_zstack:
+                if hasattr(self.frame, 'bounds'):
+                    bounds=self.frame.bounds[self.zstack_number]
+                else:
+                    zstack_bounds=np.quantile(self.frame.zstack.reshape(self.frame.zstack.shape[0], -1, colors), (0.01, 0.99), axis=1).transpose(1,2,0)
+                    self.frame.bounds=zstack_bounds
+                    bounds=zstack_bounds[self.zstack_number]
+                
             else:
-                bounds=np.quantile(self.frame.img.reshape(-1,colors), (0.01, 0.99), axis=0).T
-                self.frame.bounds=bounds
+                if hasattr(self.frame, 'bounds') and not self.is_zstack:
+                    bounds=self.frame.bounds
+                else:
+                    bounds=np.quantile(self.frame.img.reshape(-1,colors), (0.01, 0.99), axis=0).T
+                    self.frame.bounds=bounds
 
         elif self.normalize_type=='stack': # normalize the stack
             if hasattr(self.stack, 'bounds'):
@@ -2027,6 +2189,7 @@ class MainWidget(QMainWindow):
         self.drawing_cell_roi=False
         self.select_cell(None)
         self.FUCCI_dropdown.setCurrentIndex(0) # clear overlay
+        self.frame_stat_tab.seg_overlay_attr.setCurrentIndex(0) # clear attribute overlay
         self.set_RGB(True)
         if not self.is_grayscale:
             self.show_grayscale_checkbox.setChecked(False)
@@ -2039,6 +2202,7 @@ class MainWidget(QMainWindow):
         self.highlight_track_ends()
         self.update_ROIs_label()
         self.update_display()
+        self.show_seg_overlay()
 
     def get_RGB(self):
         if self.is_grayscale:
@@ -2145,12 +2309,12 @@ class MainWidget(QMainWindow):
         if event.key() == Qt.Key.Key_Left:
             if self.frame_number > 0:
                 self.frame_number -= 1
-                self.frame_slider.setValue(self.frame_number)
+                self.change_current_frame(self.frame_number)
 
         elif event.key() == Qt.Key.Key_Right:
             if self.frame_number < len(self.stack.frames) - 1:
                 self.frame_number += 1
-                self.frame_slider.setValue(self.frame_number)
+                self.change_current_frame(self.frame_number)
 
     def clear_layout(self, layout):
         while layout.count():
@@ -2394,20 +2558,20 @@ class MainWidget(QMainWindow):
         
         self.frame=self.stack.frames[0]
         if hasattr(self.frame, 'zstack'):
+            self.is_zstack=True
             self.zstack_slider.setVisible(True)
             self.zstack_slider.setRange(0, self.frame.zstack.shape[0]-1)
             self.zstack_slider.setValue(0)
-            self.is_zstack=True
+            self.zstack_number=0
         else:
-            self.zstack_slider.setVisible(False)
             self.is_zstack=False
+            self.zstack_slider.setVisible(False)
 
         if len(self.stack.frames)>1:
             self.frame_slider.setVisible(True)
         else:
             self.frame_slider.setVisible(False)
 
-        self.frame_slider.setValue(0)
         self.frame_slider.setRange(0, len(self.stack.frames)-1)
         self.change_current_frame(0, reset=True) # call frame update explicitly (in case the slider value was already at 0)
 
@@ -2536,6 +2700,60 @@ class MainWidget(QMainWindow):
             self.cli_window.close()
         event.accept()
 
+class AspectRatioPlotWidget(QWidget):
+    def __init__(self, aspect_ratio=4/3, parent=None, **kwargs):
+        super().__init__(parent)
+        self.aspect_ratio = aspect_ratio
+        
+        # Create layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create PlotWidget
+        self.pw = pg.PlotWidget(**kwargs)
+        layout.addWidget(self.pw)
+        
+        # Set size policy
+        self.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Maximum
+        )
+        
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        width = self.width()
+        target_height = int(width / self.aspect_ratio)
+        self.setFixedHeight(target_height)
+        
+    def sizeHint(self):
+        width = self.width()
+        height = int(width / self.aspect_ratio)
+        return QSize(width, height)
+        
+    def minimumSizeHint(self):
+        min_width = 100
+        min_height = int(min_width / self.aspect_ratio)
+        return QSize(min_width, min_height)
+    
+    # Forward common plotting methods to the internal plot widget
+    def plot(self, *args, **kwargs):
+        return self.pw.plot(*args, **kwargs)
+    
+    def clear(self):
+        self.pw.clear()
+    
+    def setTitle(self, *args, **kwargs):
+        self.pw.setTitle(*args, **kwargs)
+    
+    def setLabel(self, *args, **kwargs):
+        self.pw.setLabel(*args, **kwargs)
+    
+    def setXRange(self, *args, **kwargs):
+        self.pw.setXRange(*args, **kwargs)
+    
+    def setYRange(self, *args, **kwargs):
+        self.pw.setYRange(*args, **kwargs)
+    
 class FineScrubQRangeSlider(QRangeSlider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -28,7 +28,7 @@ QPushButton:pressed {
     background-color: #1c1c1c;
 }
 
-QPushButton:disabled, QLineEdit:disabled {
+QPushButton:disabled, QLineEdit:disabled, QCheckBox::indicator:disabled {
     background-color: #2a2a2a;    /* Darker background */
     color: #666666;               /* Dimmed text */
     border: 1px solid #3a3a3a;    /* Dimmer border */

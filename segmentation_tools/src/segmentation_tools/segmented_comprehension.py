@@ -689,7 +689,7 @@ class SegmentedImage:
     def to_heightmap(self, **kwargs):
         ''' converts the image to a height map. '''
         self.__class__=HeightMap
-        self.process_heights(**kwargs)
+        self.zero_to_nan=kwargs.pop('zero_to_nan', True) # default to converting zeros to nans
 
     # -------------Image Processing-------------    
     def load_img(self, normalize=False):
@@ -989,23 +989,19 @@ class HeightMap(SegmentedImage):
                 self.masks_3d=np.repeat(self.masks[np.newaxis], self.height_img.shape[0], axis=0)
                 self.masks_3d[~self.height_img]=0
                 self.read_NORI()
-
-        else:
-            self.heights=self.process_heights(zero_to_nan)
-    
-    def process_heights(self, zero_to_nan=True):
-        if not hasattr(self, 'heights'):
-            raise AttributeError('No heights found in this image.')
+        
         self.zero_to_nan=zero_to_nan
-        self.heights=self.heights.astype(float)
-        return self.heights
 
     @property
     def scaled_heights(self):
         '''heights in um'''
-        scaled=self.heights.copy()
+        scaled=self.heights.copy().astype(float)
+
+        if hasattr(self, 'coverslip_height'): # new convention is to store heights as ints, and subtract the coverslip height after
+            scaled-=self.coverslip_height
+
         if self.zero_to_nan:
-            scaled[scaled==0]=np.nan
+            scaled[scaled<=0]=np.nan
         return scaled*self.z_scale
     
     def read_NORI(self, file_path=None, mask_nan_z=True):
@@ -1118,6 +1114,14 @@ class Cell:
         vertex_order=np.argsort(angles) # sort polar angles
         return self.vertices[vertex_order]
 
+    @property
+    def sorted_vertices(self):
+        if hasattr(self, '_sorted_vertices'):
+            return self._sorted_vertices
+        else:
+            self._sorted_vertices=self.sort_vertices()
+            return self._sorted_vertices
+        
     def TCJ_axis(self):
         """
         Compute the axis orientation based on the spatial distribution of tricellular junctions (TCJs).

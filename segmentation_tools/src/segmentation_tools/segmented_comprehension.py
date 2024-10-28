@@ -716,7 +716,7 @@ class SegmentedImage:
             
         export={'img':img, 'masks':self.masks, 'outlines':self.outlines, 'outlines_list':outlines_list}
 
-        optional_attrs=['FUCCI','cell_cycles','volumes','masks_3d','scale','z_scale', 'units', 'heights'] # if any of these exist, export them as well
+        optional_attrs=['FUCCI','cell_cycles','volumes','scale','z_scale', 'units', 'heights'] # if any of these exist, export them as well
         write_attrs=set(write_attrs+optional_attrs) # add optional attrs to write_attrs
         for attr in write_attrs:
             try:

@@ -22,6 +22,8 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
+# TODO: lazy loading
+# TODO: nd2 reading
 # TODO: stop using frame.img for frontend stuff. Use self.canvas.img_data and keep frame.img as the RGB slice.
 # TODO: related - stack level operations should use current z slice
 # TODO: add mouse and keyboard shortcuts to interface
@@ -49,6 +51,8 @@ class MainWidget(QMainWindow):
         self.spacer = (0,10) # default spacer size (width, height)
         self.globals_dict = {'main': self, 'np': np}
         self.locals_dict = {}
+        self.font_metrics=QFontMetrics(QLabel().font()) # metrics for the default font
+        self.digit_width=self.font_metrics.horizontalAdvance('0') # text length scale
 
         # Status bar
         self.status_cell=QLabel("Selected Cell: None", self)
@@ -171,29 +175,75 @@ class MainWidget(QMainWindow):
         stat_tab_layout=QVBoxLayout(self.frame_stat_tab)
         stat_tab_layout.setSpacing(10)
         stat_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.histogram=AspectRatioPlotWidget(title='Cell Volume Histogram', background='transparent')
+        self.histogram=AspectRatioPlotWidget(title='Cell Volume Histogram', aspect_ratio=1, background='transparent')
         self.histogram.setLabel('bottom', 'Volume', 'µm³')
         self.histogram.setLabel('left', 'P(V)', '')
         self.histogram.pw.showGrid(x=True, y=True)
 
         seg_overlay_layout=QHBoxLayout()
         self.seg_overlay_label=QLabel("Overlay Statistic:", self)
-        self.frame_stat_tab.seg_overlay_attr=CustomComboBox(self)
-        self.frame_stat_tab.seg_overlay_attr.addItems(['none'])
+        self.seg_overlay_attr=CustomComboBox(self)
+        self.seg_overlay_attr.addItems(['none'])
         seg_overlay_layout.addWidget(self.seg_overlay_label)
-        seg_overlay_layout.addWidget(self.frame_stat_tab.seg_overlay_attr)
+        seg_overlay_layout.addWidget(self.seg_overlay_attr)
+
+        normalize_label = QLabel("Stat LUTs:", self)
+        normalize_widget=QWidget()
+        normalize_layout=QHBoxLayout(normalize_widget)
+        normalize_layout.setContentsMargins(0, 0, 0, 0)
+        self.stat_frame_button=QRadioButton("Frame", self)
+        self.stat_stack_button=QRadioButton("Stack", self)
+        self.stat_custom_button=QRadioButton("LUT", self)
+        normalize_layout.addWidget(self.stat_frame_button)
+        normalize_layout.addWidget(self.stat_stack_button)
+        normalize_layout.addWidget(self.stat_custom_button)
+        self.stat_frame_button.setChecked(True)
+        self.stat_LUT_type='frame'
+        slider_layout, self.stat_LUT_slider, self.stat_range_labels=self.labeled_LUT_slider(default_range=(0, 255))
 
         stat_tab_layout.addWidget(self.histogram)
         stat_tab_layout.addLayout(seg_overlay_layout)
+        stat_tab_layout.addWidget(normalize_label)
+        stat_tab_layout.addWidget(normalize_widget)
+        stat_tab_layout.addLayout(slider_layout)
 
-        self.frame_stat_tab.seg_overlay_attr.dropdownOpened.connect(self.get_overlay_attrs)
-        self.frame_stat_tab.seg_overlay_attr.activated.connect(self.show_seg_overlay)
+        self.seg_overlay_attr.dropdownOpened.connect(self.get_overlay_attrs)
+        self.seg_overlay_attr.activated.connect(self.new_seg_overlay)
+        self.seg_overlay_attr.currentIndexChanged.connect(self.new_seg_overlay)
+        self.stat_LUT_slider.valueChanged.connect(self.stat_LUT_slider_changed)
+        self.stat_frame_button.toggled.connect(self.update_stat_LUT)
+        self.stat_stack_button.toggled.connect(self.update_stat_LUT)
+        self.stat_custom_button.toggled.connect(self.update_stat_LUT)
         return self.frame_stat_tab
-    
+
+    def stat_LUT_slider_changed(self):
+        self.stat_custom_button.blockSignals(True)
+        self.stat_custom_button.setChecked(True)
+        self.stat_custom_button.blockSignals(False)
+        self.set_stat_LUT_levels(self.stat_LUT_slider.value())
+
+    def set_stat_LUT_levels(self, levels):
+        # TODO: RuntimeWarning: invalid value encountered in cast data=data.astype(int) at level=256, only when working with a stack
+        self.canvas.seg_stat_overlay.setLevels(levels)
+        self.stat_LUT_slider.blockSignals(True)
+        self.stat_LUT_slider.setValue(levels)
+        self.stat_LUT_slider.blockSignals(False)
+        self.canvas.cb.setLevels(levels) # TODO: better colorbar tick labels
+
+    def update_stat_LUT(self):
+        if self.stat_frame_button.isChecked():
+            self.stat_LUT_type='frame'
+        elif self.stat_stack_button.isChecked():
+            self.stat_LUT_type='stack'
+        else:
+            self.stat_LUT_type='custom'
+        
+        self.show_seg_overlay()
+
     def get_overlay_attrs(self):
         if not self.file_loaded:
             return
-        self.frame_stat_tab.seg_overlay_attr.setCurrentIndex(0)
+        current_attr=self.seg_overlay_attr.currentText()
         items=['none']
         if hasattr(self.frame, 'heights'):
             items.append('heights')
@@ -217,43 +267,100 @@ class MainWidget(QMainWindow):
                 common_attrs=common_attrs.intersection(set(dir(cell)))
             items.extend(list(common_attrs))
 
-        self.frame_stat_tab.seg_overlay_attr.clear()
-        self.frame_stat_tab.seg_overlay_attr.addItems(items)
+        self.seg_overlay_attr.blockSignals(True)
+        self.seg_overlay_attr.clear()
+        self.seg_overlay_attr.addItems(items)
+        self.seg_overlay_attr.blockSignals(False)
+        current_index=self.seg_overlay_attr.findText(current_attr)
+        if current_index==-1:
+            current_index=0
+        self.seg_overlay_attr.setCurrentIndex(current_index)
+
+    def new_seg_overlay(self):
+        # TODO: adapt LUT range slider to accept floats
+        if not self.file_loaded:
+            return
+        plot_attr=self.seg_overlay_attr.currentText().lower()
+
+        if plot_attr=='none' or plot_attr is None:
+            self.stat_LUT_slider.blockSignals(True)
+            self.stat_LUT_slider.setRange(0, 255)
+            self.stat_LUT_slider.setValue((0, 255))
+            self.stat_LUT_slider.blockSignals(False)
+            self.clear_seg_stat()
+            return
+        
+        else:
+            if plot_attr=='heights':
+                stat=np.concatenate([frame.heights.flatten() for frame in self.stack.frames])
+            else:
+                cell_attrs=[]
+                for frame in self.stack.frames:
+                    try:
+                        cell_attrs.extend(frame.get_cell_attrs(plot_attr))
+                    except AttributeError:
+                        continue
+                stat=np.array(cell_attrs)
+                if len(stat)==0:
+                    print(f'Attribute {plot_attr} not found in cells')
+                    return
+            LUT_range=(np.nanmin(stat), np.nanmax(stat))
+            self.stat_LUT_slider.blockSignals(True)
+            self.stat_LUT_slider.setRange(*LUT_range)
+            self.stat_LUT_slider.blockSignals(False)
+
+            if self.stat_LUT_type=='custom': # change the LUT range to match the new data
+                self.stat_frame_button.setChecked(True)
+
+            self.show_seg_overlay()
 
     def show_seg_overlay(self, event=None):
         if not self.file_loaded:
             return
-        plot_attr=self.frame_stat_tab.seg_overlay_attr.currentText().lower()
-        if plot_attr=='heights':
-            if not hasattr(self.frame, 'z_scale'):
-                print(f'No z scale found for {self.frame.name}, defaulting to 1.')
-                self.z_size.setText('1.0')
-                self.update_voxel_size()
-            self.overlay_seg_stat(self.frame.scaled_heights)
-        elif plot_attr=='none':
+        plot_attr=self.seg_overlay_attr.currentText().lower()
+        if plot_attr=='none':
+            self.canvas.cb.setVisible(False)
             self.clear_seg_stat()
         else:
-            try:
-                cell_attrs=np.array(self.frame.get_cell_attrs(plot_attr))
+            self.canvas.cb.setVisible(True)
+            if plot_attr=='heights':
+                if not hasattr(self.frame, 'z_scale'):
+                    print(f'No z scale found for {self.frame.name}, defaulting to 1.')
+                    self.z_size.setText('1.0')
+                    self.update_voxel_size()
+                self.overlay_seg_stat(self.frame.scaled_heights)
+            else:
+                try:
+                    cell_attrs=np.array(self.frame.get_cell_attrs(plot_attr))
 
-            except AttributeError:
-                print(f'Attribute {plot_attr} not found in cells')
-                return
-            value_map=np.concatenate([[np.nan], cell_attrs.astype(float)])
-            mask_values=value_map[self.frame.masks]
-            self.overlay_seg_stat(mask_values)
+                except AttributeError:
+                    print(f'Attribute {plot_attr} not found in cells')
+                    return
+                value_map=np.concatenate([[np.nan], cell_attrs.astype(float)])
+                mask_values=value_map[self.frame.masks]
+                self.overlay_seg_stat(mask_values)
 
-    def overlay_seg_stat(self, stat):
-        levels=(np.nanmin(stat), np.nanmax(stat))
-        stat_8bit=(stat-np.nanmin(stat))/(np.nanmax(stat)-np.nanmin(stat))*254+1
-        levels_8bit=(np.nanmin(stat_8bit), np.nanmax(stat_8bit))
-        stat_8bit[np.isnan(stat_8bit)]=0
-        stat_8bit=stat_8bit.astype(np.uint8)
-        stat_8bit=np.rot90(stat_8bit,3)
-        stat_8bit=np.fliplr(stat_8bit)
-        self.canvas.seg_stat_overlay.setImage(stat_8bit)
-        self.canvas.seg_stat_overlay.setLevels(levels_8bit)
-        self.canvas.cb.setLevels(levels)
+    def overlay_seg_stat(self, stat=None):
+        if not self.file_loaded:
+            return
+        if stat is None:
+            stat=self.canvas.seg_stat_overlay.image
+        stat_range=(np.nanmin(stat), np.nanmax(stat))
+        if self.stat_LUT_type=='frame':
+            levels=(stat_range)
+        elif self.stat_LUT_type=='stack':
+            levels=(stat_range) # TODO: stack levels
+        elif self.stat_LUT_type=='custom':
+            levels=self.stat_LUT_slider.value()
+
+        self.canvas.seg_stat_overlay.setImage(self.canvas.transform_image(stat))
+        self.stat_LUT_slider.blockSignals(True)
+        self.set_stat_LUT_levels(levels)
+        self.stat_LUT_slider.blockSignals(False)
+
+        self.stat_range_labels[0].setText(str(round(levels[0], 2)))
+        self.stat_range_labels[1].setText(str(round(levels[1], 2)))
+
 
     def clear_seg_stat(self):
         self.canvas.seg_stat_overlay.clear()
@@ -261,7 +368,7 @@ class MainWidget(QMainWindow):
     def get_particle_stat_tab(self):
         self.particle_stat_tab=QWidget()
         stat_tab_layout=QVBoxLayout(self.particle_stat_tab)
-        self.particle_stat_plot=AspectRatioPlotWidget(title='Tracked Cell Statistics', background='#2e2e2e', objectName='bordered')
+        self.particle_stat_plot=AspectRatioPlotWidget(title='Tracked Cell Statistics', aspect_ratio=1, background='transparent')
         self.particle_stat_plot.setLabel('bottom', 'Frame')
         self.stat_plot_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
         self.particle_stat_plot.pw.addItem(self.stat_plot_frame_marker)
@@ -328,8 +435,6 @@ class MainWidget(QMainWindow):
 
         # LUTs
         self.slider_layout=QVBoxLayout()
-        self.font_metrics=QFontMetrics(QLabel().font()) # metrics for the default font
-        self.three_digit_width=self.font_metrics.horizontalAdvance('000')
         self.add_RGB_sliders(self.slider_layout)
         
         LUT_widget=QWidget(objectName='bordered')
@@ -1296,6 +1401,7 @@ class MainWidget(QMainWindow):
             self.zstack_slider.setRange(0, self.frame.zstack.shape[0]-1)
             self.is_zstack=True
         else:
+            self.frame.img=self.frame.img
             self.zstack_slider.setVisible(False)
             self.is_zstack=False
 
@@ -1372,7 +1478,7 @@ class MainWidget(QMainWindow):
             return None, None, None
         elif not hasattr(self, 'frame'): # catch case where file_loaded is mistakenly True due to some exception
             return None, None, None
-        img=self.frame.img
+        img=self.canvas.img.img_data
 
         if x<0 or y<0 or x>=img.shape[1] or y>=img.shape[0]: # outside image bounds
             return None, None, None
@@ -1547,8 +1653,10 @@ class MainWidget(QMainWindow):
         """Redraw the image data with whatever new settings have been applied from the toolbar."""
         if not self.file_loaded:
             return
-        self.overlay_seg_stat()
-        self.canvas.update_display(img_data=self.frame.img, seg_data=self.frame.outlines, RGB_checks=self.get_RGB())
+        self.show_seg_overlay()
+        img_data=self.canvas.transform_image(self.frame.img)
+        seg_data=self.canvas.transform_image(self.frame.outlines)
+        self.canvas.update_display(img_data=img_data, seg_data=seg_data, RGB_checks=self.get_RGB())
         self.normalize()
     
     def get_normalize_buttons(self):
@@ -1619,7 +1727,7 @@ class MainWidget(QMainWindow):
         self.normalize()
 
     def normalize(self):
-        if self.frame.img.ndim==2: # single channel
+        if self.canvas.img.img_data.ndim==2: # single channel
             colors=1
         else:
             colors=3
@@ -1637,7 +1745,7 @@ class MainWidget(QMainWindow):
                 if hasattr(self.frame, 'bounds') and not self.is_zstack:
                     bounds=self.frame.bounds
                 else:
-                    bounds=np.quantile(self.frame.img.reshape(-1,colors), (0.01, 0.99), axis=0).T
+                    bounds=np.quantile(self.canvas.img.img_data.reshape(-1,colors), (0.01, 0.99), axis=0).T
                     self.frame.bounds=bounds
 
         elif self.normalize_type=='stack': # normalize the stack
@@ -2189,7 +2297,7 @@ class MainWidget(QMainWindow):
         self.drawing_cell_roi=False
         self.select_cell(None)
         self.FUCCI_dropdown.setCurrentIndex(0) # clear overlay
-        self.frame_stat_tab.seg_overlay_attr.setCurrentIndex(0) # clear attribute overlay
+        self.seg_overlay_attr.setCurrentIndex(0) # clear attribute overlay
         self.set_RGB(True)
         if not self.is_grayscale:
             self.show_grayscale_checkbox.setChecked(False)
@@ -2412,21 +2520,22 @@ class MainWidget(QMainWindow):
         self.show_grayscale_checkbox.setChecked(False)
         self.show_grayscale_toggled()
 
-    def labeled_LUT_slider(self, slider_name=None):
+    def labeled_LUT_slider(self, slider_name=None, default_range=(0, 65535)):
         labels_and_slider=QHBoxLayout()
+        labels_and_slider.setSpacing(2)
         if slider_name is not None:
             slider_label=QLabel(slider_name)
             labels_and_slider.addWidget(slider_label)
         
         slider=FineScrubQRangeSlider(orientation=Qt.Orientation.Horizontal, parent=self)
-        slider.setRange(0, 65535)
-        slider.setValue((0, 65535))
+        slider.setRange(*default_range)
+        slider.setValue(default_range)
 
         range_labels=[QLineEdit(str(val)) for val in slider.value()]
         for label in range_labels:
-            label.setFixedWidth(self.three_digit_width*2)
+            label.setFixedWidth(self.digit_width*6)
             label.setAlignment(Qt.AlignTop)
-            label.setValidator(QIntValidator(0, 65535))
+            label.setValidator(QIntValidator(*default_range))
             label.setStyleSheet("""
                 QLineEdit {
                     border: none;
@@ -2476,25 +2585,30 @@ class MainWidget(QMainWindow):
         labels_and_slider.addSpacerItem(QSpacerItem(10, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed))
         labels_and_slider.addWidget(range_labels[1])
 
-        self.LUT_range_sliders.append(slider)
-        self.LUT_range_labels.append(range_labels)
-
-        slider.valueChanged.connect(self.LUT_slider_changed)
-
-        return labels_and_slider
+        return labels_and_slider, slider, range_labels
 
     def add_RGB_sliders(self, layout):
         self.LUT_range_sliders=[]
         self.LUT_range_labels=[]
         
         for label in ['R ', 'G ', 'B ']:
-            layout.addLayout(self.labeled_LUT_slider(label))
+            slider_layout, slider, range_labels=self.labeled_LUT_slider(label)
+            layout.addLayout(slider_layout)
+            self.LUT_range_sliders.append(slider)
+            self.LUT_range_labels.append(range_labels)
+
+            slider.valueChanged.connect(self.LUT_slider_changed)
 
     def add_grayscale_sliders(self, layout):
         self.LUT_range_sliders=[]
         self.LUT_range_labels=[]
         
-        layout.addLayout(self.labeled_LUT_slider())
+        slider_layout, slider, range_labels=self.labeled_LUT_slider()
+        layout.addLayout(slider_layout)
+        self.LUT_range_sliders.append(slider)
+        self.LUT_range_labels.append(range_labels)
+
+        slider.valueChanged.connect(self.LUT_slider_changed)
 
     # Drag and drop event
     def dragEnterEvent(self, event):
@@ -2741,6 +2855,9 @@ class AspectRatioPlotWidget(QWidget):
     
     def clear(self):
         self.pw.clear()
+
+    def addItem(self, *args, **kwargs):
+        self.pw.addItem(*args, **kwargs)
     
     def setTitle(self, *args, **kwargs):
         self.pw.setTitle(*args, **kwargs)

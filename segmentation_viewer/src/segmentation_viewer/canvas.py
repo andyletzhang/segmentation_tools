@@ -41,10 +41,14 @@ class PyQtGraphCanvas(QWidget):
         stat_overlay_lut=get_matplotlib_LUT('viridis')
         self.seg_stat_overlay.setLookupTable(stat_overlay_lut)
         self.cb = pg.ColorBarItem(
-            cmap=stat_overlay_lut,
             interactive=False,
-            orientation='right',
+            orientation='horizontal',
+            colorMap='viridis',
+            width=15,
         )
+        self.cb.setFixedWidth(100)
+        self.cb.setImageItem(self.seg_stat_overlay)
+        self.cb.setVisible(False)
         self.seg_plot.scene().addItem(self.cb)
         # Position relative to plot edges
         self.cb.setPos(self.seg_plot.width()-40, 50)
@@ -111,8 +115,7 @@ class PyQtGraphCanvas(QWidget):
         overlay=np.zeros((*self.parent.frame.masks.shape, 4))
         overlay[self.parent.frame.outlines]=color
 
-        overlay=np.rot90(overlay, 3)
-        overlay=np.fliplr(overlay)
+        overlay=self.transform_image(overlay)
         self.img_outline_overlay.setImage(overlay)
         self.overlay_outlines()
 
@@ -192,10 +195,8 @@ class PyQtGraphCanvas(QWidget):
         if seg_type=='outlines':
             opaque_mask[self.parent.frame.outlines==0]=0
 
-        mask_overlay=np.rot90(mask_overlay, 3)
-        mask_overlay=np.fliplr(mask_overlay)
-        opaque_mask=np.rot90(opaque_mask, 3)
-        opaque_mask=np.fliplr(opaque_mask)
+        mask_overlay=self.transform_image(mask_overlay)
+        opaque_mask=self.transform_image(opaque_mask)
         
         layer[0].setImage(mask_overlay)
         layer[1].setImage(opaque_mask)
@@ -213,9 +214,7 @@ class PyQtGraphCanvas(QWidget):
         # Get the specified overlay layer: selection for highlighting, mask for colored masks
         layer = getattr(self, f'{layer}_overlay')
         
-        cell_mask=masks == cell_index + 1
-        cell_mask=np.rot90(cell_mask, 3)
-        cell_mask=np.fliplr(cell_mask)
+        cell_mask=self.transform_image(masks == cell_index + 1)
 
         for l in layer:
             if l.image is None: # initialize the overlay
@@ -331,17 +330,10 @@ class PyQtGraphCanvas(QWidget):
         self.parent.update_coordinate_label(int(x), int(y))
 
     def update_display(self, img_data=None, seg_data=None, RGB_checks=None):
-        """Update the display when checkboxes change."""
-        if img_data is not None:
-            self.img_data = np.rot90(img_data, 3).copy()
-            # invert y axis
-            self.img_data = np.fliplr(self.img_data)
-        if seg_data is not None:
-            self.seg_data = np.rot90(seg_data, 3).copy()
-            # invert y axis
-            self.seg_data = np.fliplr(self.seg_data)
-
         # RGB checkboxes
+        self.img_data=img_data.copy()
+        self.seg_data=seg_data.copy()
+
         if RGB_checks is not None:
             for i, check in enumerate(RGB_checks):
                 if not check:
@@ -359,6 +351,9 @@ class PyQtGraphCanvas(QWidget):
         self.img.setImage(self.img_data)
         self.seg.setImage(self.seg_data)
 
+    def transform_image(self, img_data):
+        return np.fliplr(np.rot90(img_data, 3))
+    
     def sync_img_plot(self, view_box):
         """Sync the image plot view range with the segmentation plot."""
 
@@ -513,12 +508,8 @@ class CellMaskPolygon(QGraphicsPolygonItem):
         
         return enclosed_pixels
 
-def get_matplotlib_LUT(name, zero_color='black'):
+def get_matplotlib_LUT(name):
     from matplotlib import cm
-    from matplotlib.colors import to_rgb
     colormap=cm.get_cmap(name)
-    lut = (colormap(np.linspace(0, 1, 255)) * 255).astype(np.uint8)
-    if zero_color is not None:
-        zero_color=to_rgb(zero_color)
-        lut[0]=np.array([*zero_color, 255])
+    lut = (colormap(np.linspace(0, 1, 256)) * 255).astype(np.uint8)
     return lut

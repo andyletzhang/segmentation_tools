@@ -1071,8 +1071,11 @@ class Cell:
         return 4/3*np.pi*(self.area/np.pi)**(3/2)
     @property
     def perimeter(self):
-        perimeter=np.sum(np.linalg.norm(np.diff(self.outline, axis=0, append=[self.outline[0]]).T, axis=0))
-        return perimeter
+        if len(self.outline)==0:
+            return 0
+        else:
+            perimeter=np.sum(np.linalg.norm(np.diff(self.outline, axis=0, append=[self.outline[0]]).T, axis=0))
+            return perimeter
     
     @property
     def circularity(self):

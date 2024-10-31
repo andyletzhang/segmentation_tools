@@ -22,6 +22,7 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
+# TODO: number of neighbors
 # TODO: lazy loading
 # TODO: nd2 reading
 # TODO: stop using frame.img for frontend stuff. Use self.canvas.img_data and keep frame.img as the RGB slice.
@@ -53,6 +54,7 @@ class MainWidget(QMainWindow):
         self.locals_dict = {}
         self.font_metrics=QFontMetrics(QLabel().font()) # metrics for the default font
         self.digit_width=self.font_metrics.horizontalAdvance('0') # text length scale
+        self.cancel_iter=False # flag to cancel progress bar iteration
 
         # Status bar
         self.status_cell=QLabel("Selected Cell: None", self)
@@ -123,6 +125,10 @@ class MainWidget(QMainWindow):
         self.canvas.seg_plot.scene().sigMouseClicked.connect(self.on_click)
     
     def get_right_toolbar(self):
+        self.stat_tabs=QTabWidget()
+        self.stat_tabs.addTab(self.get_frame_stat_tab(), "Frame")
+        self.stat_tabs.addTab(self.get_particle_stat_tab(), "Particle") # TODO: aspect ratio plot doesn't show up with the proper initial width in the hidden tab
+
         cell_ID_widget=QWidget(objectName='bordered')
         #cell_ID_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.cell_ID_layout=QFormLayout(cell_ID_widget)
@@ -132,20 +138,18 @@ class MainWidget(QMainWindow):
         selected_particle_label=QLabel("Tracking ID:", self)
         self.selected_particle_prompt=QLineEdit(self, placeholderText='None')
         self.selected_particle_prompt.setValidator(QIntValidator(bottom=0)) # non-negative integers only
+        self.cell_properties_label=QLabel(self)
         self.cell_ID_layout.addRow(selected_cell_label, self.selected_cell_prompt)
         self.cell_ID_layout.addRow(selected_particle_label, self.selected_particle_prompt)
-
-        self.stat_tabs=QTabWidget()
-        self.stat_tabs.addTab(self.get_frame_stat_tab(), "Frame")
-        self.stat_tabs.addTab(self.get_particle_stat_tab(), "Particle")
+        self.cell_ID_layout.addRow(self.cell_properties_label)
 
         # Create a container widget for all content
         particle_stat_widget = QWidget()
         particle_stat_layout = QVBoxLayout(particle_stat_widget)
         particle_stat_layout.setSpacing(10)
         particle_stat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        particle_stat_layout.addWidget(cell_ID_widget)
         particle_stat_layout.addWidget(self.stat_tabs)
+        particle_stat_layout.addWidget(cell_ID_widget)
 
         # Set up scroll area
         right_scroll_area = QScrollArea()
@@ -175,10 +179,12 @@ class MainWidget(QMainWindow):
         stat_tab_layout=QVBoxLayout(self.frame_stat_tab)
         stat_tab_layout.setSpacing(10)
         stat_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.histogram=AspectRatioPlotWidget(title='Cell Volume Histogram', aspect_ratio=1, background='transparent')
+        # TODO: this and the particle plot should have dropdowns instead of titles which specify the statistic
+        self.histogram=pg.PlotWidget(title='Cell Volume Histogram', background='transparent')
+        self.histogram.setMinimumHeight(200)
         self.histogram.setLabel('bottom', 'Volume', 'µm³')
         self.histogram.setLabel('left', 'P(V)', '')
-        self.histogram.pw.showGrid(x=True, y=True)
+        self.histogram.showGrid(x=True, y=True)
 
         seg_overlay_layout=QHBoxLayout()
         self.seg_overlay_label=QLabel("Overlay Statistic:", self)
@@ -240,6 +246,28 @@ class MainWidget(QMainWindow):
         
         self.show_seg_overlay()
 
+    def cell_scalar_attrs(self, cell):
+        attrs=set(dir(cell))
+        ignored_attrs={'red','green','cycle_stage','n','frame','vertex_area','shape_parameter','sorted_vertices','vertex_perimeter'}
+        test_attrs=attrs-ignored_attrs
+        # Collect attributes to remove instead of modifying the set in place
+        to_remove = set()
+        for attr in test_attrs:
+            if attr.startswith('_'):
+                to_remove.add(attr)
+                continue
+            try:
+                val = getattr(cell, attr)
+            except AttributeError:
+                to_remove.add(attr)
+                continue
+            if not np.isscalar(val):
+                to_remove.add(attr)
+
+        # Remove collected attributes from test_attrs
+        test_attrs -= to_remove
+        return test_attrs
+    
     def get_overlay_attrs(self):
         if not self.file_loaded:
             return
@@ -249,20 +277,7 @@ class MainWidget(QMainWindow):
             items.append('heights')
 
         if len(self.frame.cells)>0: # add any valid scalar cell attributes
-            common_attrs=set(dir(self.frame.cells[0]))
-            ignored_attrs={'red','green','cycle_stage','n','frame','vertex_area','shape_parameter','sorted_vertices','vertex_perimeter'}
-            test_attrs=common_attrs-ignored_attrs
-            for attr in test_attrs:
-                if attr.startswith('_'):
-                    ignored_attrs.add(attr)
-                try:
-                    val=getattr(self.frame.cells[0], attr)
-                except: # failed to retrieve attribute
-                    ignored_attrs.add(attr)
-                    continue
-                if not np.isscalar(val):
-                    ignored_attrs.add(attr)
-            common_attrs=common_attrs-ignored_attrs
+            common_attrs=self.cell_scalar_attrs(self.frame.cells[0])
             for cell in self.frame.cells[1:]:
                 common_attrs=common_attrs.intersection(set(dir(cell)))
             items.extend(list(common_attrs))
@@ -368,10 +383,11 @@ class MainWidget(QMainWindow):
     def get_particle_stat_tab(self):
         self.particle_stat_tab=QWidget()
         stat_tab_layout=QVBoxLayout(self.particle_stat_tab)
-        self.particle_stat_plot=AspectRatioPlotWidget(title='Tracked Cell Statistics', aspect_ratio=1, background='transparent')
+        self.particle_stat_plot=pg.PlotWidget(title='Tracked Cell Statistics', background='transparent')
+        self.particle_stat_plot.setMinimumHeight(200)
         self.particle_stat_plot.setLabel('bottom', 'Frame')
         self.stat_plot_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
-        self.particle_stat_plot.pw.addItem(self.stat_plot_frame_marker)
+        self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
 
         particle_stat_selection_widget=QWidget(objectName='bordered')
         particle_stat_selection_layout=QVBoxLayout(particle_stat_selection_widget)
@@ -604,11 +620,11 @@ class MainWidget(QMainWindow):
         self.gap_size.setValidator(QIntValidator(bottom=0)) # non-negative integers only
         gap_size_layout.addWidget(gap_size_label)
         gap_size_layout.addWidget(self.gap_size)
-        regenerate_remove_layout=QHBoxLayout()
-        regenerate_outlines_button=QPushButton("Regenerate Outlines", self)
+        generate_remove_layout=QHBoxLayout()
+        generate_outlines_button=QPushButton("Generate Outlines", self)
         clear_masks_button=QPushButton("Clear Masks", self)
-        regenerate_remove_layout.addWidget(regenerate_outlines_button)
-        regenerate_remove_layout.addWidget(clear_masks_button)
+        generate_remove_layout.addWidget(generate_outlines_button)
+        generate_remove_layout.addWidget(clear_masks_button)
         operate_on_layout.addWidget(self.segment_on_frame)
         operate_on_layout.addWidget(self.segment_on_stack)
         segmentation_button_layout.addWidget(self.mend_gaps_button)
@@ -624,7 +640,7 @@ class MainWidget(QMainWindow):
         segmentation_utils_layout.addLayout(operate_on_layout)
         segmentation_utils_layout.addLayout(mend_remove_layout)
         segmentation_utils_layout.addLayout(gap_size_layout)
-        segmentation_utils_layout.addLayout(regenerate_remove_layout)
+        segmentation_utils_layout.addLayout(generate_remove_layout)
 
         segmentation_layout.addWidget(segment_frame_widget)
         segmentation_layout.addWidget(segmentation_utils_widget)
@@ -635,7 +651,7 @@ class MainWidget(QMainWindow):
         self.cell_diameter_calibrate.clicked.connect(self.calibrate_diameter_pressed)
         self.segment_frame_button.clicked.connect(self.segment_frame_pressed)
         self.segment_stack_button.clicked.connect(self.segment_stack_pressed)
-        regenerate_outlines_button.clicked.connect(self.regenerate_outlines_list)
+        generate_outlines_button.clicked.connect(self.generate_outlines_list)
         clear_masks_button.clicked.connect(self.clear_masks)
         self.circle_mask=None
 
@@ -866,7 +882,12 @@ class MainWidget(QMainWindow):
 
             # Custom iterator to update both progress bars
             def custom_iterator():
+                self.is_iterating=True
+                self.cancel_iter=False
                 for i, item in enumerate(iterable):
+                    if self.cancel_iter:
+                        print('Task cancelled.')
+                        break
                     yield item
                     tqdm_bar.update(1)
                     qprogress_bar.setValue(i + 1)
@@ -875,16 +896,16 @@ class MainWidget(QMainWindow):
                 # Restore existing permanent status bar widgets
                 self.status_coordinates.setVisible(True)
                 self.status_pixel_value.setVisible(True)
+                self.is_iterating=False
 
             return custom_iterator()
         
     def replace_segmentation(self, frame):
-        ''' Regenerate the cell outlines and cell objects from the new segmentation masks. '''
+        ''' Generate the cell outlines and cell objects from the new segmentation masks. '''
         frame.has_outlines=False
         frame.outlines=utils.masks_to_outlines(frame.masks)
         frame.n_cells=np.max(frame.masks)
-        outlines_list=utils.outlines_list(frame.masks)
-        frame.cells = np.array([Cell(n, outline, frame_number=frame.frame_number) for n, outline in zip(range(frame.n_cells), outlines_list)])
+        frame.cells = np.array([Cell(n, [], frame_number=frame.frame_number) for n in range(frame.n_cells)])
         if hasattr(frame, 'stored_mask_overlay'):
             del frame.stored_mask_overlay
 
@@ -1326,7 +1347,7 @@ class MainWidget(QMainWindow):
         volumes=np.array(volumes)[~np.isnan(volumes)]
         n, bins=np.histogram(volumes, bins=50, density=True)
         self.histogram.plot(bins, n, stepMode=True, fillLevel=0, brush=(0, 0, 255, 150))
-        self.histogram.pw.autoRange()
+        self.histogram.autoRange()
 
     def calibrate_coverslip_height(self):
         from segmentation_tools.image_segmentation import get_coverslip_z
@@ -1478,7 +1499,7 @@ class MainWidget(QMainWindow):
             return None, None, None
         elif not hasattr(self, 'frame'): # catch case where file_loaded is mistakenly True due to some exception
             return None, None, None
-        img=self.canvas.img.img_data
+        img=self.canvas.inverse_transform_image(self.canvas.img_data)
 
         if x<0 or y<0 or x>=img.shape[1] or y>=img.shape[0]: # outside image bounds
             return None, None, None
@@ -1727,7 +1748,7 @@ class MainWidget(QMainWindow):
         self.normalize()
 
     def normalize(self):
-        if self.canvas.img.img_data.ndim==2: # single channel
+        if self.canvas.img_data.ndim==2: # single channel
             colors=1
         else:
             colors=3
@@ -1745,7 +1766,7 @@ class MainWidget(QMainWindow):
                 if hasattr(self.frame, 'bounds') and not self.is_zstack:
                     bounds=self.frame.bounds
                 else:
-                    bounds=np.quantile(self.canvas.img.img_data.reshape(-1,colors), (0.01, 0.99), axis=0).T
+                    bounds=np.quantile(self.canvas.img_data.reshape(-1,colors), (0.01, 0.99), axis=0).T
                     self.frame.bounds=bounds
 
         elif self.normalize_type=='stack': # normalize the stack
@@ -1777,6 +1798,9 @@ class MainWidget(QMainWindow):
 
     def select_cell(self, particle=None, cell=None):
         ''' Select a cell or particle by number. '''
+        if self.FUCCI_mode:
+            return
+        
         if cell is not None:
             self.selected_cell_n=cell
             self.selected_particle_n=self.particle_from_cell(cell)
@@ -1794,8 +1818,15 @@ class MainWidget(QMainWindow):
         self.plot_particle_statistic()
 
         self.canvas.clear_selection_overlay()
-        if not self.FUCCI_mode and self.selected_cell_n is not None: # basic selection, not cell cycle classification
+        if self.selected_cell_n is not None: # basic selection, not cell cycle classification
             self.canvas.add_cell_highlight(self.selected_cell_n)
+            labels=list(self.cell_scalar_attrs(self.selected_cell))
+            attrs=[getattr(self.selected_cell, attr) for attr in labels]
+            cell_attrs_label=create_html_table(labels, attrs)
+            self.cell_properties_label.setText(cell_attrs_label)
+        else:
+            self.cell_properties_label.setText('')
+
 
     def clear_particle_statistic(self):
         self.particle_stat_plot.clear()
@@ -1829,8 +1860,7 @@ class MainWidget(QMainWindow):
 
     def FUCCI_click(self, event, current_cell_n):
         if current_cell_n>=0:
-            self.select_cell(cell=current_cell_n)
-            cell=self.selected_cell
+            cell=self.frame.cells[current_cell_n]
             if event.button() == Qt.MouseButton.LeftButton:
                 self.classify_cell_cycle(cell, 0)
             if event.button() == Qt.MouseButton.RightButton:
@@ -1940,11 +1970,17 @@ class MainWidget(QMainWindow):
 
     @property
     def selected_cell(self):
-        return self.frame.cells[self.selected_cell_n]
+        if self.selected_cell_n is None:
+            return None
+        else:
+            return self.frame.cells[self.selected_cell_n]
     
     @property
     def selected_particle(self):
-        return self.stack.get_particle(self.selected_particle_n)
+        if self.selected_particle_n is None:
+            return None
+        else:
+            return self.stack.get_particle(self.selected_particle_n)
 
     def mouse_moved(self, pos):
         ''' Dynamically update the cell mask overlay as the user draws a new cell. '''
@@ -2083,7 +2119,7 @@ class MainWidget(QMainWindow):
         if np.any(mask_number_alignment):
             print(f'{np.sum(mask_number_alignment)} cell masks misalign starting with {np.where(mask_number_alignment)[0][0]}')
 
-    def regenerate_outlines_list(self):
+    def generate_outlines_list(self):
         if not self.file_loaded:
             return
 
@@ -2092,11 +2128,12 @@ class MainWidget(QMainWindow):
         else:
             frames=[self.frame]
 
-        for frame in self.progress_bar(frames, desc='Regenerating outlines'):
+        for frame in self.progress_bar(frames, desc='Generating outlines'):
             outlines=utils.outlines_list(frame.masks)
             for cell, outline in zip(frame.cells, outlines):
                 cell.outline=outline
-        self.statusBar().showMessage('Regenerated outlines.', 1000)
+            frame.has_outlines=True
+        self.statusBar().showMessage(f'Generated outlines.', 1000)
 
     def delete_cell_mask(self, cell_n, frame=None):
         if frame is None:
@@ -2277,6 +2314,7 @@ class MainWidget(QMainWindow):
             return
 
         else:
+            self.select_cell(None)
             self.FUCCI_mode=True
             self.canvas.clear_selection_overlay() # clear basic selection during FUCCI labeling
             if len(self.frame.cells)==0:
@@ -2405,13 +2443,16 @@ class MainWidget(QMainWindow):
             if self.selected_cell_n is not None:
                 self.delete_cell_mask(self.selected_cell_n)
 
-        # reset visuals
         if event.key() == Qt.Key.Key_Escape:
-            self.FUCCI_dropdown.setCurrentIndex(0)
-            self.set_RGB(True)
-            self.canvas.img_plot.autoRange()
-            if not self.is_grayscale:
-                self.show_grayscale_checkbox.setChecked(False)
+            if self.is_iterating: # cancel progress bar iteration
+                self.cancel_iter=True
+                print('Cancel signal received.')
+            else: # reset visuals
+                self.FUCCI_dropdown.setCurrentIndex(0)
+                self.set_RGB(True)
+                self.canvas.img_plot.autoRange()
+                if not self.is_grayscale:
+                    self.show_grayscale_checkbox.setChecked(False)
 
         # Handle frame navigation with left and right arrow keys
         if event.key() == Qt.Key.Key_Left:
@@ -2814,63 +2855,6 @@ class MainWidget(QMainWindow):
             self.cli_window.close()
         event.accept()
 
-class AspectRatioPlotWidget(QWidget):
-    def __init__(self, aspect_ratio=4/3, parent=None, **kwargs):
-        super().__init__(parent)
-        self.aspect_ratio = aspect_ratio
-        
-        # Create layout
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Create PlotWidget
-        self.pw = pg.PlotWidget(**kwargs)
-        layout.addWidget(self.pw)
-        
-        # Set size policy
-        self.setSizePolicy(
-            QSizePolicy.Policy.Preferred,
-            QSizePolicy.Policy.Maximum
-        )
-        
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        width = self.width()
-        target_height = int(width / self.aspect_ratio)
-        self.setFixedHeight(target_height)
-        
-    def sizeHint(self):
-        width = self.width()
-        height = int(width / self.aspect_ratio)
-        return QSize(width, height)
-        
-    def minimumSizeHint(self):
-        min_width = 100
-        min_height = int(min_width / self.aspect_ratio)
-        return QSize(min_width, min_height)
-    
-    # Forward common plotting methods to the internal plot widget
-    def plot(self, *args, **kwargs):
-        return self.pw.plot(*args, **kwargs)
-    
-    def clear(self):
-        self.pw.clear()
-
-    def addItem(self, *args, **kwargs):
-        self.pw.addItem(*args, **kwargs)
-    
-    def setTitle(self, *args, **kwargs):
-        self.pw.setTitle(*args, **kwargs)
-    
-    def setLabel(self, *args, **kwargs):
-        self.pw.setLabel(*args, **kwargs)
-    
-    def setXRange(self, *args, **kwargs):
-        self.pw.setXRange(*args, **kwargs)
-    
-    def setYRange(self, *args, **kwargs):
-        self.pw.setYRange(*args, **kwargs)
-    
 class FineScrubQRangeSlider(QRangeSlider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -2938,7 +2922,38 @@ class FineScrubQRangeSlider(QRangeSlider):
 def load_stylesheet(file_path):
     with open(file_path, 'r') as f:
         return f.read()
+
+def create_html_table(labels, values):
+    if len(labels) != len(values):
+        raise ValueError("Labels and values must be of the same length")
+
+    html = """
+    <table style="border-collapse: collapse; width: 100%;">
+        <thead>
+            <tr>
+                <th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Label</th>
+                <th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Value</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+    # Loop to add rows
+    for label, value in zip(labels, values):
+        value=round(value, 2) # round to 2 decimal places
+        html += f"""
+        <tr>
+            <td style="padding: 4px;"><b>{label}:</b></td>
+            <td style="padding: 4px;">{value}</td>
+        </tr>
+        """
     
+    html += """
+        </tbody>
+    </table>
+    """
+    return html
+
+
 def main():
     pg.setConfigOptions(useOpenGL=True)
     #pg.setConfigOptions(enableExperimental=True)

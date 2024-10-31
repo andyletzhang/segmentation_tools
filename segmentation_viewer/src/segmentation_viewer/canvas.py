@@ -354,6 +354,9 @@ class PyQtGraphCanvas(QWidget):
     def transform_image(self, img_data):
         return np.fliplr(np.rot90(img_data, 3))
     
+    def inverse_transform_image(self, img_data):
+        return np.rot90(np.fliplr(img_data), 1)
+    
     def sync_img_plot(self, view_box):
         """Sync the image plot view range with the segmentation plot."""
 
@@ -497,7 +500,10 @@ class CellMaskPolygon(QGraphicsPolygonItem):
         xmin, ymin, xmax, ymax = shapely_polygon.bounds
         xmin, ymin, xmax, ymax = map(int, [xmin, ymin, xmax, ymax])
         
-        # Get the coordinates of the polygon vertices
+        # Get the coordinates of the polygon vertices            
+        if shapely_polygon.geom_type=='MultiPolygon':
+            shapely_polygon=max(shapely_polygon, key=lambda p: p.area) # get the largest polygon if multiple polygons are present (e.g. drew intersecting lines)
+
         poly_verts = np.array(shapely_polygon.exterior.coords)
         
         # Use skimage.draw.polygon to get the pixels within the polygon

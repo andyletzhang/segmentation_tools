@@ -22,9 +22,10 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
+# TODO: self.is_grayscale should be self.frame.is_grayscale
+# TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
 # TODO: number of neighbors
 # TODO: lazy loading
-# TODO: nd2 reading
 # TODO: add mouse and keyboard shortcuts to interface
 # TODO: normalize the summed channels when show_grayscale
 
@@ -1395,7 +1396,10 @@ class MainWidget(QMainWindow):
 
         z_profile=[]
         for z_index in range(frames[0].zstack.shape[0]):
-            z_profile.append(np.mean(np.concatenate([frame.zstack[z_index].flatten() for frame in frames])))
+            if self.is_grayscale:
+                z_profile.append(np.mean(np.concatenate([frame.zstack[z_index].flatten() for frame in frames])))
+            else:
+                z_profile.append(np.mean(np.concatenate([frame.zstack[z_index,...,2].flatten() for frame in frames])))
         
         if not hasattr(self.frame, 'z_scale'):
             print(f'No z-scale available for {self.frame.name}. Defaulting to 1.')
@@ -1434,7 +1438,11 @@ class MainWidget(QMainWindow):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
             else:
-                frame.heights=get_heights(frame.zstack, peak_prominence=peak_prominence)
+                if self.is_grayscale:
+                    membrane=frame.zstack
+                else:
+                    membrane=frame.zstack[..., 2] # TODO: hardcoded membrane channel
+                frame.heights=get_heights(membrane, peak_prominence=peak_prominence)
                 frame.to_heightmap()
                 frame.coverslip_height=coverslip_height
                 self.show_seg_overlay()

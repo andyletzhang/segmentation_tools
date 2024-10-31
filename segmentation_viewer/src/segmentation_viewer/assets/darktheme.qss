@@ -4,6 +4,16 @@ QWidget, QMainWindow, QMenuBar, QStatusBar {
     color: #ffffff;
 }
 
+/* Menu bar and menu items */
+QMenuBar::item {
+    spacing: 20px;  /* Adjust the spacing between menu bar items */
+    padding: 2px 10px;  /* Adjust padding for better appearance */
+}
+
+QMenu {
+    spacing: 10px;  /* Adjust the spacing between menu items */
+}
+
 /* Bordered elements */
 QWidget#bordered {
     border: 2px solid #4b4b4b;
@@ -20,11 +30,11 @@ QPushButton, QLineEdit, QTextEdit {
     padding: 5px;
 }
 
-QPushButton:hover, QMenuBar::item:selected {
+QPushButton:hover, QMenuBar::item:selected, QMenu::item:selected {
     background-color: #4e4e4e;
 }
 
-QPushButton:pressed {
+QPushButton:pressed, QMenu::item:pressed {
     background-color: #1c1c1c;
 }
 

@@ -5,12 +5,12 @@ from cellpose import utils # takes a while to import :(
 import os
 
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QLabel, QComboBox, QPushButton, QRadioButton,
+    QApplication, QMainWindow, QWidget, QLabel, QComboBox, QPushButton, QRadioButton, QInputDialog, QMessageBox,
     QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog,
     QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter, QProgressBar, QScrollArea
 )
 from PyQt6.QtCore import Qt, QPointF, QSize, pyqtSignal
-from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics, QMouseEvent
+from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics, QMouseEvent, QAction
 from superqt import QRangeSlider
 import pyqtgraph as pg
 
@@ -25,8 +25,6 @@ from tqdm import tqdm
 # TODO: number of neighbors
 # TODO: lazy loading
 # TODO: nd2 reading
-# TODO: stop using frame.img for frontend stuff. Use self.canvas.img_data and keep frame.img as the RGB slice.
-# TODO: related - stack level operations should use current z slice
 # TODO: add mouse and keyboard shortcuts to interface
 # TODO: normalize the summed channels when show_grayscale
 
@@ -55,6 +53,42 @@ class MainWidget(QMainWindow):
         self.font_metrics=QFontMetrics(QLabel().font()) # metrics for the default font
         self.digit_width=self.font_metrics.horizontalAdvance('0') # text length scale
         self.cancel_iter=False # flag to cancel progress bar iteration
+
+        # Menu bar
+        self.menu_bar = self.menuBar()
+
+        def create_action(name, func, shortcut=None):
+            action=QAction(name, self)
+            action.triggered.connect(func)
+            if shortcut is not None:
+                action.setShortcut(shortcut)
+            return action
+        
+        # FILE
+        self.file_menu = self.menu_bar.addMenu("File")
+        self.file_menu.addAction(create_action("Open File(s)", self.open_files, 'Ctrl+O'))
+        self.file_menu.addAction(create_action("Open Folder", self.open_folder_dialog, 'Ctrl+Shift+O'))
+        self.file_menu.addAction(create_action("Save", self.save_segmentation, 'Ctrl+S'))
+        self.file_menu.addAction(create_action("Save As", self.save_as_segmentation, 'Ctrl+Shift+S'))
+        self.file_menu.addAction(create_action("Exit", self.close, 'Ctrl+Q'))
+
+        # EDIT
+        self.edit_menu = self.menu_bar.addMenu("Edit")
+        #self.edit_menu.addAction(create_action("Undo", self.undo, 'Ctrl+Z'))
+        #self.edit_menu.addAction(create_action("Redo", self.redo, 'Ctrl+Shift+Z'))
+        self.edit_menu.addAction(create_action("Clear Masks", self.clear_masks))
+        self.edit_menu.addAction(create_action("Generate Outlines", self.generate_outlines_list))
+        self.edit_menu.addAction(create_action("Mend Gaps", self.mend_gaps))
+        self.edit_menu.addAction(create_action("Remove Edge Masks", self.remove_edge_masks))
+
+        self.view_menu = self.menu_bar.addMenu("View")
+        self.view_menu.addAction(create_action("Reset View", self.reset_view, 'Esc'))
+        self.view_menu.addAction(create_action("Show Grayscale", self.toggle_grayscale))
+        #self.view_menu.addAction(create_action("Segmentation Plot", self.toggle_segmentation_plot))
+
+        self.image_menu = self.menu_bar.addMenu("Image")
+        self.image_menu.addAction(create_action("Reorder Channels", self.reorder_channels))
+        #self.image_menu.addAction(create_action("Set Voxel Size", self.voxel_size_prompt))
 
         # Status bar
         self.status_cell=QLabel("Selected Cell: None", self)
@@ -415,13 +449,8 @@ class MainWidget(QMainWindow):
         return self.particle_stat_tab
 
     def get_left_toolbar(self):
-        # Open Buttons
-        self.open_button = QPushButton("Open Files", self)
-        self.open_folder = QPushButton("Open Folder", self)
         open_menu=QHBoxLayout()
         open_menu.setSpacing(5)
-        open_menu.addWidget(self.open_button)
-        open_menu.addWidget(self.open_folder)
 
         # RGB
         self.RGB_checkbox_layout = QVBoxLayout()
@@ -538,9 +567,7 @@ class MainWidget(QMainWindow):
         # save
         self.save_button.clicked.connect(self.save_segmentation)
         self.save_as_button.clicked.connect(self.save_as_segmentation)
-        # open
-        self.open_button.clicked.connect(self.open_files)
-        self.open_folder.clicked.connect(self.open_folder_dialog)
+
         # switch tabs
         self.tabbed_menu_widget.currentChanged.connect(self.tab_switched)
 
@@ -1058,8 +1085,12 @@ class MainWidget(QMainWindow):
     def measure_FUCCI(self, frames):
         red_threshold, green_threshold, percent_threshold=self.get_FUCCI_thresholds()
         for frame in self.progress_bar(frames, desc='Measuring FUCCI'):
+            if self.is_zstack:
+                img=frame.zstack[self.zstack_number]
+            else:
+                img=frame.img
             if not hasattr(frame, 'FUCCI'):
-                frame.FUCCI=frame.img[...,0], frame.img[...,1] # use the red and green channels
+                frame.FUCCI=img[...,0], img[...,1] # use the red and green channels
 
             frame.measure_FUCCI(red_fluor_threshold=red_threshold, green_fluor_threshold=green_threshold, orange_brightness=1, percent_threshold=percent_threshold)
             self.get_red_green(frame)
@@ -1694,6 +1725,8 @@ class MainWidget(QMainWindow):
     
     def set_LUT_slider_values(self, bounds):
         for slider, bound in zip(self.LUT_range_sliders, bounds):
+            if bound[0]==bound[1]: # prevent division by zero
+                bound=(0,1)
             slider.blockSignals(True)
             slider.setValue(tuple(bound))
             slider.blockSignals(False)
@@ -2409,22 +2442,6 @@ class MainWidget(QMainWindow):
                         self.set_RGB([True, True, False])
                     return
 
-            # save (with overwrite)
-            if event.key() == Qt.Key.Key_S:
-                self.save_segmentation()
-                return
-            
-            # open
-            elif event.key() == Qt.Key.Key_O:
-                self.open_files()
-                return
-        
-        # ctrl+shift shortcuts
-        if event.modifiers() == Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier:
-            if event.key() == Qt.Key.Key_S:
-                self.save_as_segmentation()
-                return
-
         # r-g-b toggles
         if not self.is_grayscale:
             if event.key() == Qt.Key.Key_R:
@@ -2447,12 +2464,6 @@ class MainWidget(QMainWindow):
             if self.is_iterating: # cancel progress bar iteration
                 self.cancel_iter=True
                 print('Cancel signal received.')
-            else: # reset visuals
-                self.FUCCI_dropdown.setCurrentIndex(0)
-                self.set_RGB(True)
-                self.canvas.img_plot.autoRange()
-                if not self.is_grayscale:
-                    self.show_grayscale_checkbox.setChecked(False)
 
         # Handle frame navigation with left and right arrow keys
         if event.key() == Qt.Key.Key_Left:
@@ -2464,6 +2475,14 @@ class MainWidget(QMainWindow):
             if self.frame_number < len(self.stack.frames) - 1:
                 self.frame_number += 1
                 self.change_current_frame(self.frame_number)
+
+    def reset_view(self):
+        ''' Reset the view to the original image data. '''
+        self.FUCCI_dropdown.setCurrentIndex(0)
+        self.set_RGB(True)
+        self.canvas.img_plot.autoRange()
+        if not self.is_grayscale:
+            self.show_grayscale_checkbox.setChecked(False)
 
     def clear_layout(self, layout):
         while layout.count():
@@ -2493,22 +2512,59 @@ class MainWidget(QMainWindow):
         self.RGB_checkboxes.clear()
 
     def add_RGB_checkboxes(self, layout):
-        self.color_channels_layout = QHBoxLayout()
-        self.color_channels_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.color_channels_layout.setSpacing(25)
+        color_channels_layout = QHBoxLayout()
+        color_channels_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        color_channels_layout.setSpacing(25)
         self.RGB_checkboxes = [QCheckBox(s, self) for s in ['R', 'G', 'B']]
         for checkbox in self.RGB_checkboxes:
             checkbox.setChecked(True)
-            self.color_channels_layout.addWidget(checkbox)
+            color_channels_layout.addWidget(checkbox)
         self.show_grayscale_checkbox=QCheckBox("Grayscale", self)
         self.show_grayscale_checkbox.setChecked(False)
         layout.addSpacerItem(self.vertical_spacer())
-        layout.addLayout(self.color_channels_layout)
+        layout.addLayout(color_channels_layout)
         layout.addWidget(self.show_grayscale_checkbox)
         
         for checkbox in self.RGB_checkboxes:
             checkbox.stateChanged.connect(self.update_display)
         self.show_grayscale_checkbox.stateChanged.connect(self.show_grayscale_toggled)
+
+    def reorder_channels(self):
+        if not self.file_loaded:
+            return
+        if self.is_grayscale:
+            return
+
+        # Prompt the user for the channel order
+        text, ok = QInputDialog.getText(self, 'Channel Order', 'Enter channel order (e.g., 1,2,0):')
+        
+        if ok and text:
+            try:
+                # Parse the input into a tuple of integers
+                channel_order = tuple(map(int, text.split(',')))
+                
+                if len(channel_order) != 3:
+                    raise ValueError("Channel order must have exactly three elements.")
+                
+                for frame in self.stack.frames:
+                    frame.img = frame.img[..., channel_order]
+
+                    if hasattr(frame, 'zstack'):
+                        frame.zstack = frame.zstack[..., channel_order]
+                    if hasattr(frame, 'bounds'):
+                        frame.bounds = frame.bounds[..., channel_order, :]
+
+                self.update_display()
+                self.auto_range_sliders()
+                self.normalize()
+            except ValueError as e:
+                # Show an error message if the input is invalid
+                QMessageBox.critical(self, 'Invalid Input', str(e))
+
+    def toggle_grayscale(self):
+        if not self.file_loaded:
+            return
+        self.show_grayscale_checkbox.toggle()
 
     def show_grayscale_toggled(self):
         if not self.file_loaded:
@@ -2522,6 +2578,7 @@ class MainWidget(QMainWindow):
         self.membrane_channel=QComboBox(self)
         self.membrane_channel_label=QLabel("Membrane Channel:", self)
         self.membrane_channel.addItems(["Gray", "Red", "Green", "Blue"])
+        self.membrane_channel.setCurrentIndex(3)
         self.membrane_channel.setFixedWidth(70)
         self.nuclear_channel=QComboBox(self)
         self.nuclear_channel_label=QLabel("Nuclear Channel:", self)
@@ -2689,6 +2746,23 @@ class MainWidget(QMainWindow):
 
         return t
 
+    def auto_range_sliders(self):
+        if self.is_grayscale:
+            n_colors=1
+        else:
+            n_colors=3
+
+        if self.is_zstack:
+            all_imgs=np.array([frame.zstack for frame in self.stack.frames]).reshape(-1, n_colors)
+        else:
+            all_imgs=np.array([frame.img for frame in self.stack.frames]).reshape(-1, n_colors)
+        if len(all_imgs)>1e6:
+            # downsample to speed up calculation
+            all_imgs=all_imgs[::len(all_imgs)//int(1e6)]
+        stack_range=np.array([np.min(all_imgs, axis=0), np.max(all_imgs, axis=0)]).T
+        self.stack.min_max=stack_range
+        self.set_LUT_slider_ranges(stack_range)
+
     def open_stack(self, files):
         self.stack, tracked_centroids=self.load_files(files)
         if not self.stack:
@@ -2735,12 +2809,10 @@ class MainWidget(QMainWindow):
             
         if self.frame.img.ndim==2: # single channel
             self.is_grayscale=True
-            n_colors=1
             self.grayscale_mode()
 
         elif self.frame.img.ndim==3: # RGB
             self.is_grayscale=False
-            n_colors=3
             self.RGB_mode()
 
         else:
@@ -2749,16 +2821,7 @@ class MainWidget(QMainWindow):
         self.canvas.img_plot.autoRange()
 
         # set slider ranges
-        if self.is_zstack:
-            all_imgs=np.array([frame.zstack for frame in self.stack.frames]).reshape(-1, n_colors)
-        else:
-            all_imgs=np.array([frame.img for frame in self.stack.frames]).reshape(-1, n_colors)
-        if len(all_imgs)>1e6:
-            # downsample to speed up calculation
-            all_imgs=all_imgs[::len(all_imgs)//int(1e6)]
-        stack_range=np.array([np.min(all_imgs, axis=0), np.max(all_imgs, axis=0)]).T
-        self.stack.min_max=stack_range
-        self.set_LUT_slider_ranges(stack_range)
+        self.auto_range_sliders()
 
         # reset visual settings
         self.saved_visual_settings=[self.get_visual_settings() for _ in range(4)]
@@ -2786,17 +2849,21 @@ class MainWidget(QMainWindow):
             from natsort import natsorted
             seg_files=[]
             tif_files=[]
+            nd2_files=[]
 
             for f in natsorted(os.listdir(files[0])):
                 if f.endswith('seg.npy'):
                     seg_files.append(os.path.join(files[0], f))
                 elif f.endswith('tif') or f.endswith('tiff'):
                     tif_files.append(os.path.join(files[0], f))
+                elif f.endswith('nd2'):
+                    nd2_files.append(os.path.join(files[0], f))
                 elif f.endswith('tracking.csv'):
                     tracking_file=os.path.join(files[0], f)
         else: # treat as list of files
             seg_files=[f for f in files if f.endswith('seg.npy')]
             tif_files=[f for f in files if f.endswith('tif') or f.endswith('tiff')]
+            nd2_files=[f for f in files if f.endswith('nd2')]
             tracking_files=[f for f in files if f.endswith('tracking.csv')]
             if len(tracking_files)>0:
                 tracking_file=tracking_files[-1]
@@ -2808,6 +2875,28 @@ class MainWidget(QMainWindow):
                 print(f'Loaded tracking data from {tracking_file}')
             self.file_loaded = True
             return stack, tracked_centroids
+
+        elif len(nd2_files)>0: # nd2 files
+            from nd2 import ND2File
+            from segmentation_tools.io import read_nd2, nd2_zstack, nd2_frame
+            from pathlib import Path
+
+            frames=[]
+            for file_path in self.progress_bar(nd2_files):
+                with ND2File(file_path) as nd2:
+                    nd2_file=read_nd2(nd2)
+                    file_stem=Path(file_path).stem
+                    file_parent=Path(file_path).parent
+                    for v in self.progress_bar(range(len(nd2_file))): # iterate over frames
+                        if nd2_file.shape[1]>1: # z-stack
+                            img=nd2_zstack(nd2_file, v=v)
+                            frames.append(segmentation_from_zstack(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
+                        else:
+                            img=nd2_frame(nd2_file, v=v)
+                            frames.append(segmentation_from_img(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
+            stack=SegmentedStack(from_frames=frames)
+            self.file_loaded = True
+            return stack, None
 
         elif len(tif_files)>0: # tif files (only checks if no seg.npy files are found)
             from segmentation_tools.io import read_tif, tiffpage_zstack, tiffpage_frame
@@ -2821,13 +2910,14 @@ class MainWidget(QMainWindow):
                     self.statusBar().showMessage(f'ERROR: Could not load file {file_path}: {e}', 4000)
                     return False, None
                 file_stem=Path(file_path).stem
+                file_parent=Path(file_path).parent
                 for v in self.progress_bar(range(len(tif_file))):
-                    if tif_file.shape[1]>1:
+                    if tif_file.shape[1]>1: # z-stack
                         img=tiffpage_zstack(tif_file, v=v)
-                        frames.append(segmentation_from_zstack(img, name=file_stem+f'-{v}_seg.npy'))
+                        frames.append(segmentation_from_zstack(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
                     else:
                         img=tiffpage_frame(tif_file, v=v)
-                        frames.append(segmentation_from_img(img, name=file_stem+f'-{v}_seg.npy'))
+                        frames.append(segmentation_from_img(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
             stack=SegmentedStack(from_frames=frames)
             self.file_loaded = True
             return stack, None

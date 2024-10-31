@@ -1,17 +1,7 @@
 import xml.etree.ElementTree as ET
 import numpy as np
 from tifffile import TiffFile
-
-def get_nd2_zstack(nd2_file, v=0, **kwargs):
-    ''' fetch a zstack from an ND2 file at the specified stage position.'''
-    zstack=[]
-    for i in range(nd2_file.sizes['z']):
-        zstack.append(nd2_file.get_frame_2D(v=v, z=i, **kwargs))
-    return np.array(zstack)
-
-def get_nd2_RGB(nd2_file, v=0, z=0, **kwargs):
-    RGB=[nd2_file.get_frame_2D(v=v, z=z, c=i, **kwargs) for i in range(3)]
-    return np.array(RGB).transpose(1,2,0)
+from nd2 import ND2File
 
 # Function to convert XML elements into a dictionary
 def xml_to_dict(element):
@@ -79,14 +69,75 @@ def tiffpage_frame(tif_pages, v=0, z=0):
 
 def tiffpage_zstack(tif_pages, v=0):
     zstack=tif_pages[v]
-    if zstack.shape[1]==1:
-        return np.array([a.asarray() for a in zstack[:,0]]) # mono z stack
+    if zstack.shape[1]==1: # mono z stack
+        return np.array([a.asarray() for a in zstack[:,0]])
     else:
         shape=zstack.shape
-        zstack=np.array([a.asarray() for a in zstack.flatten()]).reshape(shape).transpose(0,2,3,1)
+        zstack=np.array([a.asarray() for a in zstack.flatten()])
+        zstack=zstack.reshape(shape[0], shape[1], *zstack.shape[1:]).transpose(0,2,3,1)
         if zstack.shape[-1]!=3:
             print(f'Warning: unexpected number of color channels {zstack.shape[-1]}')
         return zstack
+
+def read_nd2_shape(nd2_file):
+    # Read metadata to get the shape (T, Z, C)
+    shape = []
+    is_v='P' in nd2_file.sizes and nd2_file.sizes['P'] > 1
+    is_t='T' in nd2_file.sizes and nd2_file.sizes['T'] > 1
+
+    multipoint_axis = ['P']
+    if is_v and is_t:
+        print('Warning: multipoint time-lapse data detected. Only the first time point will be loaded.')
+    elif is_t:
+        multipoint_axis=['T']
+
+    for axis in multipoint_axis+['Z', 'C']:
+        if axis in nd2_file.sizes:
+            shape.append(nd2_file.sizes[axis])
+        else:
+            shape.append(1)  # Default to 1 if the axis is not in the ND2 file
+
+    img_shape = nd2_file.shape[-2:]  # (Y, X)
+    shape.extend(img_shape)  # Append (Y, X) to the shape
+    return tuple(shape)
+
+def read_nd2(nd2_file):
+    # Open ND2 file with ND2Reader
+    shape = read_nd2_shape(nd2_file)
+    placeholder_shape = (shape[0], shape[1])  # Only (T, Z, C)
+    n_images=shape[0]*shape[1]
+
+    # Lazy load structure (T, Z, C)
+    placeholder = np.array([lambda i=i: nd2_file.read_frame(i) for i in range(n_images)]).reshape(placeholder_shape)
+
+    return placeholder
+
+def nd2_frame(placeholder, v=0, z=0):
+    # Load specific frame lazily
+    img = placeholder[v, z]()
+    if img.ndim==2:
+        return img
+    elif img.ndim==3:
+        if img.shape[0]!=3:
+            print(f'Warning: unexpected number of color channels {img.shape[0]}')
+        img=img.transpose(1, 2, 0)
+    else:
+        print(f'Warning: unexpected number of dimensions {img.ndim}. Expected 2 (mono) or 3 (RGB).')
+
+    return img
+
+def nd2_zstack(placeholder, v=0):
+    zstack=np.array([a() for a in placeholder[v]])
+    if zstack.ndim==3: # mono z stack
+        return zstack
+    elif zstack.ndim==4:
+        zstack=zstack.transpose(0,2,3,1)
+        if zstack.shape[-1]!=3:
+            print(f'Warning: unexpected number of color channels {zstack.shape[-1]}')
+    else:
+        print(f'Warning: unexpected number of dimensions {zstack.ndim}. Expected 3 (mono) or 4 (RGB).')
+
+    return zstack
 
 #----------Creating Segmentation Objects--------------------
 from segmentation_tools.segmented_comprehension import SegmentedStack, SuspendedStack, TimeStack, SegmentedImage, HeightMap

@@ -2769,21 +2769,32 @@ class MainWidget(QMainWindow):
         return t
 
     def auto_range_sliders(self):
+        print('checkpoint a')
         if self.is_grayscale:
             n_colors=1
         else:
             n_colors=3
+        print('checkpoint b')
 
+        print(self.is_zstack)
         if self.is_zstack:
             all_imgs=np.array([frame.zstack for frame in self.stack.frames]).reshape(-1, n_colors)
         else:
+            print('checkpoint b.1')
+            print(self.stack.frames[0].img)
+            print(n_colors)
+            print('checkpoint b.2')
             all_imgs=np.array([frame.img for frame in self.stack.frames]).reshape(-1, n_colors)
+        print('checkpoint c')
+        
         if len(all_imgs)>1e6:
             # downsample to speed up calculation
             all_imgs=all_imgs[::len(all_imgs)//int(1e6)]
+        print('checkpoint d')
         stack_range=np.array([np.min(all_imgs, axis=0), np.max(all_imgs, axis=0)]).T
         self.stack.min_max=stack_range
         self.set_LUT_slider_ranges(stack_range)
+        print('checkpoint e')
 
     def open_stack(self, files):
         self.stack, tracked_centroids=self.load_files(files)
@@ -2823,6 +2834,8 @@ class MainWidget(QMainWindow):
         else:
             self.frame_slider.setVisible(False)
 
+        print('checkpoint 1')
+
         self.frame_slider.setRange(0, len(self.stack.frames)-1)
         self.change_current_frame(0, reset=True) # call frame update explicitly (in case the slider value was already at 0)
 
@@ -2840,13 +2853,17 @@ class MainWidget(QMainWindow):
         else:
             raise ValueError(f'Image has {self.frame.img.ndim} dimensions, must be 2 (grayscale) or 3 (RGB).')
 
+        print('checkpoint 2')
         self.canvas.img_plot.autoRange()
+        print('checkpoint 3')
 
         # set slider ranges
         self.auto_range_sliders()
+        print('checkpoint 4')
 
         # reset visual settings
         self.saved_visual_settings=[self.get_visual_settings() for _ in range(4)]
+        print('checkpoint 5')
         
     def open_files(self):
         files = QFileDialog.getOpenFileNames(self, 'Open segmentation file', filter='*seg.npy')[0]
@@ -2900,21 +2917,37 @@ class MainWidget(QMainWindow):
 
         elif len(nd2_files)>0: # nd2 files
             from nd2 import ND2File
-            from segmentation_tools.io import read_nd2, nd2_zstack, nd2_frame
+            from segmentation_tools.io import read_nd2, nd2_zstack, nd2_frame, read_nd2_shape
             from pathlib import Path
 
             frames=[]
             for file_path in self.progress_bar(nd2_files):
                 with ND2File(file_path) as nd2:
+                    shape=read_nd2_shape(nd2)
+                    
+                    self.shape_dialog = ND2ShapeDialog(shape)
+                    if self.shape_dialog.exec_() == QDialog.Accepted:
+                        try:
+                            t_bounds, z_bounds, c_bounds=self.shape_dialog.get_selected_ranges()
+                        except ValueError as e:
+                            print(f"Error: {e}")
+                    else:
+                        return False, None
+
                     nd2_file=read_nd2(nd2)
                     file_stem=Path(file_path).stem
                     file_parent=Path(file_path).parent
-                    for v in self.progress_bar(range(len(nd2_file))): # iterate over frames
+                    print(nd2_file.shape)
+                    for v in self.progress_bar(t_bounds): # iterate over frames
                         if nd2_file.shape[1]>1: # z-stack
-                            img=nd2_zstack(nd2_file, v=v)
+                            img=nd2_zstack(nd2_file, v=v)[z_bounds]
+                            if img.ndim==4:
+                                img=img[..., c_bounds]
                             frames.append(segmentation_from_zstack(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
                         else:
-                            img=nd2_frame(nd2_file, v=v)
+                            img=nd2_frame(nd2_file, v=v, z=0)
+                            if img.ndim==3:
+                                img=img[..., c_bounds]
                             frames.append(segmentation_from_img(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
             stack=SegmentedStack(from_frames=frames)
             self.file_loaded = True
@@ -2963,10 +2996,111 @@ class MainWidget(QMainWindow):
 
     def closeEvent(self, event):
         # Close the command line window when the main window is closed
+        if hasattr(self, 'shape_dialog'):
+            self.shape_dialog.close()
         if hasattr(self, 'cli_window'):
             self.cli_window.close()
         event.accept()
+class ND2ShapeDialog(QDialog):
+    def __init__(self, nd2_shape, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Load ND2 file...")
+        self.nd2_shape = nd2_shape
+        self.setMinimumWidth(300)
+        self.subset_ranges = {}
+        
+        # Main layout
+        main_layout = QVBoxLayout()
+        
+        # Form layout for dimension inputs
+        form_layout = QFormLayout()
+        self.line_edits = {}
+        dimensions = ['T', 'Z', 'C']
+        
+        for i, dim in enumerate(dimensions):
+            range_edit = QLineEdit()
+            range_edit.setPlaceholderText("All")
+            range_edit.setText("")
+            
+            # Keep reference to the line edit for later
+            self.line_edits[dim] = range_edit
+            
+            # Create label with range information
+            label = f"{dim} (0 - {nd2_shape[i] - 1})"
+            
+            # Add row to form layout
+            form_layout.addRow(label, range_edit)
+        
+        # Add form layout to main layout
+        main_layout.addLayout(form_layout)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Cancel")
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        main_layout.addLayout(button_layout)
+        
+        ok_button.clicked.connect(self.accept)
+        cancel_button.clicked.connect(self.reject)
+        self.setLayout(main_layout)
 
+        # Set focus to this window
+        self.activateWindow()
+    
+    def parse_range(self, range_str, max_value):
+        """Parse a range string into a list of indices."""
+        # Handle empty string or "All" case
+        range_str = range_str.strip()
+        if not range_str or range_str.lower() == "all":
+            return list(range(max_value))
+            
+        indices = []
+        try:
+            # Split by comma and handle each part
+            parts = [p.strip() for p in range_str.split(',')]
+            for part in parts:
+                if '-' in part:
+                    # Handle range (e.g., "1-5")
+                    start, end = map(int, part.split('-'))
+                    if start < 0 or end >= max_value:
+                        raise ValueError(f"Values must be between 0 and {max_value-1}")
+                    if start>end:
+                        # reversed range
+                        indices.update(reversed(range(end, start + 1)))
+                    else:
+                        indices.update(range(start, end + 1))
+                else:
+                    # Handle single number
+                    num = int(part)
+                    if num < 0 or num >= max_value:
+                        raise ValueError(f"Values must be between 0 and {max_value-1}")
+                    indices.append(num)
+            return indices
+        except ValueError as e:
+            raise ValueError(f"Invalid range format: {e}")
+    
+    def get_selected_ranges(self):
+        """Get the selected ranges for each dimension."""
+        ranges = {}
+        try:
+            for dim, line_edit in self.line_edits.items():
+                dim_idx = ['T', 'Z', 'C'].index(dim)
+                max_value = self.nd2_shape[dim_idx]
+                indices = self.parse_range(line_edit.text(), max_value)
+                ranges[dim] = indices
+            
+            # Convert to slice objects or lists based on whether the selection is contiguous
+            slices = [np.array(ranges[dim]) for dim in ['T', 'Z', 'C']]
+            
+            print(slices)
+            return tuple(slices)
+        
+        except ValueError as e:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid Input", str(e))
+            return None
 class FineScrubQRangeSlider(QRangeSlider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

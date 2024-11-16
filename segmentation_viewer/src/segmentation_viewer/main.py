@@ -945,7 +945,7 @@ class MainWidget(QMainWindow):
         frame.has_outlines=False
         frame.outlines=utils.masks_to_outlines(frame.masks)
         frame.n_cells=np.max(frame.masks)
-        frame.cells = np.array([Cell(n, [], frame_number=frame.frame_number) for n in range(frame.n_cells)])
+        frame.cells = np.array([Cell(n, np.empty((0,2)), frame_number=frame.frame_number) for n in range(frame.n_cells)])
         if hasattr(frame, 'stored_mask_overlay'):
             del frame.stored_mask_overlay
 

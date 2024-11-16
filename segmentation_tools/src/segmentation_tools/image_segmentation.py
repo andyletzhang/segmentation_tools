@@ -4,9 +4,11 @@ from skimage import io
 from tqdm.notebook import tqdm
 import numpy as np
 from pathlib import Path
-from segmentation_tools.io import get_nd2_zstack, get_nd2_RGB
+from segmentation_tools.io import read_nd2, nd2_frame, nd2_zstack
 from segmentation_tools.heightmap import get_heights
-from nd2reader import ND2Reader
+from nd2 import ND2File
+
+# TODO: fix nd2 segmentation to work with new io
 
 def segment_FUCCI_zstack_ometiff(RGB_path, zstack_path, output_path, label, bottom_slice, peak_prominence=0.004, **kwargs):
     RGB_imgs=io.imread(RGB_path)

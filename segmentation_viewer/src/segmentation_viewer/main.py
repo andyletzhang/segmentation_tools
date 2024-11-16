@@ -1801,6 +1801,7 @@ class MainWidget(QMainWindow):
         self.normalize()
 
     def normalize(self):
+        # TODO: mask nan slices
         if self.canvas.img_data.ndim==2: # single channel
             colors=1
         else:
@@ -1871,14 +1872,15 @@ class MainWidget(QMainWindow):
         self.plot_particle_statistic()
 
         self.canvas.clear_selection_overlay()
+        cell_attrs_label=''
         if self.selected_cell_n is not None: # basic selection, not cell cycle classification
             self.canvas.add_cell_highlight(self.selected_cell_n)
-            labels=list(self.cell_scalar_attrs(self.selected_cell))
-            attrs=[getattr(self.selected_cell, attr) for attr in labels]
-            cell_attrs_label=create_html_table(labels, attrs)
-            self.cell_properties_label.setText(cell_attrs_label)
-        else:
-            self.cell_properties_label.setText('')
+            if len(self.selected_cell.outline)>0:
+                labels=sorted(self.cell_scalar_attrs(self.selected_cell))
+                attrs=[getattr(self.selected_cell, attr) for attr in labels]
+                cell_attrs_label=create_html_table(labels, attrs)
+        
+        self.cell_properties_label.setText(cell_attrs_label)
 
 
     def clear_particle_statistic(self):

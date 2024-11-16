@@ -3048,6 +3048,7 @@ class ND2ShapeDialog(QDialog):
 
         # Set focus to this window
         self.activateWindow()
+        self.raise_()
     
     def parse_range(self, range_str, max_value):
         """Parse a range string into a list of indices."""
@@ -3068,9 +3069,9 @@ class ND2ShapeDialog(QDialog):
                         raise ValueError(f"Values must be between 0 and {max_value-1}")
                     if start>end:
                         # reversed range
-                        indices.update(reversed(range(end, start + 1)))
+                        indices.extend(reversed(range(end, start + 1)))
                     else:
-                        indices.update(range(start, end + 1))
+                        indices.extend(range(start, end + 1))
                 else:
                     # Handle single number
                     num = int(part)
@@ -3094,7 +3095,6 @@ class ND2ShapeDialog(QDialog):
             # Convert to slice objects or lists based on whether the selection is contiguous
             slices = [np.array(ranges[dim]) for dim in ['T', 'Z', 'C']]
             
-            print(slices)
             return tuple(slices)
         
         except ValueError as e:

@@ -313,7 +313,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         current_attr=self.seg_overlay_attr.currentText()
-        items=['none']
+        items=[]
         if hasattr(self.frame, 'heights'):
             items.append('heights')
 
@@ -323,6 +323,7 @@ class MainWidget(QMainWindow):
                 common_attrs=common_attrs.intersection(set(dir(cell)))
             items.extend(list(common_attrs))
 
+        items=['none']+sorted(items)
         self.seg_overlay_attr.blockSignals(True)
         self.seg_overlay_attr.clear()
         self.seg_overlay_attr.addItems(items)
@@ -348,7 +349,11 @@ class MainWidget(QMainWindow):
         
         else:
             if plot_attr=='heights':
-                stat=np.concatenate([frame.heights.flatten() for frame in self.stack.frames])
+                stat=[]
+                for frame in self.stack.frames:
+                    if hasattr(frame, 'heights'):
+                        stat.append(frame.heights.flatten())
+                stat=np.concatenate(stat)
             else:
                 cell_attrs=[]
                 for frame in self.stack.frames:
@@ -754,7 +759,7 @@ class MainWidget(QMainWindow):
         else:
             frames=[self.frame]
         
-        for frame in frames:
+        for frame in self.progress_bar(frames):
             frame.masks=utils.remove_edge_masks(frame.masks)
             self.replace_segmentation(frame)
         

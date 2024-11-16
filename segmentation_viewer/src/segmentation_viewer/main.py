@@ -6,7 +6,7 @@ import os
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QComboBox, QPushButton, QRadioButton, QInputDialog, QMessageBox,
-    QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog,
+    QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog, QSpinBox, QDialog,
     QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter, QProgressBar, QScrollArea
 )
 from PyQt6.QtCore import Qt, QPointF, QSize, pyqtSignal
@@ -28,6 +28,7 @@ from tqdm import tqdm
 # TODO: lazy loading
 # TODO: add mouse and keyboard shortcuts to interface
 # TODO: normalize the summed channels when show_grayscale
+# TODO: File -> export heights tif, import heights tif
 
 # TODO: get_mitoses, visualize mitoses, edit mitoses
 
@@ -210,16 +211,19 @@ class MainWidget(QMainWindow):
                 self.dropdownOpened.emit()
                 super().showPopup()  # Call the original showPopup method
 
-        self.frame_stat_tab=QWidget()
-        stat_tab_layout=QVBoxLayout(self.frame_stat_tab)
-        stat_tab_layout.setSpacing(10)
-        stat_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        stat_tab_layout=QSplitter()
+        stat_tab_layout.setOrientation(Qt.Orientation.Vertical)
         # TODO: this and the particle plot should have dropdowns instead of titles which specify the statistic
         self.histogram=pg.PlotWidget(title='Cell Volume Histogram', background='transparent')
         self.histogram.setMinimumHeight(200)
+        self.histogram.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.histogram.setLabel('bottom', 'Volume', 'µm³')
         self.histogram.setLabel('left', 'P(V)', '')
         self.histogram.showGrid(x=True, y=True)
+
+        frame_stat_widget=QWidget()
+        frame_stat_layout=QVBoxLayout(frame_stat_widget)
+        frame_stat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         seg_overlay_layout=QHBoxLayout()
         self.seg_overlay_label=QLabel("Overlay Statistic:", self)
@@ -243,10 +247,11 @@ class MainWidget(QMainWindow):
         slider_layout, self.stat_LUT_slider, self.stat_range_labels=self.labeled_LUT_slider(default_range=(0, 255))
 
         stat_tab_layout.addWidget(self.histogram)
-        stat_tab_layout.addLayout(seg_overlay_layout)
-        stat_tab_layout.addWidget(normalize_label)
-        stat_tab_layout.addWidget(normalize_widget)
-        stat_tab_layout.addLayout(slider_layout)
+        frame_stat_layout.addLayout(seg_overlay_layout)
+        frame_stat_layout.addWidget(normalize_label)
+        frame_stat_layout.addWidget(normalize_widget)
+        frame_stat_layout.addLayout(slider_layout)
+        stat_tab_layout.addWidget(frame_stat_widget)
 
         self.seg_overlay_attr.dropdownOpened.connect(self.get_overlay_attrs)
         self.seg_overlay_attr.activated.connect(self.new_seg_overlay)
@@ -255,7 +260,8 @@ class MainWidget(QMainWindow):
         self.stat_frame_button.toggled.connect(self.update_stat_LUT)
         self.stat_stack_button.toggled.connect(self.update_stat_LUT)
         self.stat_custom_button.toggled.connect(self.update_stat_LUT)
-        return self.frame_stat_tab
+        stat_tab_layout.setSizes([200, 400])
+        return stat_tab_layout
 
     def stat_LUT_slider_changed(self):
         self.stat_custom_button.blockSignals(True)
@@ -416,15 +422,15 @@ class MainWidget(QMainWindow):
         self.canvas.seg_stat_overlay.clear()
 
     def get_particle_stat_tab(self):
-        self.particle_stat_tab=QWidget()
-        stat_tab_layout=QVBoxLayout(self.particle_stat_tab)
+        stat_tab_layout=QSplitter()
+        stat_tab_layout.setOrientation(Qt.Orientation.Vertical)
         self.particle_stat_plot=pg.PlotWidget(title='Tracked Cell Statistics', background='transparent')
         self.particle_stat_plot.setMinimumHeight(200)
         self.particle_stat_plot.setLabel('bottom', 'Frame')
         self.stat_plot_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
         self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
 
-        particle_stat_selection_widget=QWidget(objectName='bordered')
+        particle_stat_selection_widget=QWidget()
         particle_stat_selection_layout=QVBoxLayout(particle_stat_selection_widget)
         particle_stat_selection_layout.setSpacing(0)
         particle_stat_selection_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -440,6 +446,7 @@ class MainWidget(QMainWindow):
 
         stat_tab_layout.addWidget(self.particle_stat_plot)
         stat_tab_layout.addWidget(particle_stat_selection_widget)
+        stat_tab_layout.setSizes([200, 400])
 
         # connect particle measurements
         self.area_button.toggled.connect(self.plot_particle_statistic)
@@ -447,7 +454,7 @@ class MainWidget(QMainWindow):
         self.circularity_button.toggled.connect(self.plot_particle_statistic)
         self.cell_cycle_button.toggled.connect(self.plot_particle_statistic)
 
-        return self.particle_stat_tab
+        return stat_tab_layout
 
     def get_left_toolbar(self):
         open_menu=QHBoxLayout()

@@ -412,13 +412,11 @@ class RGB_ImageItem():
         self.setLookupTable('RGB')
 
         self.show_grayscale=False
-        self.is_grayscale=False
         self.toggle_grayscale()
     
     def setImage(self, img_data):
         self.img_data=img_data
         if img_data.ndim==2:
-            self.is_grayscale=True
             self.red.setImage(self.img_data)
             self.green.clear()
             self.blue.clear()

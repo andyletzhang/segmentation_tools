@@ -12,31 +12,31 @@ except ImportError:
     print("GPU acceleration not available. Install CuPy and ensure CUDA is properly set up.")
 
 @cuda.jit
-def find_peaks_gpu(derivative2, heights, prominence):
+def find_peaks_gpu(zstack_derivative, heights, prominence):
     x, y = cuda.grid(2)
-    if x < derivative2.shape[1] and y < derivative2.shape[2]:
+    if x < zstack_derivative.shape[1] and y < zstack_derivative.shape[2]:
         last_peak = 0
-        for i in range(1, derivative2.shape[0]-1):
-            if (derivative2[i, x, y] > derivative2[i-1, x, y] and 
-                derivative2[i, x, y] > derivative2[i+1, x, y]):
+        for i in range(1, zstack_derivative.shape[0]-1):
+            if (zstack_derivative[i, x, y] > zstack_derivative[i-1, x, y] and 
+                zstack_derivative[i, x, y] > zstack_derivative[i+1, x, y]):
                 
                 # Check prominence
-                min_val = derivative2[i, x, y]
-                for j in range(max(0, i-1), min(derivative2.shape[0], i+2)):
-                    if derivative2[j, x, y] < min_val:
-                        min_val = derivative2[j, x, y]
+                min_val = zstack_derivative[i, x, y]
+                for j in range(max(0, i-1), min(zstack_derivative.shape[0], i+2)):
+                    if zstack_derivative[j, x, y] < min_val:
+                        min_val = zstack_derivative[j, x, y]
                 
-                if derivative2[i, x, y] - min_val >= prominence:
+                if zstack_derivative[i, x, y] - min_val >= prominence:
                     last_peak = i
         
         heights[x, y] = last_peak
 
-def process_zstack_gpu(zstack, prominence=0.004):
+def process_zstack_gpu(zstack, prominence=0.004, sigma=6):
     # Move data to GPU
     zstack_gpu = cp.asarray(zstack)
     zstack_gpu = normalize_gpu(zstack_gpu)
-    zstack_gpu = cp_ndimage.gaussian_filter(zstack_gpu, sigma=(0,6,6))
-    # Calculate second derivative
+    zstack_gpu = cp_ndimage.gaussian_filter(zstack_gpu, sigma=(0,sigma,sigma))
+    # Calculate derivative
     derivative_gpu = cp.gradient(zstack_gpu, axis=0)
     
     # Prepare output array

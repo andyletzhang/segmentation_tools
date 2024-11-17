@@ -162,10 +162,9 @@ class MainWidget(QMainWindow):
     def get_right_toolbar(self):
         self.stat_tabs=QTabWidget()
         self.stat_tabs.addTab(self.get_frame_stat_tab(), "Frame")
-        self.stat_tabs.addTab(self.get_particle_stat_tab(), "Particle") # TODO: aspect ratio plot doesn't show up with the proper initial width in the hidden tab
+        self.stat_tabs.addTab(self.get_particle_stat_tab(), "Particle")
 
         cell_ID_widget=QWidget(objectName='bordered')
-        #cell_ID_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.cell_ID_layout=QFormLayout(cell_ID_widget)
         selected_cell_label=QLabel("Cell ID:", self)
         self.selected_cell_prompt=QLineEdit(self, placeholderText='None')
@@ -739,6 +738,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         from segmentation_tools.preprocessing import mend_gaps
+        from cellpose import utils as cp_utils
         if self.segment_on_stack.isChecked():
             frames=self.stack.frames
         else:
@@ -748,8 +748,21 @@ class MainWidget(QMainWindow):
         for frame in frames:
             if gap_size=='':
                 gap_size=frame.mean_cell_area(scaled=False)/2 # default to half the mean cell area
-            frame.masks, _=mend_gaps(frame.masks, gap_size)
-            self.replace_segmentation(frame)
+            new_masks, mended=mend_gaps(frame.masks, gap_size)
+
+            if mended:
+                changed_cells=np.unique(new_masks[new_masks!=frame.masks])
+                changed_masks=np.zeros_like(frame.masks, dtype=int)
+                changed_masks_bool=np.isin(new_masks, changed_cells)
+                changed_masks[changed_masks_bool]=new_masks[changed_masks_bool]
+                outlines_list=cp_utils.outlines_list(changed_masks)
+                for cell, o in zip(frame.cells[changed_cells], outlines_list):
+                    cell.outline=o
+                    cell.get_centroid()
+
+                frame.masks=new_masks
+                frame.outlines=cp_utils.masks_to_outlines(frame.masks)
+                del frame.stored_mask_overlay
         
         self.update_display()
 
@@ -2198,7 +2211,7 @@ class MainWidget(QMainWindow):
         if frame is None:
             frame=self.frame
 
-        if frame==self.frame:
+        if frame==self.frame: # remove the cell mask from the mask overlay
             self.canvas.add_cell_highlight(cell_n, alpha=0.5, color='none', img_type='outlines', layer='mask')
         
         self.remove_tracking_data(cell_n, frame_number=frame.frame_number)

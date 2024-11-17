@@ -751,6 +751,38 @@ class SegmentedImage:
             self.cells=self.cells[new_indices]
             self.cells[cell_number].n=cell_number
 
+    def delete_cells(self, cell_numbers):
+        '''deletes multiple cells from the image.'''
+        # remove masks
+        to_clear=np.isin(self.masks, cell_numbers+1)
+        #self.masks[to_clear]=0
+
+        # remove outlines
+        #self.outlines[to_clear]=False
+
+        cell_numbers=np.array(cell_numbers)
+        cell_numbers.sort()
+
+        keep_mask=np.ones(len(self.cells), dtype=bool)
+        keep_mask[cell_numbers]=False
+
+        old_labels=np.arange(len(self.cells))+1
+        new_labels=np.zeros_like(old_labels)
+        new_labels[keep_mask]=np.arange(1, keep_mask.sum()+1)
+
+        lookup=np.zeros(len(self.cells)+1, dtype=int)
+        lookup[old_labels]=new_labels
+
+        
+        # Update masks using lookup table
+        self.masks = lookup[self.masks]
+        
+        # Update cells array
+        self.cells = self.cells[keep_mask]
+        
+        self.n_cells=len(self.cells)
+        self.set_cell_attrs('n', range(self.n_cells)) # renumber cells
+
 
     # ------------FUCCI----------------        
     def measure_FUCCI(self, percent_threshold=0.15, red_fluor_threshold=None, green_fluor_threshold=None, orange_brightness=1.5, threshold_offset=0, noise_score=0.02):

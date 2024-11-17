@@ -733,19 +733,16 @@ class MainWidget(QMainWindow):
         self.select_cell(particle=particle)
 
     def mend_gaps(self):
-        # TODO: can pull this off without replace_segmentation via a series of merges.
-        # perhaps slower, but preserves tracking and coloration.
         if not self.file_loaded:
             return
         from segmentation_tools.preprocessing import mend_gaps
-        from cellpose import utils as cp_utils
         if self.segment_on_stack.isChecked():
             frames=self.stack.frames
         else:
             frames=[self.frame]
         
         gap_size=self.gap_size.text()
-        for frame in frames:
+        for frame in self.progress_bar(frames):
             if gap_size=='':
                 gap_size=frame.mean_cell_area(scaled=False)/2 # default to half the mean cell area
             new_masks, mended=mend_gaps(frame.masks, gap_size)
@@ -755,20 +752,18 @@ class MainWidget(QMainWindow):
                 changed_masks=np.zeros_like(frame.masks, dtype=int)
                 changed_masks_bool=np.isin(new_masks, changed_cells)
                 changed_masks[changed_masks_bool]=new_masks[changed_masks_bool]
-                outlines_list=cp_utils.outlines_list(changed_masks)
+                outlines_list=utils.outlines_list(changed_masks)
                 for cell, o in zip(frame.cells[changed_cells], outlines_list):
                     cell.outline=o
                     cell.get_centroid()
 
                 frame.masks=new_masks
-                frame.outlines=cp_utils.masks_to_outlines(frame.masks)
+                frame.outlines=utils.masks_to_outlines(frame.masks)
                 del frame.stored_mask_overlay
         
         self.update_display()
 
     def remove_edge_masks(self):
-        # TODO: can pull this off without replace_segmentation via a series of deletions.
-        # perhaps slower, but preserves tracking and coloration.
         if not self.file_loaded:
             return
         if self.segment_on_stack.isChecked():
@@ -776,11 +771,35 @@ class MainWidget(QMainWindow):
         else:
             frames=[self.frame]
         
-        for frame in self.progress_bar(frames):
-            frame.masks=utils.remove_edge_masks(frame.masks)
-            self.replace_segmentation(frame)
-        
-        self.update_display()
+        for frame in frames:
+            top=frame.masks[0]
+            bottom=frame.masks[-1]
+            left=frame.masks[1:-1,0]
+            right=frame.masks[1:-1,-1]
+            edge_cells=np.unique(np.concatenate([top, bottom, left, right]))
+            edge_cells=edge_cells[edge_cells!=0] # remove background
+
+            edge_cells-=1 # convert to 0-indexed
+            if len(edge_cells)>0:
+                for cell in edge_cells:
+                    self.remove_tracking_data(cell, frame_number=frame.frame_number)
+
+                frame.delete_cells(edge_cells)
+                
+                #frame.masks[changed_masks_bool]=0
+                frame.outlines=utils.masks_to_outlines(frame.masks)
+
+                print(f'Removed {len(edge_cells)} edge masks')
+                del frame.stored_mask_overlay
+                
+                if frame==self.frame:
+                    if self.selected_cell_n in edge_cells:
+                        # deselect the removed cell if it was selected
+                        self.select_cell(None)
+                    self.canvas.draw_outlines()
+                    self.highlight_track_ends()
+                    self.update_display()
+                    self.update_ROIs_label()
     
     def update_cell_diameter(self, diameter):
         self.draw_cell_diameter(diameter)
@@ -2175,7 +2194,6 @@ class MainWidget(QMainWindow):
         self.highlight_track_ends()
         self.canvas.draw_outlines()
         self.select_cell(cell=cell_n1)
-        self.plot_particle_statistic()
         self.update_ROIs_label()
         self.update_display()
 
@@ -2207,7 +2225,7 @@ class MainWidget(QMainWindow):
             frame.has_outlines=True
         self.statusBar().showMessage(f'Generated outlines.', 1000)
 
-    def delete_cell_mask(self, cell_n, frame=None):
+    def delete_cell_mask(self, cell_n, frame=None, update_display=True):
         if frame is None:
             frame=self.frame
 
@@ -2216,17 +2234,17 @@ class MainWidget(QMainWindow):
         
         self.remove_tracking_data(cell_n, frame_number=frame.frame_number)
         frame.delete_cell(cell_n)
-        print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
 
-        if frame==self.frame:
-            if self.selected_cell_n==cell_n:
-                # deselect the removed cell if it was selected
-                self.select_cell(None)
-                self.plot_particle_statistic() # clear the particle statistic plot
-            self.canvas.draw_outlines()
-            self.highlight_track_ends()
-            self.update_display()
-            self.update_ROIs_label()
+        if update_display:
+            print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
+            if frame==self.frame:
+                if self.selected_cell_n==cell_n:
+                    # deselect the removed cell if it was selected
+                    self.select_cell(None)
+                self.canvas.draw_outlines()
+                self.highlight_track_ends()
+                self.update_display()
+                self.update_ROIs_label()
 
     def remove_tracking_data(self, cell_number, frame_number=None):
         ''' Remove a cell from one frame of the tracking data. Renumber the cell numbers in the frame to align with the new cell masks. '''
@@ -2309,7 +2327,7 @@ class MainWidget(QMainWindow):
             if file_path=='':
                 return
             if not file_path.endswith('_seg.npy'):
-                file_path=file_path[:-4]+'_seg.npy'
+                file_path=file_path+'_seg.npy'
             self.save_frame(self.frame, file_path)
 
     def save_frame(self, frame, file_path=None):

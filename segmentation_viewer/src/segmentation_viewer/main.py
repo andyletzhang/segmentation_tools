@@ -22,7 +22,6 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
-# TODO: self.is_grayscale should be self.frame.is_grayscale
 # TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
 # TODO: number of neighbors
 # TODO: lazy loading
@@ -2769,32 +2768,22 @@ class MainWidget(QMainWindow):
         return t
 
     def auto_range_sliders(self):
-        print('checkpoint a')
         if self.is_grayscale:
             n_colors=1
         else:
             n_colors=3
-        print('checkpoint b')
 
-        print(self.is_zstack)
         if self.is_zstack:
             all_imgs=np.array([frame.zstack for frame in self.stack.frames]).reshape(-1, n_colors)
         else:
-            print('checkpoint b.1')
-            print(self.stack.frames[0].img)
-            print(n_colors)
-            print('checkpoint b.2')
             all_imgs=np.array([frame.img for frame in self.stack.frames]).reshape(-1, n_colors)
-        print('checkpoint c')
         
         if len(all_imgs)>1e6:
             # downsample to speed up calculation
             all_imgs=all_imgs[::len(all_imgs)//int(1e6)]
-        print('checkpoint d')
         stack_range=np.array([np.min(all_imgs, axis=0), np.max(all_imgs, axis=0)]).T
         self.stack.min_max=stack_range
         self.set_LUT_slider_ranges(stack_range)
-        print('checkpoint e')
 
     def open_stack(self, files):
         self.stack, tracked_centroids=self.load_files(files)
@@ -2834,8 +2823,6 @@ class MainWidget(QMainWindow):
         else:
             self.frame_slider.setVisible(False)
 
-        print('checkpoint 1')
-
         self.frame_slider.setRange(0, len(self.stack.frames)-1)
         self.change_current_frame(0, reset=True) # call frame update explicitly (in case the slider value was already at 0)
 
@@ -2853,17 +2840,13 @@ class MainWidget(QMainWindow):
         else:
             raise ValueError(f'Image has {self.frame.img.ndim} dimensions, must be 2 (grayscale) or 3 (RGB).')
 
-        print('checkpoint 2')
         self.canvas.img_plot.autoRange()
-        print('checkpoint 3')
 
         # set slider ranges
         self.auto_range_sliders()
-        print('checkpoint 4')
 
         # reset visual settings
         self.saved_visual_settings=[self.get_visual_settings() for _ in range(4)]
-        print('checkpoint 5')
         
     def open_files(self):
         files = QFileDialog.getOpenFileNames(self, 'Open segmentation file', filter='*seg.npy')[0]
@@ -2943,11 +2926,15 @@ class MainWidget(QMainWindow):
                             img=nd2_zstack(nd2_file, v=v)[z_bounds]
                             if img.ndim==4:
                                 img=img[..., c_bounds]
+                                if img.shape[-1]==2: # add a blank channel if only 2 channels are present
+                                    img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
                             frames.append(segmentation_from_zstack(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
-                        else:
+                        else: # single frame
                             img=nd2_frame(nd2_file, v=v, z=0)
                             if img.ndim==3:
                                 img=img[..., c_bounds]
+                                if img.shape[-1]==2: # add a blank channel if only 2 channels are present
+                                    img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
                             frames.append(segmentation_from_img(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
             stack=SegmentedStack(from_frames=frames)
             self.file_loaded = True
@@ -2969,9 +2956,15 @@ class MainWidget(QMainWindow):
                 for v in self.progress_bar(range(len(tif_file))):
                     if tif_file.shape[1]>1: # z-stack
                         img=tiffpage_zstack(tif_file, v=v)
+                        if img.ndim==4:
+                            if img.shape[-1]==2:
+                                img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
                         frames.append(segmentation_from_zstack(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
                     else:
                         img=tiffpage_frame(tif_file, v=v)
+                        if img.ndim==3:
+                            if img.shape[-1]==2:
+                                img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
                         frames.append(segmentation_from_img(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
             stack=SegmentedStack(from_frames=frames)
             self.file_loaded = True

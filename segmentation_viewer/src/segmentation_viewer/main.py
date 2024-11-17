@@ -384,10 +384,15 @@ class MainWidget(QMainWindow):
         else:
             self.canvas.cb.setVisible(True)
             if plot_attr=='heights':
+                if not hasattr(self.frame, 'heights'):
+                    self.seg_overlay_attr.setCurrentIndex(0)
+                    return
+                
                 if not hasattr(self.frame, 'z_scale'):
                     print(f'No z scale found for {self.frame.name}, defaulting to 1.')
                     self.z_size.setText('1.0')
                     self.update_voxel_size()
+
                 self.overlay_seg_stat(self.frame.scaled_heights)
             else:
                 try:

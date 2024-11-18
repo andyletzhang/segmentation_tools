@@ -36,30 +36,50 @@ def mend_gaps(masks, max_gap_size):
     cellpose sometimes leaves a few 0-pixels between segmented cells.
     this method finds gaps below the max gap size and fills them using their neighboring cell IDs.
     '''
-    # TODO: implement numba version of this function?
-    from statistics import multimode
-    from scipy.signal import convolve2d
-    mended_masks=masks.copy()
     background=ndimage.label(masks==0)[0]
     bg_labels, bg_counts=np.unique(background, return_counts=True)
     gap_labels=bg_labels[bg_counts<max_gap_size] # gaps below maximal spurious size
+    mended=len(gap_labels)>0
+
+    gap_mask=np.isin(background, gap_labels)
     
-    if len(gap_labels)!=0: # found at least one gap, proceed to mend (and subsequently overwrite the outlines channel, etc.)
-        for gap_label in gap_labels:
-            gap_pixels=np.array(np.where(background==gap_label))
-            while 0 in mended_masks[gap_pixels[0], gap_pixels[1]]: # still some pixels are empty
-                gap_pixels_bbox=np.array([gap_pixels.min(axis=1), gap_pixels.max(axis=1)]).T # bounding box of the gap
-                masks_ROI=mended_masks[gap_pixels_bbox[0,0]-1:gap_pixels_bbox[0,1]+2,gap_pixels_bbox[1,0]-1:gap_pixels_bbox[1,1]+2] # region of interest in the masks channel (zeroes the ROI at the top left corner)
-                gap_boundary=np.array(np.where((masks_ROI==0)&(convolve2d(masks_ROI!=0,[[0,1,0],[1,0,1],[0,1,0]])[1:-1,1:-1]>0))) # pixels on the edge of the gap: these will be filled with neighbors
-                gap_boundary=np.add(gap_boundary.T,np.array([gap_pixels_bbox[0,0]-1,gap_pixels_bbox[1,0]-1])) # transpose back to full image coordinates
-                for x,y in gap_boundary:
-                    neighbors=mended_masks[[x+1,x,x-1,x],[y,y+1,y,y-1]]
-                    fill_value=np.random.choice(multimode(neighbors[neighbors!=0]))
-                    mended_masks[x,y]=fill_value
-        mended=True
-    else:
-        mended=False
+    mended_masks=nearest_interpolation(masks, gap_mask)
+
     return mended_masks, mended
+
+from scipy.ndimage import distance_transform_edt
+def nearest_interpolation(arr, mask):
+    """
+    Interpolate values in an array by nearest non-zero values
+
+    Args:
+        arr: Input numpy array to draw values from
+        mask: Binary mask of values to be interpolated
+        
+    Returns:
+        Array with masked values replaced by nearest non-zero values
+    """
+    # Create mask of zero values    
+    if not np.any(mask):
+        return arr.copy()
+    
+    # Make a copy and set zeros to nan for distance transform
+    arr_nan = arr.copy().astype(float)
+    arr_nan[mask] = np.nan
+    
+    # Create a mask of non-nan values
+    non_nan_mask = ~np.isnan(arr_nan)
+    
+    # Initialize the output array
+    result = arr.copy()
+    
+    # Get indices of nearest non-zero points using distance transform
+    indices = distance_transform_edt(mask, return_distances=False, return_indices=True)
+    
+    # Use the indices to fill in the zero values
+    result[mask] = arr[tuple(indices[:,mask])]
+    
+    return result
 
 def gaussian_parallel(imgs, n_processes=8, progress_bar=None, sigma=5, **kwargs):
     p=Pool(processes=n_processes)

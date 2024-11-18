@@ -22,6 +22,7 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
+# TODO: remove edge masks on stack only removes from first two frames??
 # TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
 # TODO: number of neighbors
 # TODO: lazy loading
@@ -90,6 +91,10 @@ class MainWidget(QMainWindow):
         self.image_menu = self.menu_bar.addMenu("Image")
         self.image_menu.addAction(create_action("Reorder Channels", self.reorder_channels))
         #self.image_menu.addAction(create_action("Set Voxel Size", self.voxel_size_prompt))
+
+        # HELP
+        self.help_menu = self.menu_bar.addMenu("Help")
+        self.help_menu.addAction(create_action("Pull updates", self.update_packages))
 
         # Status bar
         self.status_cell=QLabel("Selected Cell: None", self)
@@ -202,6 +207,82 @@ class MainWidget(QMainWindow):
 
         return right_scroll_area
     
+    def update_packages(self):
+        """
+        Update segmentation_tools and segmentation_viewer packages from GitHub.
+        Pulls only the src directories and updates the local installations.
+        """
+        from segmentation_tools import __file__ as tools_file
+        from segmentation_viewer import __file__ as viewer_file
+        import tempfile
+        from pathlib import Path
+        import git
+        import shutil
+        
+        try:
+            # Get package directories
+            tools_src=Path(tools_file).parents[1]
+            viewer_src=Path(viewer_file).parents[1]
+            token_dir=Path(viewer_file).parents[1].parent/'token.txt'
+
+            with open(token_dir, 'r') as f:
+                GITHUB_TOKEN=f.read()
+            if not GITHUB_TOKEN:
+                raise ValueError("GitHub token not found in environment variables")
+            
+            # Paths to update in repo
+            paths_to_include = [
+                'segmentation_tools/src/*',
+                'segmentation_viewer/src/*'
+            ]
+            
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                tmp_path = Path(tmpdirname)
+                # Clone with sparse checkout
+                repo = git.Repo.init(tmp_path)
+                origin = repo.create_remote('origin', 
+                    f"https://{GITHUB_TOKEN}@github.com/andyletzhang/segmentation_tools.git")
+                
+                # Configure sparse checkout
+                config = repo.config_writer()
+                config.set_value('core', 'sparseCheckout', 'true')
+                
+                # Write paths to sparse-checkout file
+                sparse_checkout_path = Path(repo.git_dir) / 'info' / 'sparse-checkout'
+                sparse_checkout_path.parent.mkdir(exist_ok=True)
+                with open(sparse_checkout_path, 'w') as f:
+                    for path in paths_to_include:
+                        f.write(f"{path}\n")
+                
+                print("Pulling from GitHub...")
+                # Fetch and checkout
+                origin.fetch()
+                repo.git.checkout('origin/main')
+                
+                print(f'pulled to {tmp_path}')
+                # Copy files to appropriate locations
+                tools_src_tmp = tmp_path / 'segmentation_tools' / 'src'
+                viewer_src_tmp = tmp_path / 'segmentation_viewer' / 'src'
+
+                if not tools_src_tmp.exists():
+                    raise ValueError("segmentation_tools/src not found in repository")
+                if not viewer_src_tmp.exists():
+                    raise ValueError("segmentation_viewer/src not found in repository")
+                
+                # Copy using shutil.copytree with dirs_exist_ok=True
+                # This will merge/overwrite existing directories
+                shutil.copytree(tools_src_tmp, tools_src, dirs_exist_ok=True)
+                print("Updated segmentation_tools")
+                
+                shutil.copytree(viewer_src_tmp, viewer_src, dirs_exist_ok=True)
+                print("Updated segmentation_viewer")
+                
+                print("\nPackage update completed successfully!")
+                
+        except Exception as e:
+            QMessageBox.critical(self, 'Update Failed', 
+                                 f'Package update error: {str(e)}')
+
     def get_frame_stat_tab(self):
         class CustomComboBox(QComboBox):
             dropdownOpened=pyqtSignal()
@@ -754,14 +835,16 @@ class MainWidget(QMainWindow):
                 changed_masks=np.zeros_like(frame.masks, dtype=int)
                 changed_masks_bool=np.isin(new_masks, changed_cells)
                 changed_masks[changed_masks_bool]=new_masks[changed_masks_bool]
-                outlines_list=utils.outlines_list(changed_masks)
-                for cell, o in zip(frame.cells[changed_cells], outlines_list):
-                    cell.outline=o
-                    cell.get_centroid()
+                if frame.has_outlines:
+                    outlines_list=utils.outlines_list(changed_masks)
+                    for cell, o in zip(frame.cells[changed_cells], outlines_list):
+                        cell.outline=o
+                        cell.get_centroid()
 
                 frame.masks=new_masks
                 frame.outlines=utils.masks_to_outlines(frame.masks)
-                del frame.stored_mask_overlay
+                if hasattr(frame, 'stored_mask_overlay'):
+                    del frame.stored_mask_overlay
         
         self.update_display()
 
@@ -2124,35 +2207,38 @@ class MainWidget(QMainWindow):
         cell_mask=np.zeros_like(self.frame.masks, dtype=bool)
         cell_mask[enclosed_pixels[:,0], enclosed_pixels[:,1]]=True
         new_mask=cell_mask & (self.frame.masks==0)
-        self.new_mask=new_mask
-        if new_mask.sum()>4: # if the mask is larger than 4 pixels (minimum for cellpose to generate an outline)
-            self.frame.masks[new_mask]=new_mask_n+1
-            self.frame.n_cells+=1
-            print(f'Added cell {new_mask_n}')
 
-            cell_color_n=np.random.randint(0, self.canvas.cell_n_colors)
-            cell_color=self.canvas.cell_cmap(cell_color_n)
-            outline=utils.outlines_list(new_mask)[0]
-
-            self.frame.outlines[outline[:,1], outline[:,0]]=True
-            centroid=np.mean(enclosed_pixels, axis=0)
-            self.add_cell(new_mask_n, outline, color_ID=cell_color_n, frame_number=self.frame_number, red=False, green=False)
-
-            if hasattr(self.stack, 'tracked_centroids'):
-                t=self.stack.tracked_centroids
-                new_particle_ID=t['particle'].max()+1
-                new_particle=pd.DataFrame([[new_mask_n, centroid[0], centroid[1], self.frame_number, new_particle_ID, cell_color_n]], columns=t.columns, index=[len(t)])
-                self.stack.tracked_centroids=pd.concat([t, new_particle])
-                self.stack.tracked_centroids=self.stack.tracked_centroids.sort_values(['frame', 'particle'])
-
-            self.canvas.draw_outlines()
-            self.highlight_track_ends()
-            self.canvas.add_cell_highlight(new_mask_n, alpha=0.5, color=cell_color, layer='mask')
-
-            self.update_ROIs_label()
-            return True
-        else:
+        if new_mask.sum()<=4: # if the mask is larger than 4 pixels (minimum for cellpose to generate an outline)
             return False
+        
+        self.frame.masks[new_mask]=new_mask_n+1
+        self.frame.n_cells+=1
+        print(f'Added cell {new_mask_n}')
+
+        cell_color_n=np.random.randint(0, self.canvas.cell_n_colors)
+        cell_color=self.canvas.cell_cmap(cell_color_n)
+        if self.frame.has_outlines:
+            outline=utils.outlines_list(new_mask)[0]
+        else:
+            outline=np.empty((0,2), dtype=int)
+
+        self.frame.outlines[outline[:,1], outline[:,0]]=True
+        centroid=np.mean(enclosed_pixels, axis=0)
+        self.add_cell(new_mask_n, outline, color_ID=cell_color_n, frame_number=self.frame_number, red=False, green=False)
+
+        if hasattr(self.stack, 'tracked_centroids'):
+            t=self.stack.tracked_centroids
+            new_particle_ID=t['particle'].max()+1
+            new_particle=pd.DataFrame([[new_mask_n, centroid[0], centroid[1], self.frame_number, new_particle_ID, cell_color_n]], columns=t.columns, index=[len(t)])
+            self.stack.tracked_centroids=pd.concat([t, new_particle])
+            self.stack.tracked_centroids=self.stack.tracked_centroids.sort_values(['frame', 'particle'])
+
+        self.canvas.draw_outlines()
+        self.highlight_track_ends()
+        self.canvas.add_cell_highlight(new_mask_n, alpha=0.5, color=cell_color, layer='mask')
+
+        self.update_ROIs_label()
+        return True
         
     def add_cell(self, n, outline, color_ID=None, red=False, green=False, frame_number=None):
         if frame_number is None: frame_number=self.frame_number

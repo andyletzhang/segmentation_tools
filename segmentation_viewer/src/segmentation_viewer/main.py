@@ -22,6 +22,7 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
+# testing if update is working
 # TODO: remove edge masks on stack only removes from first two frames??
 # TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
 # TODO: number of neighbors
@@ -278,7 +279,7 @@ class MainWidget(QMainWindow):
                 print("Updated segmentation_viewer")
                 
                 print("\nPackage update completed successfully!")
-                
+
         except Exception as e:
             QMessageBox.critical(self, 'Update Failed', 
                                  f'Package update error: {str(e)}')

@@ -745,6 +745,8 @@ class MainWidget(QMainWindow):
         for frame in self.progress_bar(frames):
             if gap_size=='':
                 gap_size=frame.mean_cell_area(scaled=False)/2 # default to half the mean cell area
+            else:
+                gap_size=int(gap_size)
             new_masks, mended=mend_gaps(frame.masks, gap_size)
 
             if mended:

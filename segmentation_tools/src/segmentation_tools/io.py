@@ -164,20 +164,22 @@ def load_seg_npy(file_path, load_img=False, mend=False, max_gap_size=300):
     return data
 
 def segmentation_from_img(img, name, **kwargs):
+    img=img.copy()
     shape=img.shape[:2]
     outlines=np.zeros(shape, dtype=bool)
     masks=np.zeros(shape, dtype=np.uint16)
     data={'name':name,'img':img,'masks':masks,'outlines':outlines}
-    img=SegmentedImage(data, **kwargs)
-    return img
+    seg=SegmentedImage(data, **kwargs)
+    return seg
 
 def segmentation_from_zstack(zstack, name, **kwargs):
+    zstack=zstack.copy()
     shape=zstack.shape[1:3]
     outlines=np.zeros(shape, dtype=bool)
     masks=np.zeros(shape, dtype=np.uint16)
     data={'name':name,'zstack':zstack,'img':zstack[0],'masks':masks,'outlines':outlines}
-    img=SegmentedImage(data, **kwargs)
-    return img
+    seg=SegmentedImage(data, **kwargs)
+    return seg
 
 def convert_GUI_seg(seg, multiprocess=False, remove_edge_masks=True, mend=False, max_gap_size=20, export=False, out_path=None):
     ''' convert a segmentation image from the GUI to a format that can be used by the tracking algorithm '''

@@ -1473,6 +1473,7 @@ class MainWidget(QMainWindow):
             return
         self.zstack_number = zstack_number
         self.frame.img=self.frame.zstack[self.zstack_number]
+        self.update_coordinate_label()
         self.imshow()
         self.normalize()
 
@@ -1656,9 +1657,15 @@ class MainWidget(QMainWindow):
         self.stat_plot_frame_marker.setPos(self.frame_number)
         self.status_frame_number.setText(f'Frame: {frame_number}')
 
-    def update_coordinate_label(self, x, y):
+    def update_coordinate_label(self, x=None, y=None):
         ''' Update the status bar with the current cursor coordinates. '''
-        self.status_coordinates.setText(f"Coordinates: ({x}, {y})")
+        if x is None or y is None:
+            x, y=self.canvas.cursor_pixels
+
+        coordinates=f"{x}, {y}"
+        if hasattr(self, 'zstack_number'):
+            coordinates+=f", {self.zstack_number}"
+        self.status_coordinates.setText(f"Coordinates: ({coordinates})")
         pixel_value=self.get_pixel_value(x, y)
         if self.is_grayscale:
             pixel_string=f'Gray: {pixel_value[0]}'

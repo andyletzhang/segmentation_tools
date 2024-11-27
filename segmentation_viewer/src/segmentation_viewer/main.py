@@ -876,7 +876,8 @@ class MainWidget(QMainWindow):
                 frame.outlines=utils.masks_to_outlines(frame.masks)
 
                 print(f'Removed {len(edge_cells)} edge masks')
-                del frame.stored_mask_overlay
+                if hasattr(frame, 'stored_mask_overlay'):
+                    del frame.stored_mask_overlay
                 
                 if frame==self.frame:
                     if self.selected_cell_n in edge_cells:

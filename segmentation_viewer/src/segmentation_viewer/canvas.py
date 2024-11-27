@@ -3,7 +3,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QGraphicsPolygonItem
 from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QPen, QColor, QBrush, QPolygonF, QPainter
+from PyQt6.QtGui import QPen, QColor, QBrush, QPolygonF, QPainter, QCursor
 from shapely.geometry import Polygon, Point
     
 class PyQtGraphCanvas(QWidget):
@@ -303,14 +303,18 @@ class PyQtGraphCanvas(QWidget):
         self.mask_overlay[1].clear()
 
 
-    def get_plot_coords(self, pos, pixels=True):
+    def get_plot_coords(self, pos=None, pixels=True):
         """Get the pixel coordinates of the mouse cursor."""
+        if pos is None:
+            pos = self.mapFromGlobal(QCursor.pos())
+            pos = QPointF(pos)
         mouse_point = self.img_plot.plotItem.vb.mapSceneToView(pos) # axes are the same for both plots so we can use either to transform
         x, y = mouse_point.x(), mouse_point.y()
         if pixels:
             x, y = int(y), int(x)
         return x, y
     
+
     def mouse_moved(self, pos):
         x,y=self.get_plot_coords(pos, pixels=False)
         self.update_cursor(x, y)
@@ -319,16 +323,22 @@ class PyQtGraphCanvas(QWidget):
 
     def update_cursor(self, x, y):
         """Update the segmentation plot cursor based on the image plot cursor."""
-        #if self.img_plot.sceneBoundingRect().contains(pos):
-        #    mouse_point = self.img_plot.plotItem.vb.mapSceneToView(pos)
-        #elif self.seg_plot.sceneBoundingRect().contains(pos):
-        #    mouse_point = self.seg_plot.plotItem.vb.mapSceneToView(pos)
         self.seg_vline.setPos(x)
         self.seg_hline.setPos(y)
         self.img_vline.setPos(x)
         self.img_hline.setPos(y)
         self.parent.update_coordinate_label(int(x), int(y))
 
+    @property
+    def cursor_pixels(self):
+        ''' Get the cursor position as integers. '''
+        return self.get_plot_coords(pixels=True)
+    
+    @property
+    def cursor_pos(self):
+        ''' Get the exact cursor position. '''
+        return self.get_plot_coords(pixels=False)
+    
     def update_display(self, img_data=None, seg_data=None, RGB_checks=None):
         # RGB checkboxes
         self.img_data=img_data.copy()

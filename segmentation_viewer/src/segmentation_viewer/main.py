@@ -22,7 +22,6 @@ from segmentation_viewer.command_line import CommandLineWindow
 import importlib.resources
 from tqdm import tqdm
 
-# TODO: remove edge masks on stack only removes from first two frames??
 # TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
 # TODO: number of neighbors
 # TODO: lazy loading
@@ -1723,6 +1722,11 @@ class MainWidget(QMainWindow):
             memory=0
 
         self.statusBar().showMessage(f'Tracking centroids...')
+        for frame in self.stack.frames:
+            if not frame.has_outlines:
+                outlines=utils.outlines_list(frame.masks)
+                frame.set_cell_attrs('outline', outlines)
+
         try:
             if tracking_range=='':
                 self.stack.track_centroids(memory=memory)
@@ -3053,7 +3057,6 @@ class MainWidget(QMainWindow):
                     nd2_file=read_nd2(nd2)
                     file_stem=Path(file_path).stem
                     file_parent=Path(file_path).parent
-                    print(nd2_file.shape)
                     for v in self.progress_bar(t_bounds): # iterate over frames
                         if nd2_file.shape[1]>1: # z-stack
                             img=nd2_zstack(nd2_file, v=v)[z_bounds]
@@ -3061,14 +3064,14 @@ class MainWidget(QMainWindow):
                                 img=img[..., c_bounds]
                                 if img.shape[-1]==2: # add a blank channel if only 2 channels are present
                                     img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
-                            frames.append(segmentation_from_zstack(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
+                            frames.append(segmentation_from_zstack(img.copy(), name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
                         else: # single frame
                             img=nd2_frame(nd2_file, v=v, z=0)
                             if img.ndim==3:
                                 img=img[..., c_bounds]
                                 if img.shape[-1]==2: # add a blank channel if only 2 channels are present
                                     img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
-                            frames.append(segmentation_from_img(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
+                            frames.append(segmentation_from_img(img.copy(), name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
             stack=SegmentedStack(from_frames=frames)
             self.file_loaded = True
             return stack, None

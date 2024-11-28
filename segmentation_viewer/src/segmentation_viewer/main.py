@@ -73,7 +73,7 @@ class MainWidget(QMainWindow):
         self.file_menu.addAction(create_action("Open Folder", self.open_folder_dialog, 'Ctrl+Shift+O'))
         self.file_menu.addAction(create_action("Save", self.save_segmentation, 'Ctrl+S'))
         self.file_menu.addAction(create_action("Save As", self.save_as_segmentation, 'Ctrl+Shift+S'))
-        self.file_menu.addAction(create_action("Export CSV...", self.export_csv, 'Ctrl+E'))
+        self.file_menu.addAction(create_action("Export CSV...", self.export_csv, 'Ctrl+Shift+E'))
         self.file_menu.addAction(create_action("Exit", self.close, 'Ctrl+Q'))
 
         # EDIT
@@ -3296,8 +3296,8 @@ class ExportWizard(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Export Wizard")
         self.setMinimumWidth(300)
-        self.setMinimumHeight(280)
-        self.resize(400,280)
+        self.setFixedHeight(300)
+        self.resize(400,300)
         self.attributes = dataframe.columns.tolist()
         self.data = dataframe
         self.checked_attributes = []
@@ -3326,7 +3326,7 @@ class ExportWizard(QDialog):
         self.populate_table_preview()
         self.table_preview.resizeColumnsToContents()
         for col in range(len(self.attributes)):
-            column_width=max(self.table_preview.columnWidth(col), self.minimumColumnWidth)
+            column_width=max(self.table_preview.columnWidth(col)+10, self.minimumColumnWidth)
             self.table_preview.setColumnWidth(col, column_width)
         main_layout.addWidget(self.table_preview)
         n_rows_label = QLabel(f"Total rows: {len(self.data)}")

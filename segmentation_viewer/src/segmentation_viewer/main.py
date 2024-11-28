@@ -1725,7 +1725,10 @@ class MainWidget(QMainWindow):
         for frame in self.stack.frames:
             if not frame.has_outlines:
                 outlines=utils.outlines_list(frame.masks)
-                frame.set_cell_attrs('outline', outlines)
+                for cell, outline in zip(frame.cells, outlines):
+                    cell.outline=outline
+                    cell.get_centroid()
+                frame.has_outlines=True
 
         try:
             if tracking_range=='':
@@ -2237,7 +2240,7 @@ class MainWidget(QMainWindow):
 
         self.frame.outlines[outline[:,1], outline[:,0]]=True
         centroid=np.mean(enclosed_pixels, axis=0)
-        self.add_cell(new_mask_n, outline, color_ID=cell_color_n, frame_number=self.frame_number, red=False, green=False)
+        self.add_cell(new_mask_n, outline, color_ID=cell_color_n, centroid=centroid, frame_number=self.frame_number, red=False, green=False)
 
         if hasattr(self.stack, 'tracked_centroids'):
             t=self.stack.tracked_centroids
@@ -2323,6 +2326,7 @@ class MainWidget(QMainWindow):
             outlines=utils.outlines_list(frame.masks)
             for cell, outline in zip(frame.cells, outlines):
                 cell.outline=outline
+                cell.get_centroid()
             frame.has_outlines=True
         self.statusBar().showMessage(f'Generated outlines.', 1000)
 
@@ -2439,6 +2443,7 @@ class MainWidget(QMainWindow):
             outlines_list=utils.outlines_list(frame.masks)
             for cell, outline in zip(frame.cells, outlines_list):
                 cell.outline=outline
+                cell.get_centroid()
             frame.has_outlines=True
         
         try: # fetch cell cycle data if available

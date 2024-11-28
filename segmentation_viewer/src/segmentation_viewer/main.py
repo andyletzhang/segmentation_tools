@@ -6,10 +6,11 @@ import os
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QComboBox, QPushButton, QRadioButton, QInputDialog, QMessageBox,
-    QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog, QSpinBox, QDialog,
-    QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter, QProgressBar, QScrollArea
+    QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog, QDialog,
+    QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter, QProgressBar, QScrollArea,
+    QTableWidgetItem, QTableWidget
 )
-from PyQt6.QtCore import Qt, QPointF, QSize, pyqtSignal
+from PyQt6.QtCore import Qt, QPointF, pyqtSignal
 from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics, QMouseEvent, QAction
 from superqt import QRangeSlider
 import pyqtgraph as pg
@@ -20,6 +21,7 @@ from segmentation_viewer.canvas import PyQtGraphCanvas, CellMaskPolygon
 from segmentation_viewer.command_line import CommandLineWindow
 
 import importlib.resources
+from pathlib import Path
 from tqdm import tqdm
 
 # TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
@@ -214,7 +216,6 @@ class MainWidget(QMainWindow):
         from segmentation_tools import __file__ as tools_file
         from segmentation_viewer import __file__ as viewer_file
         import tempfile
-        from pathlib import Path
         import git
         import shutil
         
@@ -3043,7 +3044,6 @@ class MainWidget(QMainWindow):
         elif len(nd2_files)>0: # nd2 files
             from nd2 import ND2File
             from segmentation_tools.io import read_nd2, nd2_zstack, nd2_frame, read_nd2_shape
-            from pathlib import Path
 
             frames=[]
             for file_path in self.progress_bar(nd2_files):
@@ -3083,7 +3083,6 @@ class MainWidget(QMainWindow):
 
         elif len(tif_files)>0: # tif files (only checks if no seg.npy files are found)
             from segmentation_tools.io import read_tif, tiffpage_zstack, tiffpage_frame
-            from pathlib import Path
 
             frames=[]
             for file_path in self.progress_bar(tif_files):

@@ -2266,9 +2266,9 @@ class MainWidget(QMainWindow):
         self.update_ROIs_label()
         return True
         
-    def add_cell(self, n, outline, color_ID=None, red=False, green=False, frame_number=None):
+    def add_cell(self, n, outline, color_ID=None, red=False, green=False, frame_number=None, **kwargs):
         if frame_number is None: frame_number=self.frame_number
-        self.frame.cells=np.append(self.frame.cells, Cell(n, outline, color_ID=color_ID, red=red, green=green, frame_number=frame_number))
+        self.frame.cells=np.append(self.frame.cells, Cell(n, outline, color_ID=color_ID, red=red, green=green, frame_number=frame_number, **kwargs))
     
     def add_outline(self, mask):
         outline=utils.outlines_list(mask)[0]

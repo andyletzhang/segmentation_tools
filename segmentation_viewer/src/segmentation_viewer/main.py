@@ -2463,6 +2463,9 @@ class MainWidget(QMainWindow):
         except AttributeError:
             write_attrs=[]
 
+        if hasattr(frame, 'zstack'):
+            frame.img=frame.zstack[self.zstack_number]
+
         frame.to_seg_npy(file_path, write_attrs=write_attrs)
 
         frame.name=file_path
@@ -3081,6 +3084,7 @@ class MainWidget(QMainWindow):
                     nd2_files.append(os.path.join(files[0], f))
                 elif f.endswith('tracking.csv'):
                     tracking_file=os.path.join(files[0], f)
+
         else: # treat as list of files
             seg_files=[f for f in files if f.endswith('seg.npy')]
             tif_files=[f for f in files if f.endswith('tif') or f.endswith('tiff')]

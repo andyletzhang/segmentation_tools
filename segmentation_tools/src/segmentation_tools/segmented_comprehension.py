@@ -223,12 +223,16 @@ class TimeStack(SegmentedStack):
 
         # merge particles
         t.loc[t.particle==second_ID, 'particle']=first_ID
+        
+        # new merged ID
+        f, c=t.loc[t.particle==first_ID][['frame','cell_number']].values[0]
 
         # renumber particles so that they're contiguous
         particles=np.unique(t['particle'])
         t['particle']=np.searchsorted(particles, t['particle'])
 
-        return new_head, new_tail
+        merged=t.loc[(t.frame==f)&(t.cell_number==c)]['particle'].iloc[0]
+        return merged, new_head, new_tail
 
     def split_particle_track(self, particle_ID, split_frame):
         """
@@ -753,13 +757,6 @@ class SegmentedImage:
 
     def delete_cells(self, cell_numbers):
         '''deletes multiple cells from the image.'''
-        # remove masks
-        to_clear=np.isin(self.masks, cell_numbers+1)
-        #self.masks[to_clear]=0
-
-        # remove outlines
-        #self.outlines[to_clear]=False
-
         cell_numbers=np.array(cell_numbers)
         cell_numbers.sort()
 
@@ -776,6 +773,7 @@ class SegmentedImage:
         
         # Update masks using lookup table
         self.masks = lookup[self.masks]
+        self.outlines=cp_utils.masks_to_outlines(self.masks)
         
         # Update cells array
         self.cells = self.cells[keep_mask]

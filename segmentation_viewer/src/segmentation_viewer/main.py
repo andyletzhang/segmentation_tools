@@ -24,6 +24,7 @@ import importlib.resources
 from pathlib import Path
 from tqdm import tqdm
 
+# TODO: import images while preserving segmentation, and vice versa
 # TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
 # TODO: number of neighbors
 # TODO: lazy loading
@@ -1827,13 +1828,13 @@ class MainWidget(QMainWindow):
                 return
             else:
                 merged_color=self.stack.get_particle(first_particle)[0].color_ID
-                new_head, new_tail=self.stack.merge_particle_tracks(first_particle, second_particle, self.frame_number)
+                merged, new_head, new_tail=self.stack.merge_particle_tracks(first_particle, second_particle, self.frame_number)
                 if new_head is not None:
-                    new_head_color=self.canvas.random_color_ID()
+                    new_head_color=self.canvas.random_cell_color()
                     for cell in self.stack.get_particle(new_head):
                         cell.color_ID=new_head_color
                 if new_tail is not None:
-                    new_tail_color=self.canvas.random_color_ID()
+                    new_tail_color=self.canvas.random_cell_color()
                     for cell in self.stack.get_particle(new_tail):
                         cell.color_ID=new_tail_color
                 if hasattr(self.stack, 'tracked_centroids'):
@@ -1843,13 +1844,13 @@ class MainWidget(QMainWindow):
                     new_cell_numbers=np.searchsorted(cell_numbers, t.loc[t.frame==self.frame_number, 'cell_number'])
                     t.loc[t.frame==self.frame_number, 'cell_number']=new_cell_numbers.astype(t['cell_number'].dtype)
 
-                for cell in self.stack.get_particle(first_particle):
+                for cell in self.stack.get_particle(merged):
                     cell.color_ID=merged_color
 
                 print(f'Merged particles {first_particle} and {second_particle}')
                 self.plot_particle_statistic()
                 self.highlight_track_ends()
-                current_cell=self.cell_from_particle(first_particle)
+                current_cell=self.cell_from_particle(merged)
                 self.canvas.add_cell_highlight(current_cell, color=merged_color, alpha=0.5, layer='mask')
 
                 new_tail_cell=self.cell_from_particle(new_tail)
@@ -2241,7 +2242,7 @@ class MainWidget(QMainWindow):
         self.frame.n_cells+=1
         print(f'Added cell {new_mask_n}')
 
-        cell_color_n=np.random.randint(0, self.canvas.cell_n_colors)
+        cell_color_n=self.canvas.random_color_ID()
         cell_color=self.canvas.cell_cmap(cell_color_n)
         if self.frame.has_outlines:
             outline=utils.outlines_list(new_mask)[0]
@@ -2250,7 +2251,7 @@ class MainWidget(QMainWindow):
 
         self.frame.outlines[outline[:,1], outline[:,0]]=True
         centroid=np.mean(enclosed_pixels, axis=0)
-        self.add_cell(new_mask_n, outline, color_ID=cell_color_n, centroid=centroid, frame_number=self.frame_number, red=False, green=False)
+        self.add_cell(new_mask_n, outline, color_ID=cell_color, centroid=centroid, frame_number=self.frame_number, red=False, green=False)
 
         if hasattr(self.stack, 'tracked_centroids'):
             t=self.stack.tracked_centroids
@@ -2370,7 +2371,7 @@ class MainWidget(QMainWindow):
 
         t=self.stack.tracked_centroids
         t.drop(t[(t.frame==frame_number)&(t.cell_number==cell_number)].index, inplace=True)
-        t.loc[(t.frame==frame_number)&(t.cell_number==self.stack.frames[frame_number].n_cells), 'cell_number']=cell_number
+        t.loc[(t.frame==frame_number)&(t.cell_number==self.stack.frames[frame_number].n_cells-1), 'cell_number']=cell_number
 
     def save_tracking(self, event=None, file_path=None):
         if not self.file_loaded:

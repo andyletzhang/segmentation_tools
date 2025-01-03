@@ -1558,7 +1558,6 @@ class MainWidget(QMainWindow):
             frame.coverslip_height=coverslip_height
         self.coverslip_height.setText(f'{coverslip_height:.2f}')
 
-        
     def measure_heights(self):
         if not self.file_loaded:
             return
@@ -1587,7 +1586,7 @@ class MainWidget(QMainWindow):
                 if self.is_grayscale:
                     membrane=frame.zstack
                 else:
-                    membrane=frame.zstack[..., 2] # TODO: hardcoded membrane channel
+                    membrane=frame.zstack[..., 2] # TODO: allow user to specify membrane channel
                 frame.heights=get_heights(membrane, peak_prominence=peak_prominence)
                 frame.to_heightmap()
                 frame.coverslip_height=coverslip_height
@@ -1949,7 +1948,6 @@ class MainWidget(QMainWindow):
         self.normalize()
 
     def normalize(self):
-        # TODO: mask nan slices
         if self.canvas.img_data.ndim==2: # single channel
             colors=1
         else:
@@ -2039,7 +2037,6 @@ class MainWidget(QMainWindow):
     def plot_particle_statistic(self):
         if not self.file_loaded or not hasattr(self.stack, 'tracked_centroids'):
             return
-        # TODO: follow through mitosis?
         measurement=['area', 'perimeter', 'circularity', 'cell_cycle'][self.selected_statistic]
         # clear the plot
         self.particle_stat_plot.clear()
@@ -2988,6 +2985,7 @@ class MainWidget(QMainWindow):
         self.stack.min_max=stack_range
         self.set_LUT_slider_ranges(stack_range)
 
+    #--------------I/O----------------
     def open_stack(self, files):
         self.stack, tracked_centroids=self.load_files(files)
         if not self.stack:
@@ -3052,7 +3050,7 @@ class MainWidget(QMainWindow):
         self.saved_visual_settings=[self.get_visual_settings() for _ in range(4)]
         
     def open_files(self):
-        files = QFileDialog.getOpenFileNames(self, 'Open segmentation file', filter='*seg.npy')[0]
+        files = QFileDialog.getOpenFileNames(self, 'Open file(s)', filter='*seg.npy *.tif *.tiff *.nd2')[0]
         if len(files) > 0:
             self.open_stack(files)
 
@@ -3063,10 +3061,9 @@ class MainWidget(QMainWindow):
 
     def load_files(self, files):
         '''
-        Load a stack of segmented images. 
+        Load a stack of images. 
         If a tracking.csv is found, the tracking data is returned as well
         '''
-        # TODO: maybe load images/frames only when they are accessed? (lazy loading)
         tracked_centroids=None
         tracking_file=None
 

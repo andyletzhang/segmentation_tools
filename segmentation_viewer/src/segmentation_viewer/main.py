@@ -24,21 +24,41 @@ import importlib.resources
 from pathlib import Path
 from tqdm import tqdm
 
-# TODO: import images while preserving segmentation, and vice versa
-# TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
-# TODO: number of neighbors
-# TODO: lazy loading
-# TODO: add mouse and keyboard shortcuts to interface
-# TODO: normalize the summed channels when show_grayscale
+# high priority
+# TODO: import images (zstack or otherwise) while preserving segmentation, and vice versa
 # TODO: File -> export heights tif, import heights tif
+# TODO: fix pulling updates from GitHub
+# TODO: split masks (bigger one keeps the ID)
+# TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
+# TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
 
+# low priority
+# TODO: normalize the summed channels when show_grayscale
 # TODO: get_mitoses, visualize mitoses, edit mitoses
 
+# TODO: some image pyramid approach to speed up work on large images??
+# TODO: maybe load images/frames only when they are accessed? (lazy loading)
+# TODO: number of neighbors
+
+# eventual QOL improvements
+# TODO: read all kinds of tifs to the best of your ability; maybe have an option to verify dimension order
+# TODO: make sure all frames have same number of z slices
+# TODO: perhaps allow for non-contiguous masks and less numerical reordering.
+    # 1. Replace masks.max() with n_cells, np.unique(masks) everywhere
+    # 2. Iterate over unique IDs instead of range(n_cells), and/or skip empty IDs
+    # 3. Rewrite delete cell to remove mask ID without renumbering
+# TODO: replace mask operations with fastremap (if in fact faster)
+
+# TODO: undo/redo
+# TODO: add mouse and keyboard shortcuts to interface
 # TODO: FUCCI tab - show cc occupancies as a stacked bar
 # TODO: expand/collapse segmentation plot
-# TODO: undo/redo
-# TODO: some image pyramid approach to speed up work on large images??
-
+# TODO: pick better colors for highlight track ends which don't overlap with FUCCI
+# TODO: user can specify membrane channel for volumes tab
+# TODO: mask nan slices during normalization
+# TODO: frame and particle plots should have dropdowns instead of titles which specify the statistic
+# TODO: draw segmentation polygon on segmentation plot too
+# TODO: modify add_cell_highlight to take a frame, and change split_particle, delete_particle, etc. to recolor instead of deleting mask overlay
 
 class MainWidget(QMainWindow):
     def __init__(self):
@@ -76,6 +96,8 @@ class MainWidget(QMainWindow):
         self.file_menu.addAction(create_action("Save As", self.save_as_segmentation, 'Ctrl+Shift+S'))
         self.file_menu.addAction(create_action("Export CSV...", self.export_csv, 'Ctrl+Shift+E'))
         self.file_menu.addAction(create_action("Exit", self.close, 'Ctrl+Q'))
+        self.file_menu.addAction(create_action("Import Image(s)...", self.import_images))
+        #self.file_menu.addAction(create_action("Import Masks...", self.import_masks))
 
         # EDIT
         self.edit_menu = self.menu_bar.addMenu("Edit")
@@ -219,7 +241,6 @@ class MainWidget(QMainWindow):
 
         stat_tab_layout=QSplitter()
         stat_tab_layout.setOrientation(Qt.Orientation.Vertical)
-        # TODO: this and the particle plot should have dropdowns instead of titles which specify the statistic
         self.histogram=pg.PlotWidget(title='Cell Volume Histogram', background='transparent')
         self.histogram.setMinimumHeight(200)
         self.histogram.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -440,7 +461,6 @@ class MainWidget(QMainWindow):
 
         self.stat_range_labels[0].setText(str(round(levels[0], 2)))
         self.stat_range_labels[1].setText(str(round(levels[1], 2)))
-
 
     def clear_seg_stat(self):
         self.canvas.seg_stat_overlay.clear()
@@ -956,16 +976,19 @@ class MainWidget(QMainWindow):
 
         self.update_display()
 
-    def progress_bar(self, iterable, desc=None):
-        if len(iterable) == 1:
+    def progress_bar(self, iterable, desc=None, length=None):
+        if length is None:
+            length=len(iterable)
+
+        if length == 1:
             return iterable
         else:
             # Initialize tqdm progress bar
-            tqdm_bar = tqdm(iterable, desc=desc)
+            tqdm_bar = tqdm(iterable, desc=desc, total=length)
             
             # Initialize QProgressBar
             qprogress_bar = QProgressBar()
-            qprogress_bar.setMaximum(len(iterable))
+            qprogress_bar.setMaximum(length)
 
             # Set size policy to match the status bar width
             qprogress_bar.setFixedHeight(int(self.statusBar().height()*0.8))
@@ -2991,7 +3014,8 @@ class MainWidget(QMainWindow):
         tracked_centroids=None
         tracking_file=None
 
-        if os.path.isdir(files[0]): # check if files[0] is a folder, in which case load whatever's inside
+        #----figure out what's being loaded----
+        if os.path.isdir(files[0]): # if a folder is selected, load all files in the folder
             from natsort import natsorted
             seg_files=[]
             tif_files=[]
@@ -3007,7 +3031,7 @@ class MainWidget(QMainWindow):
                 elif f.endswith('tracking.csv'):
                     tracking_file=os.path.join(files[0], f)
 
-        else: # treat as list of files
+        else: # list of files
             seg_files=[f for f in files if f.endswith('seg.npy')]
             tif_files=[f for f in files if f.endswith('tif') or f.endswith('tiff')]
             nd2_files=[f for f in files if f.endswith('nd2')]
@@ -3015,6 +3039,9 @@ class MainWidget(QMainWindow):
             if len(tracking_files)>0:
                 tracking_file=tracking_files[-1]
 
+        #----load the files----
+        # only loads one type of file per call
+        # tries to load seg.npy files first, then nd2 files, then tif files
         if len(seg_files)>0: # segmented file paths
             stack=SegmentedStack(frame_paths=seg_files, load_img=True, progress_bar=self.progress_bar)
             if tracking_file is not None:
@@ -3025,40 +3052,26 @@ class MainWidget(QMainWindow):
 
         elif len(nd2_files)>0: # nd2 files
             from nd2 import ND2File
-            from segmentation_tools.io import read_nd2, nd2_zstack, nd2_frame, read_nd2_shape
+            from segmentation_viewer.io import read_nd2_file
 
             frames=[]
-            for file_path in self.progress_bar(nd2_files):
-                with ND2File(file_path) as nd2:
-                    shape=read_nd2_shape(nd2)
-                    
-                    self.shape_dialog = ND2ShapeDialog(shape)
-                    if self.shape_dialog.exec_() == QDialog.Accepted:
-                        try:
-                            t_bounds, z_bounds, c_bounds=self.shape_dialog.get_selected_ranges()
-                        except ValueError as e:
-                            print(f"Error: {e}")
-                    else:
-                        return False, None
+            for file_path in nd2_files:
+                file_stem=Path(file_path).stem
+                file_parent=Path(file_path).parent
+                imgs=read_nd2_file(file_path, progress_bar=self.progress_bar, desc=f'Loading {file_stem}')
+                if imgs is None:
+                    return False, None
+                for v, img in enumerate(imgs):
+                    if img.shape[-1]==2: # pad to 3 color channels
+                        img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
+                    elif img.shape[-1]==1: # single channel
+                        img=img[..., 0] # drop the last dimension
 
-                    nd2_file=read_nd2(nd2)
-                    file_stem=Path(file_path).stem
-                    file_parent=Path(file_path).parent
-                    for v in self.progress_bar(t_bounds): # iterate over frames
-                        if nd2_file.shape[1]>1: # z-stack
-                            img=nd2_zstack(nd2_file, v=v)[z_bounds]
-                            if img.ndim==4:
-                                img=img[..., c_bounds]
-                                if img.shape[-1]==2: # add a blank channel if only 2 channels are present
-                                    img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
-                            frames.append(segmentation_from_zstack(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
-                        else: # single frame
-                            img=nd2_frame(nd2_file, v=v, z=0)
-                            if img.ndim==3:
-                                img=img[..., c_bounds]
-                                if img.shape[-1]==2: # add a blank channel if only 2 channels are present
-                                    img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
-                            frames.append(segmentation_from_img(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
+                    if len(img)>1: # z-stack
+                        frames.append(segmentation_from_zstack(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
+                    else: # single slice
+                        frames.append(segmentation_from_img(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
+
             stack=SegmentedStack(from_frames=frames)
             self.file_loaded = True
             return stack, None
@@ -3095,6 +3108,13 @@ class MainWidget(QMainWindow):
         else: # can't find any seg.npy or tiff files, ignore
             self.statusBar().showMessage(f'ERROR: File {files[0]} is not a seg.npy or tiff file, cannot be loaded.', 4000)
             return False, None
+
+    #def import_masks(self):
+    
+    def import_images(self):
+        files = QFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2')[0]
+        if len(files) > 0:
+            self.open_stack(files)
 
     def get_red_green(self, frame=None):
         ''' Fetch or create red and green attributes for cells in the current frame. '''

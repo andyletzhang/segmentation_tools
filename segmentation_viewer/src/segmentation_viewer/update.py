@@ -21,9 +21,7 @@ def download_and_extract_repo(repo_url, extract_to):
         # Use the in-memory ZIP file
         with zipfile.ZipFile(BytesIO(response.content)) as zip_ref:
             zip_ref.extractall(extract_to)
-        print(f"Repository successfully downloaded and extracted to {extract_to}")
-    else:
-        print(f"Failed to download repository. Status code: {response.status_code}")
+    return response.status_code
 
 def update_packages():
     # Get package directories
@@ -42,9 +40,13 @@ def update_packages():
         print(f'Pulling from GitHub...')
         repo = f"andyletzhang/segmentation_tools"  # Replace with your repo
         url = f"https://github.com/{repo}"
-        download_and_extract_repo(url, tmp_path)
+
+        out=download_and_extract_repo(url, tmp_path)
+        if out==200:
+            print(f'pulled to {tmp_path}')
+        else:
+            raise ValueError(f"Failed to download repository. Status code: {out}")
         
-        print(f'pulled to {tmp_path}')
         # Copy files to appropriate locations
         tools_src_tmp = tmp_path / 'segmentation_tools-main' / 'segmentation_tools' / 'src'
         viewer_src_tmp = tmp_path /  'segmentation_tools-main' / 'segmentation_viewer' / 'src'

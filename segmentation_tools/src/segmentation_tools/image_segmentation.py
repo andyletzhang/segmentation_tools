@@ -112,20 +112,6 @@ def get_nd2_membrane_profile(nd2_file, v_sample=10):
         profiles.append(profile)
     return profiles
 
-def get_coverslip_z(z_profile, scale=1, precision=0.125):
-    from scipy.interpolate import CubicSpline
-    from scipy.signal import find_peaks
-
-    zstack_size=len(z_profile)*scale
-    cs_coating=CubicSpline(np.arange(0, zstack_size, scale), z_profile)
-
-    z_fine = np.arange(0, zstack_size, precision)
-    intensity_fine = cs_coating(z_fine)
-
-    bottom_slice=z_fine[find_peaks(np.gradient(intensity_fine, z_fine), prominence=0.01)[0][0]]
-
-    return bottom_slice
-
 def get_stitched_boundary(membrane, radius=2):
     from scipy.signal import convolve2d
 

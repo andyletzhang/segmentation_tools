@@ -9,6 +9,11 @@ archive/
 cellmask_3d/
 notebooks/
 
+# installation files #
+######################
+segmentation_tools/src/segmentation_tools.egg-info/
+segmentation_viewer/src/segmentation_viewer.egg-info/
+
 # other repositories #
 ######################
 packages/

@@ -1475,7 +1475,7 @@ class MainWidget(QMainWindow):
         self.histogram.autoRange()
 
     def calibrate_coverslip_height(self):
-        from segmentation_tools.image_segmentation import get_coverslip_z
+        from segmentation_tools.heightmap import get_coverslip_z
         if not self.file_loaded:
             return
         if self.volumes_on_stack.isChecked():

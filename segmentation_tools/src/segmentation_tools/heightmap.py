@@ -173,3 +173,17 @@ def get_heights(membrane, min_region_size=1000, peak_prominence=0.004):
 
     interpolated=interpolate_outliers(masked_outliers)
     return interpolated
+
+def get_coverslip_z(z_profile, scale=1, precision=0.125):
+    from scipy.interpolate import CubicSpline
+    from scipy.signal import find_peaks
+
+    zstack_size=len(z_profile)*scale
+    cs_coating=CubicSpline(np.arange(0, zstack_size, scale), z_profile)
+
+    z_fine = np.arange(0, zstack_size, precision)
+    intensity_fine = cs_coating(z_fine)
+
+    bottom_slice=z_fine[find_peaks(np.gradient(intensity_fine, z_fine), prominence=0.01)[0][0]]
+
+    return bottom_slice

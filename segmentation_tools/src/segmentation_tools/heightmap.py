@@ -1,66 +1,102 @@
 import numpy as np
 from scipy import ndimage
-from cupyx.scipy import ndimage as cp_ndimage
 from numba import jit
 
 try:
     import cupy as cp
     from numba import cuda
+    from cupyx.scipy import ndimage as cp_ndimage
     HAS_GPU = True
 except ImportError:
     HAS_GPU = False
-    print("GPU acceleration not available. Install CuPy and ensure CUDA is properly set up.")
+    print("GPU acceleration not available. Falling back to CPU.")
 
-@cuda.jit
-def find_peaks_gpu(zstack_derivative, heights, prominence):
-    x, y = cuda.grid(2)
-    if x < zstack_derivative.shape[1] and y < zstack_derivative.shape[2]:
-        last_peak = 0
-        for i in range(1, zstack_derivative.shape[0]-1):
-            if (zstack_derivative[i, x, y] > zstack_derivative[i-1, x, y] and 
-                zstack_derivative[i, x, y] > zstack_derivative[i+1, x, y]):
-                
-                # Check prominence
-                min_val = zstack_derivative[i, x, y]
-                for j in range(max(0, i-1), min(zstack_derivative.shape[0], i+2)):
-                    if zstack_derivative[j, x, y] < min_val:
-                        min_val = zstack_derivative[j, x, y]
-                
-                if zstack_derivative[i, x, y] - min_val >= prominence:
-                    last_peak = i
+if HAS_GPU:
+    @cuda.jit
+    def find_peaks_gpu(zstack_derivative, heights, prominence):
+        x, y = cuda.grid(2)
+        if x < zstack_derivative.shape[1] and y < zstack_derivative.shape[2]:
+            last_peak = 0
+            for i in range(1, zstack_derivative.shape[0]-1):
+                if (zstack_derivative[i, x, y] > zstack_derivative[i-1, x, y] and 
+                    zstack_derivative[i, x, y] > zstack_derivative[i+1, x, y]):
+
+                    min_val = zstack_derivative[i, x, y]
+                    for j in range(max(0, i-1), min(zstack_derivative.shape[0], i+2)):
+                        if zstack_derivative[j, x, y] < min_val:
+                            min_val = zstack_derivative[j, x, y]
+                    
+                    if zstack_derivative[i, x, y] - min_val >= prominence:
+                        last_peak = i
+            heights[x, y] = last_peak
+
+    def process_zstack_gpu(zstack, prominence=0.004, sigma=6):
+        # Move data to GPU
+        zstack_gpu = cp.asarray(zstack)
+        zstack_gpu = normalize_gpu(zstack_gpu)
+        zstack_gpu = cp_ndimage.gaussian_filter(zstack_gpu, sigma=(0,sigma,sigma))
+
+        # Calculate derivative
+        derivative_gpu = cp.gradient(zstack_gpu, axis=0)
+
+        # Prepare output array
+        heights_gpu = cp.zeros((derivative_gpu.shape[1], derivative_gpu.shape[2]), dtype=cp.int64)
+
+        # Set up grid for CUDA kernel
+        threadsperblock = (16, 16)
+        blockspergrid_x = (derivative_gpu.shape[1] + threadsperblock[0] - 1) // threadsperblock[0]
+        blockspergrid_y = (derivative_gpu.shape[2] + threadsperblock[1] - 1) // threadsperblock[1]
+        blockspergrid = (blockspergrid_x, blockspergrid_y)
         
-        heights[x, y] = last_peak
+        # Run kernel
+        find_peaks_gpu[blockspergrid, threadsperblock](
+            -derivative_gpu, heights_gpu, prominence)
+        
+        # Move result back to CPU and return
+        return cp.asnumpy(heights_gpu)
 
-def process_zstack_gpu(zstack, prominence=0.004, sigma=6):
-    # Move data to GPU
-    zstack_gpu = cp.asarray(zstack)
-    zstack_gpu = normalize_gpu(zstack_gpu)
-    zstack_gpu = cp_ndimage.gaussian_filter(zstack_gpu, sigma=(0,sigma,sigma))
-    # Calculate derivative
-    derivative_gpu = cp.gradient(zstack_gpu, axis=0)
-    
-    # Prepare output array
-    heights_gpu = cp.zeros((derivative_gpu.shape[1], derivative_gpu.shape[2]), dtype=cp.int64)
-    
-    # Set up grid for CUDA kernel
-    threadsperblock = (16, 16)
-    blockspergrid_x = (derivative_gpu.shape[1] + threadsperblock[0] - 1) // threadsperblock[0]
-    blockspergrid_y = (derivative_gpu.shape[2] + threadsperblock[1] - 1) // threadsperblock[1]
-    blockspergrid = (blockspergrid_x, blockspergrid_y)
-    
-    # Run kernel
-    find_peaks_gpu[blockspergrid, threadsperblock](
-        -derivative_gpu, heights_gpu, prominence)
-    
-    # Move result back to CPU and return
-    return cp.asnumpy(heights_gpu)
+    def normalize_gpu(data):
+        bounds = cp.percentile(data, [1, 99])
+        return (data - bounds[0]) / (bounds[1] - bounds[0])
 
-def normalize_gpu(data):
-    bounds = cp.percentile(data, [1, 99])
-    return (data - bounds[0]) / (bounds[1] - bounds[0])
+else:
+    # Fallback for CPU execution
+    @jit(nopython=True)
+    def find_peaks_cpu(zstack_derivative, prominence):
+        heights = np.zeros((zstack_derivative.shape[1], zstack_derivative.shape[2]), dtype=np.int64)
+        for x in range(zstack_derivative.shape[1]):
+            for y in range(zstack_derivative.shape[2]):
+                last_peak = 0
+                for i in range(1, zstack_derivative.shape[0]-1):
+                    if (zstack_derivative[i, x, y] > zstack_derivative[i-1, x, y] and 
+                        zstack_derivative[i, x, y] > zstack_derivative[i+1, x, y]):
 
-def gaussian_filter_gpu(data, sigma):
-    return cp.asnumpy(cp.ndimage.gaussian_filter(cp.asarray(data), sigma))
+                        min_val = zstack_derivative[i, x, y]
+                        for j in range(max(0, i-1), min(zstack_derivative.shape[0], i+2)):
+                            if zstack_derivative[j, x, y] < min_val:
+                                min_val = zstack_derivative[j, x, y]
+
+                        if zstack_derivative[i, x, y] - min_val >= prominence:
+                            last_peak = i
+                heights[x, y] = last_peak
+        return heights
+
+    def process_zstack_cpu(zstack, prominence=0.004, sigma=6):
+        zstack = normalize_cpu(zstack)
+        zstack = ndimage.gaussian_filter(zstack, sigma=(0, sigma, sigma))
+        derivative = np.gradient(zstack, axis=0)
+        return find_peaks_cpu(-derivative, prominence)
+
+    def normalize_cpu(data):
+        bounds = np.percentile(data, [1, 99])
+        return (data - bounds[0]) / (bounds[1] - bounds[0])
+
+def process_zstack(zstack, prominence=0.004, sigma=6):
+    if HAS_GPU:
+        return process_zstack_gpu(zstack, prominence, sigma)
+    else:
+        return process_zstack_cpu(zstack, prominence, sigma)
+
 
 def relabel_components(labeled_grid):
     # Get unique labels in the grid
@@ -167,7 +203,7 @@ def expand_slice(s, size=1):
     return slice(max(0, s.start-size), s.stop+size)
 
 def get_heights(membrane, min_region_size=1000, peak_prominence=0.004):
-    heights=process_zstack_gpu(membrane, peak_prominence)
+    heights=process_zstack(membrane, peak_prominence)
 
     masked_outliers=get_outliers(heights, min_region_size)
 

@@ -2646,6 +2646,14 @@ class MainWidget(QMainWindow):
                 self.frame_number += 1
                 self.change_current_frame(self.frame_number)
 
+        # Handle z-stack navigation with up and down arrow keys
+        if event.key() == Qt.Key.Key_Up:
+            if self.is_zstack and self.zstack_number > 0:
+                self.update_zstack_number(self.zstack_number - 1)
+        elif event.key() == Qt.Key.Key_Down:
+            if self.is_zstack and self.zstack_number < self.stack.zstack_number - 1:
+                self.update_zstack_number(self.zstack_number + 1)
+
     def reset_view(self):
         ''' Reset the view to the original image data. '''
         self.FUCCI_dropdown.setCurrentIndex(0)

@@ -25,6 +25,7 @@ dependencies = [
     "networkx",
     "natsort",
     "nd2",
+    "numba",
 ]
 
 [build-system]

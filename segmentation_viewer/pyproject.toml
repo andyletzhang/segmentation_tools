@@ -12,6 +12,7 @@ dependencies = [
     "numpy",
     "cellpose",
     "superqt",
+    "pyqtgraph",
     "segmentation_tools", # You may need to manually install this since it's local.
 ]
 

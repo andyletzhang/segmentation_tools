@@ -2779,6 +2779,7 @@ class MainWidget(QMainWindow):
 
     def grayscale_mode(self):
         ''' Hide RGB GUI elements when a grayscale image is loaded. '''
+        self.is_grayscale=True
         self.clear_LUT_sliders()
         self.clear_RGB_checkboxes()
         self.add_grayscale_sliders(self.slider_layout)
@@ -2788,6 +2789,7 @@ class MainWidget(QMainWindow):
 
     def RGB_mode(self):
         ''' Show RGB GUI elements when an RGB image is loaded. '''
+        self.is_grayscale=False
         self.clear_LUT_sliders()
         self.clear_RGB_checkboxes()
         self.add_RGB_checkboxes(self.RGB_checkbox_layout)
@@ -2987,11 +2989,9 @@ class MainWidget(QMainWindow):
             frame.has_outlines=True
             
         if self.frame.img.ndim==2: # single channel
-            self.is_grayscale=True
             self.grayscale_mode()
 
         elif self.frame.img.ndim==3: # RGB
-            self.is_grayscale=False
             self.RGB_mode()
 
         else:
@@ -3094,30 +3094,34 @@ class MainWidget(QMainWindow):
             imgs=[]
             for file in files:
                 name=Path(file).name
-                imgs.extend(read_image_file(file, progress_bar=self.progress_bar, desc=f'Importing images from {name}'))
+                file_imgs=read_image_file(file, progress_bar=self.progress_bar, desc=f'Importing images from {name}')
+                if file_imgs is None:
+                    continue
+                imgs.extend(file_imgs)
+
+        if len(imgs)==0: # no images loaded
+            return
         
         for img, frame in zip(imgs, self.stack.frames):
-            if img.shape[-1]==2:
-                img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
-            elif img.shape[-1]==1:
-                img=img[..., 0]
+            if img.shape[-1]==1: # single channel
+                img=img[..., 0] # drop the last dimension
+                self.grayscale_mode()
+            else: # RGB
+                if img.shape[-1]==2: # pad to 3 color channels
+                    img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
+                self.RGB_mode()
 
             frame.img=img[0]
-            if len(img)>1:
-                self.zstack_number=0
+            if len(img)>1: # z-stack
+                self.zstack_number=0 # if any z-stack images are loaded, reset the z-stack number (a little redundant)
                 frame.zstack=img
-                self.zstack_slider.setVisible(True)
-                self.zstack_slider.setRange(0, self.frame.zstack.shape[0]-1)
-                self.is_zstack=True
-            else:
+            else: # single slice
                 if hasattr(frame, 'zstack'):
                     del frame.zstack
-                self.zstack_slider.setVisible(False)
-                self.is_zstack=False
             if hasattr(frame, 'bounds'):
                 del frame.bounds
 
-        self.update_display()
+        self.change_current_frame(self.frame_number)
 
     def get_red_green(self, frame=None):
         ''' Fetch or create red and green attributes for cells in the current frame. '''

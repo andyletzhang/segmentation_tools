@@ -20,6 +20,7 @@ from segmentation_tools.io import segmentation_from_img, segmentation_from_zstac
 from segmentation_viewer.canvas import PyQtGraphCanvas, CellMaskPolygon
 from segmentation_viewer.command_line import CommandLineWindow
 
+from natsort import natsorted
 import importlib.resources
 from pathlib import Path
 from tqdm import tqdm
@@ -2883,7 +2884,6 @@ class MainWidget(QMainWindow):
             event.ignore()
 
     def dropEvent(self, event):
-        from natsort import natsorted
         files = [u.toLocalFile() for u in event.mimeData().urls()]
         self.open_stack(natsorted(files))
 
@@ -3015,7 +3015,6 @@ class MainWidget(QMainWindow):
 
         #----figure out what's being loaded----
         if os.path.isdir(files[0]): # if a folder is selected, load all files in the folder
-            from natsort import natsorted
             seg_files=[]
             tif_files=[]
             nd2_files=[]
@@ -3078,9 +3077,37 @@ class MainWidget(QMainWindow):
     #def import_masks(self):
     
     def import_images(self):
-        files = QFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2')[0]
+        from segmentation_viewer.io import read_image_file
+        files = natsorted(QFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2')[0])
+        # TODO: check if the number of images matches the number of frames in the stack
         if len(files) > 0:
-            self.open_stack(files)
+            imgs=[]
+            for file in files:
+                name=Path(file).name
+                imgs.extend(read_image_file(file, progress_bar=self.progress_bar, desc=f'Importing images from {name}'))
+        
+        for img, frame in zip(imgs, self.stack.frames):
+            if img.shape[-1]==2:
+                img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
+            elif img.shape[-1]==1:
+                img=img[..., 0]
+
+            frame.img=img[0]
+            if len(img)>1:
+                self.zstack_number=0
+                frame.zstack=img
+                self.zstack_slider.setVisible(True)
+                self.zstack_slider.setRange(0, self.frame.zstack.shape[0]-1)
+                self.is_zstack=True
+            else:
+                if hasattr(frame, 'zstack'):
+                    del frame.zstack
+                self.zstack_slider.setVisible(False)
+                self.is_zstack=False
+            if hasattr(frame, 'bounds'):
+                del frame.bounds
+
+        self.update_display()
 
     def get_red_green(self, frame=None):
         ''' Fetch or create red and green attributes for cells in the current frame. '''

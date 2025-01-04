@@ -3135,6 +3135,8 @@ class MainWidget(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, 'Update Failed', 
                                     f'Package update error: {str(e)}')
+            return
+        QMessageBox.information(self, 'Update Complete', 'Packages updated successfully. Please restart the application.')
             
     def closeEvent(self, event):
         # Close the command line window when the main window is closed

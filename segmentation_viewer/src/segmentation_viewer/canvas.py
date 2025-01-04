@@ -1,4 +1,5 @@
 import numpy as np
+import fastremap
 
 import pyqtgraph as pg
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QGraphicsPolygonItem
@@ -156,7 +157,7 @@ class PyQtGraphCanvas(QWidget):
             self.parent.frame.set_cell_attr('color_ID', cell_colors)
 
         # highlight all cells with the specified colors
-        cell_indices=np.unique(self.parent.frame.masks)[1:]-1
+        cell_indices=fastremap.unique(self.parent.frame.masks)[1:]-1
         img_masks, seg_masks=self.highlight_cells(cell_indices, alpha=alpha, cell_colors=cell_colors, layer='mask')
 
         return img_masks, seg_masks

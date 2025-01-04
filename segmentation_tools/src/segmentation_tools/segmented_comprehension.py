@@ -6,6 +6,7 @@ from glob import glob
 from pathlib import Path
 import cellpose.utils as cp_utils
 from segmentation_tools import preprocessing # from my module
+import fastremap
 
 '''
     Stacks are collections of time lapse images on a single stage.
@@ -664,9 +665,9 @@ class SegmentedImage:
         # Generate outlines_list or load from file
         if not hasattr(self, 'outlines_list'):
             self.vprint('creating new outlines_list from masks')
-            self.outlines_list = cp_utils.outlines_list_multi(self.masks)  # Generate outlines_list
+            self.outlines_list = cp_utils.outlines_list(self.masks)  # Generate outlines_list
 
-        cells=np.unique(self.masks)
+        cells=fastremap.unique(self.masks)
         cells=cells[cells!=0]-1
         self.n_cells = len(cells)  # Number of detected cells in field of view (FOV)
 
@@ -880,7 +881,7 @@ class SegmentedImage:
             numpy.ndarray: Array of cell areas.
         """
         # Find unique cell labels and their counts (n_pixels)
-        areas = np.unique(self.masks, return_index=False, return_counts=True)[1][1:]
+        areas = fastremap.unique(self.masks, return_index=False, return_counts=True)[1][1:]
         
         if scaled:  # If scaled option is True, scale the areas based on image scaling factor
             return areas * self.scale ** 2

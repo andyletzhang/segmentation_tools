@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from cellpose import utils # takes a while to import :(
 import os
+import fastremap
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QComboBox, QPushButton, QRadioButton, QInputDialog, QMessageBox,
@@ -26,9 +27,8 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
-# TODO: import images (zstack or otherwise) while preserving segmentation, and vice versa
+# TODO: import masks (and everything else except img/zstack)
 # TODO: File -> export heights tif, import heights tif
-# TODO: fix pulling updates from GitHub
 # TODO: split masks (bigger one keeps the ID)
 # TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
 # TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
@@ -96,8 +96,8 @@ class MainWidget(QMainWindow):
         self.file_menu.addAction(create_action("Save", self.save_segmentation, 'Ctrl+S'))
         self.file_menu.addAction(create_action("Save As", self.save_as_segmentation, 'Ctrl+Shift+S'))
         self.file_menu.addAction(create_action("Export CSV...", self.export_csv, 'Ctrl+Shift+E'))
+        self.file_menu.addAction(create_action("Import Image(s)", self.import_images))
         self.file_menu.addAction(create_action("Exit", self.close, 'Ctrl+Q'))
-        self.file_menu.addAction(create_action("Import Image(s)...", self.import_images))
         #self.file_menu.addAction(create_action("Import Masks...", self.import_masks))
 
         # EDIT
@@ -2266,7 +2266,7 @@ class MainWidget(QMainWindow):
         if np.any(cell_number_alignment):
             print(f'{np.sum(cell_number_alignment)} cell numbers misalign starting with {np.where(cell_number_alignment)[0][0]}')
         
-        mask_number_alignment=np.array([n!=mask_n for n, mask_n in enumerate(np.unique(self.frame.masks))])
+        mask_number_alignment=np.array([n!=mask_n for n, mask_n in enumerate(fastremap.unique(self.frame.masks))])
         if np.any(mask_number_alignment):
             print(f'{np.sum(mask_number_alignment)} cell masks misalign starting with {np.where(mask_number_alignment)[0][0]}')
 

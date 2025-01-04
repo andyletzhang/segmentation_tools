@@ -1,7 +1,0 @@
-PyQt6
-PyOpenGL
-shapely
-numpy
-cellpose
-superqt
-segmentation_tools

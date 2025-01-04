@@ -1,2 +1,0 @@
-[console_scripts]
-segmentation-viewer = segmentation_viewer.main:main

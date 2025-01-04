@@ -1975,7 +1975,6 @@ class MainWidget(QMainWindow):
         
         self.cell_properties_label.setText(cell_attrs_label)
 
-
     def clear_particle_statistic(self):
         self.particle_stat_plot.clear()
         self.particle_stat_plot.setLabel('left', '')
@@ -2714,7 +2713,7 @@ class MainWidget(QMainWindow):
                 if len(channel_order) != 3:
                     raise ValueError("Channel order must have exactly three elements.")
                 
-                for frame in self.stack.frames:
+                for frame in self.progress_bar(self.stack.frames, desc='Reordering channels'):
                     frame.img = frame.img[..., channel_order]
 
                     if hasattr(frame, 'zstack'):
@@ -3024,7 +3023,7 @@ class MainWidget(QMainWindow):
             for f in natsorted(os.listdir(files[0])):
                 if f.endswith('seg.npy'):
                     seg_files.append(os.path.join(files[0], f))
-                elif f.endswith('tif') or f.endswith('tiff'):
+                elif f.lower().endswith('tif') or f.lower().endswith('tiff'):
                     tif_files.append(os.path.join(files[0], f))
                 elif f.endswith('nd2'):
                     nd2_files.append(os.path.join(files[0], f))
@@ -3033,15 +3032,14 @@ class MainWidget(QMainWindow):
 
         else: # list of files
             seg_files=[f for f in files if f.endswith('seg.npy')]
-            tif_files=[f for f in files if f.endswith('tif') or f.endswith('tiff')]
-            nd2_files=[f for f in files if f.endswith('nd2')]
+            img_files=[f for f in files if f.lower().endswith('tif') or f.lower().endswith('tiff') or f.lower().endswith('nd2')]
             tracking_files=[f for f in files if f.endswith('tracking.csv')]
             if len(tracking_files)>0:
                 tracking_file=tracking_files[-1]
 
         #----load the files----
         # only loads one type of file per call
-        # tries to load seg.npy files first, then nd2 files, then tif files
+        # tries to load seg.npy files first, then image files
         if len(seg_files)>0: # segmented file paths
             stack=SegmentedStack(frame_paths=seg_files, load_img=True, progress_bar=self.progress_bar)
             if tracking_file is not None:
@@ -3050,18 +3048,16 @@ class MainWidget(QMainWindow):
             self.file_loaded = True
             return stack, tracked_centroids
 
-        elif len(nd2_files)>0: # nd2 files
-            from nd2 import ND2File
-            from segmentation_viewer.io import read_nd2_file
-
+        elif len(img_files)>0: # image files
+            from segmentation_viewer.io import read_image_file
             frames=[]
-            for file_path in nd2_files:
+            for file_path in img_files:
                 file_stem=Path(file_path).stem
                 file_parent=Path(file_path).parent
-                imgs=read_nd2_file(file_path, progress_bar=self.progress_bar, desc=f'Loading {file_stem}')
+                imgs=read_image_file(file_path, progress_bar=self.progress_bar, desc=f'Loading {file_stem}')
                 if imgs is None:
                     return False, None
-                for v, img in enumerate(imgs):
+                for v, img in enumerate(self.progress_bar(imgs, desc=f'Processing {file_stem}')):
                     if img.shape[-1]==2: # pad to 3 color channels
                         img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
                     elif img.shape[-1]==1: # single channel
@@ -3070,37 +3066,8 @@ class MainWidget(QMainWindow):
                     if len(img)>1: # z-stack
                         frames.append(segmentation_from_zstack(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
                     else: # single slice
-                        frames.append(segmentation_from_img(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
+                        frames.append(segmentation_from_img(img[0], name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
 
-            stack=SegmentedStack(from_frames=frames)
-            self.file_loaded = True
-            return stack, None
-
-        elif len(tif_files)>0: # tif files (only checks if no seg.npy files are found)
-            from segmentation_tools.io import read_tif, tiffpage_zstack, tiffpage_frame
-
-            frames=[]
-            for file_path in self.progress_bar(tif_files):
-                try:
-                    tif_file=read_tif(file_path)
-                except ValueError as e: # probably an incompatible TIF type (not OME or ImageJ)
-                    self.statusBar().showMessage(f'ERROR: Could not load file {file_path}: {e}', 4000)
-                    return False, None
-                file_stem=Path(file_path).stem
-                file_parent=Path(file_path).parent
-                for v in self.progress_bar(range(len(tif_file))):
-                    if tif_file.shape[1]>1: # z-stack
-                        img=tiffpage_zstack(tif_file, v=v)
-                        if img.ndim==4:
-                            if img.shape[-1]==2:
-                                img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
-                        frames.append(segmentation_from_zstack(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
-                    else:
-                        img=tiffpage_frame(tif_file, v=v)
-                        if img.ndim==3:
-                            if img.shape[-1]==2:
-                                img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
-                        frames.append(segmentation_from_img(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
             stack=SegmentedStack(from_frames=frames)
             self.file_loaded = True
             return stack, None

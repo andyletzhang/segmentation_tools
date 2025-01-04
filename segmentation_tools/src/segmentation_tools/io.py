@@ -43,41 +43,22 @@ def read_tif_shape(tif_file):
 
         dimension_order=metadata_dict["Image"]['Pixels']['@DimensionOrder']
 
-    else:
-        raise ValueError('Unknown TIFF format (not saved as OME TIFF or ImageJ TIFF)')
-    
+    else: # no recognized metadata
+        shape=(len(tif_file.pages),1,1,)+tif_file.pages[0].shape # assume simple time series
+        dimension_order='XYCZT'
+
     return tuple(shape), dimension_order
 
-def read_tif(tif_path):
-    tif_file=TiffFile(tif_path)
+def read_tif(tif_file):
     shape, order=read_tif_shape(tif_file)
-    axes_map = {axis: 4-i for i, axis in enumerate(order)}
-    reshaped=[shape[axes_map[axis]] for axis in 'TZC']
+    axes_map = {axis: i for i, axis in enumerate(reversed(order))}
+    reshaped=tuple(shape[axes_map[axis]] for axis in 'TZC')
     tif_pages=np.array(tif_file.pages).reshape(reshaped).transpose(axes_map['T'], axes_map['Z'], axes_map['C'])
-    return tif_pages # images in T, Z, C order
-
-def tiffpage_frame(tif_pages, v=0, z=0):
-    img=tif_pages[v,z]
-    if img.shape[0]==1:
-        img=img[0].asarray()
-    elif img.shape[0]>1:
-        img=np.array([a.asarray() for a in img])
-        if img.shape[0]!=3:
-            print(f'Warning: unexpected number of color channels {img.shape[0]}')
-        img=img.transpose(1,2,0)
-    return img
-
-def tiffpage_zstack(tif_pages, v=0):
-    zstack=tif_pages[v]
-    if zstack.shape[1]==1: # mono z stack
-        return np.array([a.asarray() for a in zstack[:,0]])
-    else:
-        shape=zstack.shape
-        zstack=np.array([a.asarray() for a in zstack.flatten()])
-        zstack=zstack.reshape(shape[0], shape[1], *zstack.shape[1:]).transpose(0,2,3,1)
-        if zstack.shape[-1]!=3:
-            print(f'Warning: unexpected number of color channels {zstack.shape[-1]}')
-        return zstack
+    placeholder=np.empty((reshaped[0], reshaped[1]), dtype=object)
+    for i in range(reshaped[0]):
+        for j in range(reshaped[1]):
+            placeholder[i,j]=lambda i=i, j=j:np.array([a.asarray() for a in tif_pages[i,j]]) # lazy load
+    return placeholder # images in T, Z, C order
 
 def read_nd2_shape(nd2_file):
     # Read metadata to get the shape (T, Z, C)
@@ -112,33 +93,6 @@ def read_nd2(nd2_file):
 
     return placeholder
 
-def nd2_frame(placeholder, v=0, z=0):
-    # Load specific frame lazily
-    img = placeholder[v, z]()
-    if img.ndim==2:
-        return img
-    elif img.ndim==3:
-        if img.shape[0]!=3:
-            print(f'Warning: unexpected number of color channels {img.shape[0]}')
-        img=img.transpose(1, 2, 0)
-    else:
-        print(f'Warning: unexpected number of dimensions {img.ndim}. Expected 2 (mono) or 3 (RGB).')
-
-    return img
-
-def nd2_zstack(placeholder, v=0):
-    zstack=np.array([a() for a in placeholder[v]])
-    if zstack.ndim==3: # mono z stack
-        return zstack
-    elif zstack.ndim==4:
-        zstack=zstack.transpose(0,2,3,1)
-        if zstack.shape[-1]!=3:
-            print(f'Warning: unexpected number of color channels {zstack.shape[-1]}')
-    else:
-        print(f'Warning: unexpected number of dimensions {zstack.ndim}. Expected 3 (mono) or 4 (RGB).')
-
-    return zstack
-
 #----------Creating Segmentation Objects--------------------
 from segmentation_tools.segmented_comprehension import SegmentedStack, SuspendedStack, TimeStack, SegmentedImage, HeightMap
     
@@ -164,7 +118,6 @@ def load_seg_npy(file_path, load_img=False, mend=False, max_gap_size=300):
     return data
 
 def segmentation_from_img(img, name, **kwargs):
-    img=img.copy()
     shape=img.shape[:2]
     outlines=np.zeros(shape, dtype=bool)
     masks=np.zeros(shape, dtype=np.uint16)
@@ -173,7 +126,6 @@ def segmentation_from_img(img, name, **kwargs):
     return seg
 
 def segmentation_from_zstack(zstack, name, **kwargs):
-    zstack=zstack.copy()
     shape=zstack.shape[1:3]
     outlines=np.zeros(shape, dtype=bool)
     masks=np.zeros(shape, dtype=np.uint16)

@@ -3052,21 +3052,20 @@ class MainWidget(QMainWindow):
             from segmentation_viewer.io import read_image_file
             frames=[]
             for file_path in img_files:
-                file_stem=Path(file_path).stem
-                file_parent=Path(file_path).parent
-                imgs=read_image_file(file_path, progress_bar=self.progress_bar, desc=f'Loading {file_stem}')
+                file_path=Path(file_path)
+                imgs=read_image_file(str(file_path), progress_bar=self.progress_bar, desc=f'Loading {file_path.name}')
                 if imgs is None:
                     return False, None
-                for v, img in enumerate(self.progress_bar(imgs, desc=f'Processing {file_stem}')):
+                for v, img in enumerate(self.progress_bar(imgs, desc=f'Processing {file_path.stem}')):
                     if img.shape[-1]==2: # pad to 3 color channels
                         img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
                     elif img.shape[-1]==1: # single channel
                         img=img[..., 0] # drop the last dimension
 
                     if len(img)>1: # z-stack
-                        frames.append(segmentation_from_zstack(img, name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
+                        frames.append(segmentation_from_zstack(img, name=file_path.with_name(file_path.stem+f'-{v}_seg.npy')))
                     else: # single slice
-                        frames.append(segmentation_from_img(img[0], name=str(file_parent/file_stem)+f'-{v}_seg.npy'))
+                        frames.append(segmentation_from_img(img[0], name=file_path.with_name(file_path.stem+f'-{v}_seg.npy')))
 
             stack=SegmentedStack(from_frames=frames)
             self.file_loaded = True

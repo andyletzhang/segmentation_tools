@@ -19,4 +19,7 @@ To install `segmentation_viewer`:
 pip install git+https://github.com/andyletzhang/segmentation_tools@main#subdirectory=segmentation_viewer
 ```
 
+## Usage
+To launch the GUI, run the command `segmentation-viewer` after installation of the package.
+
 _Last Edited: January 3, 2025_

@@ -9,5 +9,6 @@ src/segmentation_viewer.egg-info/dependency_links.txt
 src/segmentation_viewer.egg-info/entry_points.txt
 src/segmentation_viewer.egg-info/requires.txt
 src/segmentation_viewer.egg-info/top_level.txt
+src/segmentation_viewer/assets/darktheme.qss
 src/segmentation_viewer/assets/icon.png
 src/segmentation_viewer/assets/terminal_icon.png

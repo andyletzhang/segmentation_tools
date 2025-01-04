@@ -7,4 +7,4 @@ Requires-Dist: shapely
 Requires-Dist: numpy
 Requires-Dist: cellpose
 Requires-Dist: superqt
-Requires-Dist: monolayer_tracking
+Requires-Dist: segmentation_tools

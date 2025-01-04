@@ -24,6 +24,7 @@ dependencies = [
     "scikit-image",
     "networkx",
     "natsort",
+    "nd2",
 ]
 
 [build-system]

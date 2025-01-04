@@ -4,4 +4,4 @@ shapely
 numpy
 cellpose
 superqt
-monolayer_tracking
+segmentation_tools

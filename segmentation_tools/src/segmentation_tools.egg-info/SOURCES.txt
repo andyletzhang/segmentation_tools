@@ -3,6 +3,7 @@ src/segmentation_tools/FUCCI_linking.py
 src/segmentation_tools/__init__.py
 src/segmentation_tools/heightmap.py
 src/segmentation_tools/image_segmentation.py
+src/segmentation_tools/io.py
 src/segmentation_tools/networks.py
 src/segmentation_tools/plot_tools.py
 src/segmentation_tools/preprocessing.py

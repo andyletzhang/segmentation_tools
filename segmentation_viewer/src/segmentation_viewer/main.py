@@ -29,7 +29,8 @@ from tqdm import tqdm
 
 # high priority
 # TODO: frame histogram should have options for aggregating over frame or stack
-
+# TODO: when frame changed, if histogram/overlay stat raise an attribute error, clear the plot(s) and reset the attribute(s)
+# TODO: use fastremap to rewrite modifying of tracking/masks
 # TODO: import masks (and everything else except img/zstack)
 # TODO: File -> export heights tif, import heights tif
 # TODO: split masks (bigger one keeps the ID)
@@ -51,7 +52,6 @@ from tqdm import tqdm
     # 1. Replace masks.max() with n_cells, np.unique(masks) everywhere
     # 2. Iterate over unique IDs instead of range(n_cells), and/or skip empty IDs
     # 3. Rewrite delete cell to remove mask ID without renumbering
-# TODO: replace mask operations with fastremap (if in fact faster)
 
 # TODO: undo/redo
 # TODO: add mouse and keyboard shortcuts to interface
@@ -289,8 +289,8 @@ class MainWidget(QMainWindow):
         stat_tab_layout.addWidget(frame_stat_widget)
 
         self.histogram_menu.dropdownOpened.connect(self.get_histogram_attrs)
-        self.histogram_menu.activated.connect(self.plot_histogram)
-        self.histogram_menu.currentIndexChanged.connect(self.plot_histogram)
+        self.histogram_menu.activated.connect(self.new_histogram)
+        self.histogram_menu.currentIndexChanged.connect(self.new_histogram)
         self.seg_overlay_attr.dropdownOpened.connect(self.get_overlay_attrs)
         self.seg_overlay_attr.activated.connect(self.new_seg_overlay)
         self.seg_overlay_attr.currentIndexChanged.connect(self.new_seg_overlay)
@@ -1491,6 +1491,10 @@ class MainWidget(QMainWindow):
         frame.get_volumes()
         return frame.volumes
 
+    def new_histogram(self):
+        self.plot_histogram()
+        self.histogram.autoRange()
+
     def plot_histogram(self):
         self.histogram.clear()
         hist_attr=self.histogram_menu.currentText()
@@ -1504,10 +1508,15 @@ class MainWidget(QMainWindow):
         except AttributeError:
             print(f'Attribute {hist_attr} not found in cells')
             return
+        
         hist_data=np.array(cell_attrs)[~np.isnan(cell_attrs)]
-        n, bins=np.histogram(hist_data, bins=50, density=True)
+
+        iqr=np.percentile(hist_data, 75)-np.percentile(hist_data, 25)
+        bin_width=2*iqr/(len(hist_data)**(1/3))
+        bins=np.arange(np.min(hist_data), np.max(hist_data)+bin_width, bin_width)
+        
+        n, bins=np.histogram(hist_data, bins=bins, density=True)
         self.histogram.plot(bins, n, stepMode=True, fillLevel=0, brush=(0, 0, 255, 150))
-        self.histogram.autoRange()
 
     def calibrate_coverslip_height(self):
         from segmentation_tools.heightmap import get_coverslip_z
@@ -2605,6 +2614,7 @@ class MainWidget(QMainWindow):
         self.update_ROIs_label()
         self.update_display()
         self.show_seg_overlay()
+        self.plot_histogram()
 
     def get_RGB(self):
         if self.is_grayscale:

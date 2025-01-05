@@ -387,12 +387,13 @@ def cell_cycle_boxplot(volumes, labels=None, ax=None, colors=None, hide_NS=True,
         if colors is None:
             colors=['g','r','orange']
             if has_NS:
-                colors=['k']+colors
+                colors=['gray']+colors
 
         if has_NS:
-            positions=np.arange(i*5, i*5+4)
+            spacing=5
         else:
-            positions=np.arange(i*4, i*4+3)
+            spacing=4
+        positions=np.arange(i*(spacing), (i+1)*(spacing)-1)
         
         if xticks=='n':
             box_labels=[f'n={len(v)}' for v in vol]
@@ -403,6 +404,7 @@ def cell_cycle_boxplot(volumes, labels=None, ax=None, colors=None, hide_NS=True,
         else:
             box_labels=['' for _ in range(len(vol))]
 
+        vol=[v[~np.isnan(v)] for v in vol]
         bp=ax.boxplot(vol, positions=positions, patch_artist=True, labels=box_labels, **boxplot_kwargs)
 
         for patch, color in zip(bp['boxes'], colors):
@@ -416,7 +418,7 @@ def cell_cycle_boxplot(volumes, labels=None, ax=None, colors=None, hide_NS=True,
         if trial_labels==True:
             trial_labels=labels
         for i, label in enumerate(trial_labels):
-            ax.text(i*4+1, ylim[1], label, ha='center', va='center', weight='bold')
+            ax.text(i*spacing+spacing/2-1, ylim[1], label, ha='center', va='center', weight='bold')
     
     if ctrl_line:
         if ctrl_line==True:
@@ -425,7 +427,7 @@ def cell_cycle_boxplot(volumes, labels=None, ax=None, colors=None, hide_NS=True,
         if len(ctrl_vols)==0:
             print('No WT labels found in the list')
         else:
-            median_values=[np.median(np.concatenate([vol[i] for vol in ctrl_vols])) for i in range(3)]
+            median_values=[np.nanmedian(np.concatenate([vol[i] for vol in ctrl_vols])) for i in range(3)]
             for med_value, color in zip(median_values, colors):
                 ax.axhline(med_value, color=color, linestyle='--', zorder=0)
     
@@ -449,7 +451,11 @@ def cell_cycle_occupancy_barplot(volumes, labels=None, hide_NS=True, ax=None, xt
     barplot_kwargs (dict): Additional arguments for plt.bar.
     '''
     if not ax: ax=plt.gca()
+
     if labels is None: labels=['' for _ in volumes]
+    
+    if isinstance(volumes, dict):
+        volumes=[volumes[label] for label in labels]
     
     if hide_NS:
         volumes=[vol[-3:] for vol in volumes]
@@ -466,7 +472,7 @@ def cell_cycle_occupancy_barplot(volumes, labels=None, hide_NS=True, ax=None, xt
     if colors is None:
         colors=['g','r','orange']
         if has_NS:
-            colors=['k']+colors
+            colors=['gray']+colors
 
     positions=np.concatenate([np.arange(i*condition_spacing, (i+1)*condition_spacing-1) for i in range(len(labels))])
 
@@ -485,7 +491,7 @@ def cell_cycle_occupancy_barplot(volumes, labels=None, hide_NS=True, ax=None, xt
         ax.set_xticks(positions, cc_labels*len(labels))
     return bars
         
-def cell_cycle_plot(volumes, labels=None, axes=None, figsize=(6,6), hide_NS=True, gridspec_kw={'height_ratios':[6,1]}, sharex=True, boxplot_kwargs={}, barplot_kwargs={}, subplot_kwargs={}):
+def cell_cycle_plot(volumes, labels=None, axes=None, figsize=None, hide_NS=True, gridspec_kw={'height_ratios':[6,1]}, sharex=True, boxplot_kwargs={}, barplot_kwargs={}, subplot_kwargs={}, return_patches=False):
     '''
     Wrapper function for plotting cell cycle data. Plots volume boxplot and occupancy barplot.
 
@@ -502,12 +508,19 @@ def cell_cycle_plot(volumes, labels=None, axes=None, figsize=(6,6), hide_NS=True
     subplot_kwargs (dict): Additional arguments for plt.subplots.
     '''
     if not axes:
+        if figsize is None:
+            figsize=(2*len(volumes)+1,6)
         fig, axes=plt.subplots(2, 1, figsize=figsize, sharex=sharex, gridspec_kw=gridspec_kw, **subplot_kwargs)
     
     bps=cell_cycle_boxplot(volumes, labels, ax=axes[0], hide_NS=hide_NS, **boxplot_kwargs)
     bars=cell_cycle_occupancy_barplot(volumes, labels, ax=axes[1], hide_NS=hide_NS, **barplot_kwargs)
 
-    return fig, axes, bps, bars
+    fig.tight_layout()
+    
+    if return_patches:
+        return fig, axes, bps, bars
+    else:
+        return fig, axes
 
 def hist_median(v, histtype='step', weights='default', zorder=None, ax=None, bins=30, range=(0,6000), linewidth=1.4, alpha=1, **kwargs):
     if not ax:

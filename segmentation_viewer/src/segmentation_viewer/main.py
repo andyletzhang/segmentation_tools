@@ -28,6 +28,8 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
+# TODO: frame histogram should have options for aggregating over frame or stack
+
 # TODO: import masks (and everything else except img/zstack)
 # TODO: File -> export heights tif, import heights tif
 # TODO: split masks (bigger one keeps the ID)
@@ -58,7 +60,6 @@ from tqdm import tqdm
 # TODO: pick better colors for highlight track ends which don't overlap with FUCCI
 # TODO: user can specify membrane channel for volumes tab
 # TODO: mask nan slices during normalization
-# TODO: frame and particle plots should have dropdowns instead of titles which specify the statistic
 # TODO: draw segmentation polygon on segmentation plot too
 # TODO: modify add_cell_highlight to take a frame, and change split_particle, delete_particle, etc. to recolor instead of deleting mask overlay
 
@@ -177,6 +178,7 @@ class MainWidget(QMainWindow):
         main_widget.addWidget(self.left_toolbar)
         main_widget.addWidget(self.canvas_widget)
         main_widget.addWidget(self.right_toolbar)
+        main_widget.setCollapsible(1, False)
         main_widget.setSizes([250, 800, 250])
 
         self.saved_visual_settings=[self.get_visual_settings() for _ in range(4)]
@@ -237,11 +239,18 @@ class MainWidget(QMainWindow):
     def get_frame_stat_tab(self):
         stat_tab_layout=QSplitter()
         stat_tab_layout.setOrientation(Qt.Orientation.Vertical)
-        self.histogram=pg.PlotWidget(title='Cell Volume Histogram', background='transparent')
+        frame_histogram_widget=QWidget()
+        frame_histogram_layout=QVBoxLayout(frame_histogram_widget)
+        histogram_menu_layout=QHBoxLayout()
+        self.histogram_menu=CustomComboBox(self)
+        self.histogram_menu.addItems(['Select Cell Attribute'])
+        histogram_menu_layout.addWidget(self.histogram_menu)
+        histogram_menu_layout.setContentsMargins(40, 0, 0, 0) # indent the title/menu
+        self.histogram=pg.PlotWidget(background='transparent')
         self.histogram.setMinimumHeight(200)
         self.histogram.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.histogram.setLabel('bottom', 'Volume', 'µm³')
-        self.histogram.setLabel('left', 'P(V)', '')
+        self.histogram.setLabel('bottom', 'Select Cell Attribute')
+        self.histogram.setLabel('left', 'Probability Density')
         self.histogram.showGrid(x=True, y=True)
 
         frame_stat_widget=QWidget()
@@ -251,11 +260,11 @@ class MainWidget(QMainWindow):
         seg_overlay_layout=QHBoxLayout()
         self.seg_overlay_label=QLabel("Overlay Statistic:", self)
         self.seg_overlay_attr=CustomComboBox(self)
-        self.seg_overlay_attr.addItems(['none'])
+        self.seg_overlay_attr.addItems(['Select Cell Attribute'])
         seg_overlay_layout.addWidget(self.seg_overlay_label)
         seg_overlay_layout.addWidget(self.seg_overlay_attr)
 
-        normalize_label = QLabel("Stat LUTs:", self)
+        normalize_label = QLabel("Overlay LUTs:", self)
         normalize_widget=QWidget()
         normalize_layout=QHBoxLayout(normalize_widget)
         normalize_layout.setContentsMargins(0, 0, 0, 0)
@@ -269,13 +278,19 @@ class MainWidget(QMainWindow):
         self.stat_LUT_type='frame'
         slider_layout, self.stat_LUT_slider, self.stat_range_labels=self.labeled_LUT_slider(default_range=(0, 255))
 
-        stat_tab_layout.addWidget(self.histogram)
+        frame_histogram_layout.addLayout(histogram_menu_layout)
+        frame_histogram_layout.addWidget(self.histogram)
+        stat_tab_layout.addWidget(frame_histogram_widget)
+
         frame_stat_layout.addLayout(seg_overlay_layout)
         frame_stat_layout.addWidget(normalize_label)
         frame_stat_layout.addWidget(normalize_widget)
         frame_stat_layout.addLayout(slider_layout)
         stat_tab_layout.addWidget(frame_stat_widget)
 
+        self.histogram_menu.dropdownOpened.connect(self.get_histogram_attrs)
+        self.histogram_menu.activated.connect(self.plot_histogram)
+        self.histogram_menu.currentIndexChanged.connect(self.plot_histogram)
         self.seg_overlay_attr.dropdownOpened.connect(self.get_overlay_attrs)
         self.seg_overlay_attr.activated.connect(self.new_seg_overlay)
         self.seg_overlay_attr.currentIndexChanged.connect(self.new_seg_overlay)
@@ -339,22 +354,40 @@ class MainWidget(QMainWindow):
         attrs=self.cell_scalar_attrs(cell)-ignored_attrs
 
         return attrs
-        
-    def get_overlay_attrs(self):
-        if not self.file_loaded:
-            return
-        current_attr=self.seg_overlay_attr.currentText()
+    
+    def get_cell_frame_attrs(self):
         items=[]
-        if hasattr(self.frame, 'heights'):
-            items.append('heights')
-
         if len(self.frame.cells)>0: # add any valid scalar cell attributes
             common_attrs=self.cell_stat_attrs(self.frame.cells[0])
             for cell in self.frame.cells[1:]:
                 common_attrs=common_attrs.intersection(set(dir(cell)))
             items.extend(list(common_attrs))
 
-        items=['none']+sorted(items)
+        return items
+    
+    def get_histogram_attrs(self):
+        if not self.file_loaded:
+            return
+        current_attr=self.histogram_menu.currentText()
+        items=self.get_cell_frame_attrs()
+        items=['Select Cell Attribute']+natsorted(items)
+        self.histogram_menu.blockSignals(True)
+        self.histogram_menu.clear()
+        self.histogram_menu.addItems(items)
+        self.histogram_menu.blockSignals(False)
+        current_index=self.histogram_menu.findText(current_attr)
+        if current_index==-1:
+            current_index=0
+        self.histogram_menu.setCurrentIndex(current_index)
+
+    def get_overlay_attrs(self):
+        if not self.file_loaded:
+            return
+        current_attr=self.seg_overlay_attr.currentText()
+        items=self.get_cell_frame_attrs()
+        if hasattr(self.frame, 'heights'):
+            items.append('heights')
+        items=['Select Cell Attribute']+natsorted(items)
         self.seg_overlay_attr.blockSignals(True)
         self.seg_overlay_attr.clear()
         self.seg_overlay_attr.addItems(items)
@@ -368,9 +401,9 @@ class MainWidget(QMainWindow):
         # TODO: adapt LUT range slider to accept floats
         if not self.file_loaded:
             return
-        plot_attr=self.seg_overlay_attr.currentText().lower()
+        plot_attr=self.seg_overlay_attr.currentText()
 
-        if plot_attr=='none' or plot_attr is None:
+        if plot_attr=='Select Cell Attribute' or plot_attr is None:
             self.stat_LUT_slider.blockSignals(True)
             self.stat_LUT_slider.setRange(0, 255)
             self.stat_LUT_slider.setValue((0, 255))
@@ -409,8 +442,8 @@ class MainWidget(QMainWindow):
     def show_seg_overlay(self, event=None):
         if not self.file_loaded:
             return
-        plot_attr=self.seg_overlay_attr.currentText().lower()
-        if plot_attr=='none':
+        plot_attr=self.seg_overlay_attr.currentText()
+        if plot_attr=='Select Cell Attribute':
             self.canvas.cb.setVisible(False)
             self.clear_seg_stat()
         else:
@@ -464,35 +497,32 @@ class MainWidget(QMainWindow):
     def get_particle_stat_tab(self):
         stat_tab_layout=QSplitter()
         stat_tab_layout.setOrientation(Qt.Orientation.Vertical)
-        self.particle_stat_plot=pg.PlotWidget(title='Tracked Cell Statistics', background='transparent')
+        particle_plot_widget=QWidget()
+        particle_plot_layout=QVBoxLayout(particle_plot_widget)
+        particle_stat_menu_layout=QHBoxLayout()
+        self.particle_stat_menu=CustomComboBox(self)
+        particle_stat_menu_layout.addWidget(self.particle_stat_menu)
+        particle_stat_menu_layout.setContentsMargins(40, 0, 0, 0) # indent the title/menu
+        self.particle_stat_menu.addItem('Select Cell Attribute')
+        self.particle_stat_plot=pg.PlotWidget(background='transparent')
+        self.particle_stat_plot.setLabel('left', 'Select Cell Attribute')
         self.particle_stat_plot.setMinimumHeight(200)
         self.particle_stat_plot.setLabel('bottom', 'Frame')
         self.stat_plot_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
         self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
 
-        particle_stat_selection_widget=QWidget()
-        particle_stat_selection_layout=QVBoxLayout(particle_stat_selection_widget)
-        particle_stat_selection_layout.setSpacing(0)
-        particle_stat_selection_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.area_button=QRadioButton("Area", self)
-        self.perimeter_button=QRadioButton("Perimeter", self)
-        self.circularity_button=QRadioButton("Circularity", self)
-        self.cell_cycle_button=QRadioButton("Cell Cycle", self)
-        self.area_button.setChecked(True)
-        particle_stat_selection_layout.addWidget(self.area_button)
-        particle_stat_selection_layout.addWidget(self.perimeter_button)
-        particle_stat_selection_layout.addWidget(self.circularity_button)
-        particle_stat_selection_layout.addWidget(self.cell_cycle_button)
+        spacer_widget=QWidget()
 
-        stat_tab_layout.addWidget(self.particle_stat_plot)
-        stat_tab_layout.addWidget(particle_stat_selection_widget)
+        particle_plot_layout.addLayout(particle_stat_menu_layout)
+        particle_plot_layout.addWidget(self.particle_stat_plot)
+        stat_tab_layout.addWidget(particle_plot_widget)
+        stat_tab_layout.addWidget(spacer_widget)
+        stat_tab_layout.setCollapsible(1, False)
         stat_tab_layout.setSizes([200, 400])
 
         # connect particle measurements
-        self.area_button.toggled.connect(self.plot_particle_statistic)
-        self.perimeter_button.toggled.connect(self.plot_particle_statistic)
-        self.circularity_button.toggled.connect(self.plot_particle_statistic)
-        self.cell_cycle_button.toggled.connect(self.plot_particle_statistic)
+        self.particle_stat_menu.dropdownOpened.connect(self.get_particle_attrs)
+        self.particle_stat_menu.currentIndexChanged.connect(self.plot_particle_statistic)
 
         return stat_tab_layout
 
@@ -1439,12 +1469,10 @@ class MainWidget(QMainWindow):
         else:
             frames=[self.frame]
 
-        volumes=[]
         for frame in self.progress_bar(frames):
-            volumes.extend(self.measure_frame_volume(frame))
-        self.plot_histogram(volumes)
+            self.measure_frame_volumes(frame)
 
-    def measure_frame_volume(self, frame):
+    def measure_frame_volumes(self, frame):
         if not hasattr(frame, 'heights'):
             if hasattr(frame, 'zstack'):
                 self.measure_heights()
@@ -1463,10 +1491,21 @@ class MainWidget(QMainWindow):
         frame.get_volumes()
         return frame.volumes
 
-    def plot_histogram(self, volumes):
+    def plot_histogram(self):
         self.histogram.clear()
-        volumes=np.array(volumes)[~np.isnan(volumes)]
-        n, bins=np.histogram(volumes, bins=50, density=True)
+        hist_attr=self.histogram_menu.currentText()
+        self.histogram.setLabel('bottom', hist_attr)
+        if hist_attr=='Select Cell Attribute':
+            return
+        # get the attribute values
+        # TODO: check whether to operate on stack or frame
+        try:
+            cell_attrs=np.array(self.frame.get_cell_attrs(hist_attr))
+        except AttributeError:
+            print(f'Attribute {hist_attr} not found in cells')
+            return
+        hist_data=np.array(cell_attrs)[~np.isnan(cell_attrs)]
+        n, bins=np.histogram(hist_data, bins=50, density=True)
         self.histogram.plot(bins, n, stepMode=True, fillLevel=0, brush=(0, 0, 255, 150))
         self.histogram.autoRange()
 
@@ -1976,17 +2015,41 @@ class MainWidget(QMainWindow):
         self.particle_stat_plot.setLabel('left', '')
         self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
 
+    def get_particle_attrs(self):
+        if not self.file_loaded:
+            return
+        current_attr=self.particle_stat_menu.currentText()
+        items=[]
+
+        if len(self.frame.cells)>0: # add any valid scalar cell attributes
+            common_attrs=self.cell_stat_attrs(self.frame.cells[0])
+            for cell in self.frame.cells[1:]:
+                common_attrs=common_attrs.intersection(set(dir(cell)))
+            items.extend(list(common_attrs))
+
+        items=['Select Cell Attribute']+sorted(items)
+        self.particle_stat_menu.blockSignals(True)
+        self.particle_stat_menu.clear()
+        self.particle_stat_menu.addItems(items)
+        self.particle_stat_menu.blockSignals(False)
+        current_index=self.particle_stat_menu.findText(current_attr)
+        if current_index==-1:
+            current_index=0
+        self.particle_stat_menu.setCurrentIndex(current_index)
+
     def plot_particle_statistic(self):
         if not self.file_loaded or not hasattr(self.stack, 'tracked_centroids'):
             return
-        measurement=['area', 'perimeter', 'circularity', 'cell_cycle'][self.selected_statistic]
-        # clear the plot
-        self.particle_stat_plot.clear()
+        measurement=self.particle_stat_menu.currentText()
+        
+        self.particle_stat_plot.clear() # clear the plot
         self.particle_stat_plot.setLabel('left', measurement)
+        if measurement=='Select Cell Attribute':
+            return
+        
         self.particle_stat_plot.addItem(self.stat_plot_frame_marker) # add the frame marker line
-
         if self.selected_particle_n is not None:
-            color=pg.mkColor(np.array(self.canvas.cell_cmap(self.selected_statistic)[:3])*255)
+            color=pg.mkColor(np.array(self.canvas.cell_cmap(0))[:3]*255)
             timepoints=self.stack.get_particle_attr(self.selected_particle_n, 'frame')
             if measurement=='cell_cycle': # fetch up-to-date cell cycle classification
                 green, red=np.array(self.stack.get_particle_attr(self.selected_particle_n, ['green', 'red'], fill_value=False)).T
@@ -1994,11 +2057,7 @@ class MainWidget(QMainWindow):
             else:
                 values=self.stack.get_particle_attr(self.selected_particle_n, measurement)
             self.particle_stat_plot.plot(timepoints, values, pen=color, symbol='o', symbolPen='w', symbolBrush=color, symbolSize=7, width=4)
-
-    @property
-    def selected_statistic(self):
-        stats=[self.area_button.isChecked(), self.perimeter_button.isChecked(), self.circularity_button.isChecked(), self.cell_cycle_button.isChecked()]
-        return stats.index(True)
+            self.particle_stat_plot.autoRange()
 
     def FUCCI_click(self, event, current_cell_n):
         if current_cell_n>=0:
@@ -2417,7 +2476,6 @@ class MainWidget(QMainWindow):
     def export_csv(self):
         if not self.file_loaded:
             return
-        
         
         for frame in self.stack.frames:
             if not frame.has_outlines:

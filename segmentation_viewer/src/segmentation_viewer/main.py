@@ -2413,7 +2413,7 @@ class MainWidget(QMainWindow):
         if hasattr(frame, 'zstack'):
             frame.img=frame.zstack[self.zstack_number]
 
-        frame.to_seg_npy(file_path, write_attrs=write_attrs)
+        frame.to_seg_npy(file_path, write_attrs=write_attrs, overwrite_img=True)
 
         frame.name=file_path
         print(f'Saved frame to {file_path}')
@@ -2714,9 +2714,9 @@ class MainWidget(QMainWindow):
             return
 
         # Prompt the user for the channel order
-        text, ok = QInputDialog.getText(self, 'Channel Order', 'Enter channel order (e.g., 1,2,0):')
+        text, accepted = QInputDialog.getText(self, 'Channel Order', 'Enter channel order (e.g., 1,2,0):')
         
-        if ok and text:
+        if accepted and text: # confirmed a non-empty input
             try:
                 # Parse the input into a tuple of integers
                 channel_order = tuple(map(int, text.split(',')))
@@ -3118,6 +3118,7 @@ class MainWidget(QMainWindow):
             else: # single slice
                 if hasattr(frame, 'zstack'):
                     del frame.zstack
+
             if hasattr(frame, 'bounds'):
                 del frame.bounds
 

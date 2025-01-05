@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter, QProgressBar, QScrollArea,
     QTableWidgetItem, QTableWidget
 )
-from PyQt6.QtCore import Qt, QPointF, pyqtSignal
+from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics, QMouseEvent, QAction
 from superqt import QRangeSlider
 import pyqtgraph as pg
@@ -20,6 +20,7 @@ from segmentation_tools.segmented_comprehension import SegmentedStack, Cell
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
 from segmentation_viewer.canvas import PyQtGraphCanvas, CellMaskPolygon
 from segmentation_viewer.command_line import CommandLineWindow
+from segmentation_viewer.qt import CustomComboBox
 
 from natsort import natsorted
 import importlib.resources
@@ -234,12 +235,6 @@ class MainWidget(QMainWindow):
         return right_scroll_area
 
     def get_frame_stat_tab(self):
-        class CustomComboBox(QComboBox):
-            dropdownOpened=pyqtSignal()
-            def showPopup(self):
-                self.dropdownOpened.emit()
-                super().showPopup()  # Call the original showPopup method
-
         stat_tab_layout=QSplitter()
         stat_tab_layout.setOrientation(Qt.Orientation.Vertical)
         self.histogram=pg.PlotWidget(title='Cell Volume Histogram', background='transparent')

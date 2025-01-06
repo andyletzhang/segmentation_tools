@@ -18,7 +18,7 @@ import pyqtgraph as pg
 
 from segmentation_tools.segmented_comprehension import SegmentedStack, Cell
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
-from segmentation_viewer.canvas import PyQtGraphCanvas, CellMaskPolygon
+from segmentation_viewer.canvas import PyQtGraphCanvas, CellMaskPolygons
 from segmentation_viewer.command_line import CommandLineWindow
 from segmentation_viewer.qt import CustomComboBox
 
@@ -62,7 +62,6 @@ from tqdm import tqdm
 # TODO: pick better colors for highlight track ends which don't overlap with FUCCI
 # TODO: user can specify membrane channel for volumes tab
 # TODO: mask nan slices during normalization
-# TODO: draw segmentation polygon on segmentation plot too
 # TODO: modify add_cell_highlight to take a frame, and change split_particle, delete_particle, etc. to recolor instead of deleting mask overlay
 
 class MainWidget(QMainWindow):
@@ -165,9 +164,10 @@ class MainWidget(QMainWindow):
         self.canvas = PyQtGraphCanvas(parent=self)
         self.globals_dict['canvas']=self.canvas
 
-        self.cell_roi = CellMaskPolygon()
+        self.cell_roi = CellMaskPolygons()
         self.cell_roi.last_handle_pos = None
-        self.canvas.img_plot.addItem(self.cell_roi)
+        self.canvas.img_plot.addItem(self.cell_roi.img_poly)
+        self.canvas.seg_plot.addItem(self.cell_roi.seg_poly)
         
         self.right_toolbar=self.get_right_toolbar()
         self.left_toolbar=self.get_left_toolbar()

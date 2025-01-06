@@ -477,6 +477,31 @@ class RGB_ImageItem():
         self.show_grayscale=grayscale
         self.toggle_grayscale()
 
+class CellMaskPolygons():
+    '''
+    pair of CellMaskPolygon objects for image and segmentation plots
+    '''
+    def __init__(self, parent=None, *args, **kwargs):
+        self.parent=parent
+        self.img_poly=CellMaskPolygon(*args, **kwargs)
+        self.seg_poly=CellMaskPolygon(*args, **kwargs)
+
+    # all methods are passed to the corresponding CellMaskPolygon objects
+    def clearPoints(self):
+        self.img_poly.clearPoints()
+        self.seg_poly.clearPoints()
+    
+    def update_polygon(self):
+        self.img_poly.update_polygon()
+        self.seg_poly.update_polygon()
+
+    def add_vertex(self, y, x):
+        self.img_poly.add_vertex(y, x)
+        self.seg_poly.add_vertex(y, x)
+
+    def get_enclosed_pixels(self):
+        return self.img_poly.get_enclosed_pixels()
+    
 class CellMaskPolygon(QGraphicsPolygonItem):
     ''' Polygonal overlay for drawing the current mask. '''
     def __init__(self, *args, **kwargs):

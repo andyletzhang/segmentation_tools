@@ -3168,14 +3168,16 @@ class MainWidget(QMainWindow):
         from segmentation_viewer.io import read_image_file
         files = natsorted(QFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2')[0])
         # TODO: check if the number of images matches the number of frames in the stack
-        if len(files) > 0:
-            imgs=[]
-            for file in files:
-                name=Path(file).name
-                file_imgs=read_image_file(file, progress_bar=self.progress_bar, desc=f'Importing images from {name}')
-                if file_imgs is None:
-                    continue
-                imgs.extend(file_imgs)
+        if len(files)==0:
+            return
+        
+        imgs=[]
+        for file in files:
+            name=Path(file).name
+            file_imgs=read_image_file(file, progress_bar=self.progress_bar, desc=f'Importing images from {name}')
+            if file_imgs is None:
+                continue
+            imgs.extend(file_imgs)
 
         if len(imgs)==0: # no images loaded
             return

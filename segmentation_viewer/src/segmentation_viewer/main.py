@@ -30,7 +30,7 @@ from tqdm import tqdm
 # high priority
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: when frame changed, if histogram/overlay stat raise an attribute error, clear the plot(s) and reset the attribute(s)
-# TODO: use fastremap to rewrite modifying of tracking/masks
+# TODO: use fastremap to add cell highlights?
 # TODO: import masks (and everything else except img/zstack)
 # TODO: File -> export heights tif, import heights tif
 # TODO: split masks (bigger one keeps the ID)
@@ -1988,34 +1988,40 @@ class MainWidget(QMainWindow):
 
     def select_cell(self, particle=None, cell=None):
         ''' Select a cell or particle by number. '''
-        if self.FUCCI_mode:
+        if self.FUCCI_mode: # classifying FUCCI, no cell selection
             return
         
-        if cell is not None:
+        if cell is not None: # select by cell number
             self.selected_cell_n=cell
             self.selected_particle_n=self.particle_from_cell(cell)
-        elif particle is not None:
+        elif particle is not None: # select by particle number
             self.selected_particle_n=particle
             self.selected_cell_n=self.cell_from_particle(particle)
         else: # clear selection
             self.selected_cell_n=None
             self.selected_particle_n=None
         
+        # update labels
         self.update_cell_label(self.selected_cell_n)
         self.update_tracking_ID_label(self.selected_particle_n)
-        
-        # put info about the particle in the right toolbar
-        self.plot_particle_statistic()
+        self.plot_particle_statistic() # put info about the particle in the right toolbar
 
         self.canvas.clear_selection_overlay()
-        cell_attrs_label=''
-        if self.selected_cell_n is not None: # basic selection, not cell cycle classification
-            self.canvas.add_cell_highlight(self.selected_cell_n)
-            if len(self.selected_cell.outline)>0:
-                labels=sorted(self.cell_stat_attrs(self.selected_cell))
-                attrs=[getattr(self.selected_cell, attr) for attr in labels]
-                cell_attrs_label=create_html_table(labels, attrs)
+
+        if self.selected_cell_n is None:
+            self.cell_properties_label.setText('') # clear the cell attributes table
+            return
         
+        # highlight cell
+        self.canvas.add_cell_highlight(self.selected_cell_n)
+
+        # show cell attributes in right toolbar
+        if len(self.selected_cell.outline)>0: 
+            labels=sorted(self.cell_stat_attrs(self.selected_cell))
+            attrs=[getattr(self.selected_cell, attr) for attr in labels]
+            cell_attrs_label=create_html_table(labels, attrs)
+        else:
+            cell_attrs_label=''
         self.cell_properties_label.setText(cell_attrs_label)
 
     def clear_particle_statistic(self):

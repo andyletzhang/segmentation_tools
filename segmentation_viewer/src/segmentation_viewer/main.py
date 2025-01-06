@@ -28,12 +28,13 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
+# TODO: LUTs get stuck when custom set, then new cell is drawn
+# TODO: split masks (bigger one keeps the ID)
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: when frame changed, if histogram/overlay stat raise an attribute error, clear the plot(s) and reset the attribute(s)
 # TODO: use fastremap to add cell highlights?
 # TODO: import masks (and everything else except img/zstack)
 # TODO: File -> export heights tif, import heights tif
-# TODO: split masks (bigger one keeps the ID)
 # TODO: perimeter, area, etc. scaled with voxel size (in segmented_comprehension?)
 # TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
 # TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
@@ -2299,20 +2300,25 @@ class MainWidget(QMainWindow):
         if cell_n1==cell_n2:
             return
         
-        if cell_n1+1==self.frame.n_cells:
-            # edge case: delete_cell() will decrement the cell numbers, so swap the cell numbers if cell_n1 is the last cell
-            cell_n1, cell_n2 = cell_n2, cell_n1
-            self.frame.cells[cell_n1].color_ID=self.frame.cells[cell_n2].color_ID # swap colors so this merge looks the same
+        if cell_n1>cell_n2:
+            selected_cell_n=cell_n1-1
+        else:
+            selected_cell_n=cell_n1
 
         # edit frame.masks, frame.outlines
-        self.frame.masks[self.frame.masks==cell_n2+1]=cell_n1+1 # merge masks
-        self.frame.outlines[self.frame.masks==cell_n1+1]=False # remove both outlines
-        outline=self.add_outline(self.frame.masks==cell_n1+1) # add merged outline
+        mask_2=self.frame.masks==cell_n2+1
+
+        self.frame.masks[mask_2]=cell_n1+1 # merge masks
+
+        merged_mask=self.frame.masks==cell_n1+1
+        self.frame.outlines[merged_mask]=False # remove both outlines
+        outline=self.add_outline(merged_mask) # add merged outline
 
         # edit merged cell object
         new_cell=self.frame.cells[cell_n1]
         new_cell.outline=outline
-        new_cell.centroid=np.mean(np.argwhere(self.frame.masks==cell_n1+1), axis=0)
+        if hasattr(new_cell, '_centroid'):
+            del new_cell._centroid
 
         # add new cell mask to the overlay
         self.canvas.add_cell_highlight(cell_n1, alpha=0.5, color=new_cell.color_ID, layer='mask')
@@ -2325,7 +2331,7 @@ class MainWidget(QMainWindow):
 
         self.highlight_track_ends()
         self.canvas.draw_outlines()
-        self.select_cell(cell=cell_n1)
+        self.select_cell(cell=selected_cell_n)
         self.update_ROIs_label()
         self.update_display()
 

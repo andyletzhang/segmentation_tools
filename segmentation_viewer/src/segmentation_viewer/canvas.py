@@ -5,8 +5,9 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QGraphicsPolygonItem
 from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QPen, QColor, QBrush, QPolygonF, QPainter, QCursor
-from shapely.geometry import Polygon, Point
-    
+from shapely.geometry import LineString
+from shapely.ops import polygonize, unary_union
+
 class PyQtGraphCanvas(QWidget):
     def __init__(self, parent=None, cell_n_colors=10, cell_cmap='tab10'):
         from matplotlib import colormaps
@@ -502,25 +503,26 @@ class CellMaskPolygon(QGraphicsPolygonItem):
         ''' Return all pixels enclosed by the polygon. '''
         from skimage.draw import polygon
 
-        points = [(p.x(), p.y()-0.5) for p in self.points]
-        shapely_polygon = Polygon(points).buffer(0.1)
-        
+        points = np.array([(p.x(), p.y()-0.5) for p in self.points])
+        points=np.vstack((points, points[0])) # close the polygon
+        line=LineString(points)
+        split_line=unary_union(line)
         # Get the bounding box of the polygon
-        xmin, ymin, xmax, ymax = shapely_polygon.bounds
-        xmin, ymin, xmax, ymax = map(int, [xmin, ymin, xmax, ymax])
+        xmin, ymin=(points.min(axis=0)-0.5).astype(int)
+        all_polygons=list(polygonize(split_line))
         
-        # Get the coordinates of the polygon vertices            
-        if shapely_polygon.geom_type=='MultiPolygon':
-            shapely_polygon=max(shapely_polygon, key=lambda p: p.area) # get the largest polygon if multiple polygons are present (e.g. drew intersecting lines)
-
-        poly_verts = np.array(shapely_polygon.exterior.coords)
+        enclosed_pixels=[]
+        for shapely_polygon in all_polygons:
+            poly_verts = np.array(shapely_polygon.exterior.coords)
+            
+            # Use skimage.draw.polygon to get the pixels within the polygon
+            rr, cc = polygon(poly_verts[:, 1] - ymin, poly_verts[:, 0] - xmin)
+                    
+            # Adjust the coordinates to the original image space
+            polygon_pixels = np.vstack((rr + ymin, cc + xmin)).T
+            enclosed_pixels.append(polygon_pixels)
         
-        # Use skimage.draw.polygon to get the pixels within the polygon
-        rr, cc = polygon(poly_verts[:, 1] - ymin, poly_verts[:, 0] - xmin)
-                
-        # Adjust the coordinates to the original image space
-        enclosed_pixels = np.vstack((rr + ymin, cc + xmin)).T
-        
+        enclosed_pixels=np.concatenate(enclosed_pixels, axis=0)
         return enclosed_pixels
 
 def get_matplotlib_LUT(name):

@@ -2,9 +2,9 @@ import numpy as np
 import fastremap
 
 import pyqtgraph as pg
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QGraphicsPolygonItem
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QGraphicsPolygonItem, QGraphicsPathItem
 from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QPen, QColor, QBrush, QPolygonF, QPainter, QCursor
+from PyQt6.QtGui import QPen, QColor, QBrush, QPolygonF, QPainter, QCursor, QPainterPath
 from shapely.geometry import LineString
 from shapely.ops import polygonize, unary_union
 
@@ -499,6 +499,10 @@ class CellMaskPolygons():
         self.img_poly.add_vertex(y, x)
         self.seg_poly.add_vertex(y, x)
 
+    @property
+    def points(self):
+        return self.img_poly.points
+    
     def get_enclosed_pixels(self):
         return self.img_poly.get_enclosed_pixels()
     
@@ -550,6 +554,55 @@ class CellMaskPolygon(QGraphicsPolygonItem):
         enclosed_pixels=np.concatenate(enclosed_pixels, axis=0)
         return enclosed_pixels
 
+class CellSplitLines():
+    '''
+    pair of CellSplitLine objects for image and segmentation plots
+    '''
+    def __init__(self, parent=None, *args, **kwargs):
+        self.parent=parent
+        self.img_line=CellSplitLine(*args, **kwargs)
+        self.seg_line=CellSplitLine(*args, **kwargs)
+
+    # all methods are passed to the corresponding CellSplitLine objects
+    def clearPoints(self):
+        self.img_line.clearPoints()
+        self.seg_line.clearPoints()
+
+    def update_line(self):
+        self.img_line.update_line()
+        self.seg_line.update_line()
+    
+    def add_vertex(self, y, x):
+        self.img_line.add_vertex(y, x)
+        self.seg_line.add_vertex(y, x)
+    
+    @property
+    def points(self):
+        return self.img_line.points
+class CellSplitLine(QGraphicsPathItem):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setPen(QPen(QColor(255, 255, 255, 100)))
+        self.points = []
+
+    def clearPoints(self):
+        self.points = []
+        self.update_line()
+
+    def update_line(self):
+        path = QPainterPath()
+        if self.points:
+            path.moveTo(self.points[0])
+            for point in self.points[1:]:
+                path.lineTo(point)
+        self.setPath(path)
+
+    def add_vertex(self, y, x):
+        y, x = y + 0.5, x + 0.5
+        self.points.append(QPointF(y, x))
+        self.update_line()
+        self.last_handle_pos = (y, x)
+    
 def get_matplotlib_LUT(name):
     from matplotlib import cm
     colormap=cm.get_cmap(name)

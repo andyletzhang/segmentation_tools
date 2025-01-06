@@ -4,6 +4,8 @@ import pandas as pd
 from cellpose import utils # takes a while to import :(
 import os
 import fastremap
+from scipy import ndimage
+from skimage import draw
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QComboBox, QPushButton, QRadioButton, QInputDialog, QMessageBox,
@@ -18,7 +20,7 @@ import pyqtgraph as pg
 
 from segmentation_tools.segmented_comprehension import SegmentedStack, Cell
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
-from segmentation_viewer.canvas import PyQtGraphCanvas, CellMaskPolygons
+from segmentation_viewer.canvas import PyQtGraphCanvas, CellMaskPolygons, CellSplitLines
 from segmentation_viewer.command_line import CommandLineWindow
 from segmentation_viewer.qt import CustomComboBox
 
@@ -75,6 +77,7 @@ class MainWidget(QMainWindow):
         self.file_loaded = False # passive mode
         self.is_grayscale = False
         self.drawing_cell_roi = False
+        self.drawing_cell_split = False
         self.spacer = (0,10) # default spacer size (width, height)
         self.globals_dict = {'main': self, 'np': np}
         self.locals_dict = {}
@@ -168,6 +171,10 @@ class MainWidget(QMainWindow):
         self.cell_roi.last_handle_pos = None
         self.canvas.img_plot.addItem(self.cell_roi.img_poly)
         self.canvas.seg_plot.addItem(self.cell_roi.seg_poly)
+
+        self.cell_split = CellSplitLines()
+        self.canvas.img_plot.addItem(self.cell_split.img_line)
+        self.canvas.seg_plot.addItem(self.cell_split.seg_line)
         
         self.right_toolbar=self.get_right_toolbar()
         self.left_toolbar=self.get_left_toolbar()
@@ -2086,21 +2093,25 @@ class MainWidget(QMainWindow):
         else:
             self.select_cell(None)
 
+    def split_cell_click(self, event):
+        self.drawing_cell_split=True
+        self.cell_split.clearPoints()
+
+        x, y = self.canvas.get_plot_coords(event.scenePos(), pixels=True)
+        # Add the first handle
+        self.cell_split.add_vertex(y, x)
+
     def segmentation_click(self, event):
-        if not self.drawing_cell_roi:
-            self.drawing_cell_roi=True
-            self.cell_roi.points=[]
+        self.drawing_cell_roi=True
+        self.cell_roi.clearPoints()
 
-            x, y = self.canvas.get_plot_coords(event.scenePos(), pixels=True)
-            # Add the first handle
-            self.cell_roi.add_vertex(y, x)
-            self.cell_roi.first_handle_pos=np.array((y, x))
-            self.cell_roi.last_handle_pos=np.array((y, x))
+        x, y = self.canvas.get_plot_coords(event.scenePos(), pixels=True)
+        # Add the first handle
+        self.cell_roi.add_vertex(y, x)
+        self.cell_roi.first_handle_pos=np.array((y, x))
+        self.cell_roi.last_handle_pos=np.array((y, x))
 
-            self.roi_is_closeable=False
-            
-        else:
-            self.close_cell_roi()
+        self.roi_is_closeable=False
 
     def on_click(self, event):
         if not self.file_loaded:
@@ -2113,11 +2124,18 @@ class MainWidget(QMainWindow):
             self.FUCCI_click(event, current_cell_n)
 
         else:
-            if event.button() == Qt.MouseButton.RightButton: 
-                if event.modifiers() == Qt.KeyboardModifier.ShiftModifier: # split particles
+            if event.button() == Qt.MouseButton.RightButton:
+                if self.drawing_cell_roi:
+                    self.close_cell_roi()
+                elif self.drawing_cell_split:
+                    self.split_cell()
+
+                elif event.modifiers() == Qt.KeyboardModifier.ShiftModifier: # split particles
                     self.selected_particle_n=self.particle_from_cell(current_cell_n)
                     if self.selected_particle_n is not None:
                         self.split_particle_tracks()
+                elif event.modifiers() == Qt.KeyboardModifier.AltModifier: # split cells
+                    self.split_cell_click(event)
                 else: # segmentation
                     self.segmentation_click(event)
 
@@ -2200,7 +2218,15 @@ class MainWidget(QMainWindow):
 
     def mouse_moved(self, pos):
         ''' Dynamically update the cell mask overlay as the user draws a new cell. '''
-        if self.file_loaded and self.drawing_cell_roi:
+        if not self.file_loaded:
+            return
+        
+        if self.drawing_cell_split:
+            x, y = self.canvas.get_plot_coords(pos, pixels=True) # position in plot coordinates
+
+            self.cell_split.add_vertex(y, x)
+
+        elif self.drawing_cell_roi:
             x, y = self.canvas.get_plot_coords(pos, pixels=True) # position in plot coordinates
             
             if np.array_equal((y, x), self.cell_roi.last_handle_pos):
@@ -2224,6 +2250,12 @@ class MainWidget(QMainWindow):
             return -1
         return cell_n-1
     
+    def split_cell(self):
+        self.drawing_cell_split=False
+        self.split_cell_masks()
+        self.cell_split.clearPoints()
+        self.update_display()
+
     def close_cell_roi(self):
         ''' Close the cell ROI and add the new cell mask to the frame. '''
         self.drawing_cell_roi=False
@@ -2250,11 +2282,10 @@ class MainWidget(QMainWindow):
         cell_mask[enclosed_pixels[:,0], enclosed_pixels[:,1]]=True
         new_mask=cell_mask & (self.frame.masks==0)
 
-        if new_mask.sum()<=4: # if the mask is larger than 4 pixels (minimum for cellpose to generate an outline)
+        if new_mask.sum()<5: # check if the mask is more than 4 pixels (minimum for cellpose to generate an outline)
             return False
         
         self.frame.masks[new_mask]=new_mask_n+1
-        self.frame.n_cells+=1
         print(f'Added cell {new_mask_n}')
 
         cell_color_n=self.canvas.random_color_ID()
@@ -2281,10 +2312,130 @@ class MainWidget(QMainWindow):
 
         self.update_ROIs_label()
         return True
+    
+    def split_cell_masks(self, min_size=5):
+        curve_coords=np.array([(p.x(), p.y()) for p in self.cell_split.points]).astype(int)
+        next_label = np.max(self.frame.masks) + 1
         
+        # Create a binary mask of the curve
+        curve_mask = np.zeros_like(self.frame.masks, dtype=bool)
+        for i in range(len(curve_coords) - 1):
+            rr, cc = draw.line(curve_coords[i][0], curve_coords[i][1],
+                            curve_coords[i+1][0], curve_coords[i+1][1])
+            curve_mask[cc, rr] = True
+        
+        # Find unique labels that intersect with the curve
+        intersected_labels = np.unique(self.frame.masks[curve_mask])
+        intersected_labels = intersected_labels[intersected_labels != 0]
+        
+        def find_largest_neighbor_label(component_mask, labels_array, max_iter=50):
+            """Find the label of the largest neighboring component."""
+            def find_neighbors(component_mask, labels_array):
+                """Find the labels of neighboring components."""
+                dilated = ndimage.binary_dilation(component_mask)
+                neighbor_region = dilated & ~component_mask
+                neighbor_labels = labels_array[neighbor_region]
+                neighbor_labels = neighbor_labels[neighbor_labels != 0]
+                return neighbor_labels, dilated
+            
+            neighbor_labels=[]
+            dilated=component_mask
+            counter=0
+            while len(neighbor_labels) == 0:
+                neighbor_labels, dilated=find_neighbors(dilated, labels_array)
+                counter+=1
+                if counter>max_iter:
+                    raise ValueError("No neighbors found")
+                
+            # Count occurrences of each neighbor label
+            unique_labels, counts = np.unique(neighbor_labels, return_counts=True)
+            return unique_labels[np.argmax(counts)]
+        
+        split=False
+        for label in intersected_labels:
+            # Get the current region
+            region_mask = self.frame.masks == label
+            
+            # Create temporary binary mask with the curve
+            temp_mask = region_mask.copy()
+            curve_pixels = curve_mask & region_mask
+            temp_mask[curve_pixels] = False
+            
+            # Label connected components
+            labeled_parts, num_features = ndimage.label(temp_mask)
+            
+            if num_features < 2: # Didn't split the label, move on to next candidate
+                continue
+            
+            split=True
+            # Get sizes of all components
+            component_sizes = [np.sum(labeled_parts == i) 
+                            for i in range(1, num_features + 1)]
+            
+            # Find largest component to keep original label
+            largest_idx = np.argmax(component_sizes) + 1
+            
+            # Clear original region
+            self.frame.masks[region_mask] = 0
+            
+            # Restore largest component with original label
+            self.frame.masks[labeled_parts == largest_idx] = label
+            
+            # Process other components
+            other_indices = [i + 1 for i in range(num_features) if i + 1 != largest_idx]
+            
+            new_labels=[]
+            for comp_idx in other_indices: # assign new labels to components above minimum size
+                if component_sizes[comp_idx - 1] >= min_size:
+                    new_labels.append(next_label)
+                    self.frame.masks[labeled_parts == comp_idx] = next_label
+                    next_label += 1
+                else: # merge small components with their largest neighbors
+                    component = labeled_parts == comp_idx
+                    neighbor_label = find_largest_neighbor_label(component, self.frame.masks)
+                    if neighbor_label is not None:
+                        self.frame.masks[component] = neighbor_label
+
+            print(f'Split cell {label}, new labels: {", ".join(str(n) for n in new_labels)}')
+            
+            # Handle curve pixels by assigning them to the most connected component
+            curve_points = np.where(curve_pixels)
+            for y, x in zip(*curve_points):
+                neighborhood_slice = (
+                    slice(max(0, y-1), min(self.frame.masks.shape[0], y+2)),
+                    slice(max(0, x-1), min(self.frame.masks.shape[1], x+2))
+                )
+                neighbor_values = self.frame.masks[neighborhood_slice]
+                
+                # Count neighbors for all possible labels in neighborhood
+                unique_neighbors = np.unique(neighbor_values)
+                unique_neighbors = unique_neighbors[unique_neighbors != 0]
+                
+                if len(unique_neighbors) > 0:
+                    neighbor_counts = [np.sum(neighbor_values == n) for n in unique_neighbors]
+                    self.frame.masks[y, x] = unique_neighbors[np.argmax(neighbor_counts)]
+                else:
+                    self.frame.masks[y, x] = label
+
+            old_cell=self.frame.cells[label-1]
+            if hasattr(old_cell, '_centroid'):
+                del old_cell._centroid
+            outline=self.add_outline(self.frame.masks==label)
+            if self.frame.has_outlines:
+                old_cell.outline=outline
+            
+            for new_label in new_labels:
+                mask=self.frame.masks==new_label
+                if np.any(mask):
+                    outline=self.add_outline(mask)
+                    self.add_cell(new_label-1, outline, color_ID=self.canvas.random_cell_color(), frame_number=self.frame_number)
+        if split:
+            del self.frame.stored_mask_overlay
+
     def add_cell(self, n, outline, color_ID=None, red=False, green=False, frame_number=None, **kwargs):
         if frame_number is None: frame_number=self.frame_number
         self.frame.cells=np.append(self.frame.cells, Cell(n, outline, color_ID=color_ID, red=red, green=green, frame_number=frame_number, **kwargs))
+        self.frame.n_cells+=1
     
     def add_outline(self, mask):
         outline=utils.outlines_list(mask)[0]
@@ -2317,8 +2468,15 @@ class MainWidget(QMainWindow):
         # edit merged cell object
         new_cell=self.frame.cells[cell_n1]
         new_cell.outline=outline
+
         if hasattr(new_cell, '_centroid'):
             del new_cell._centroid
+        if hasattr(self.stack, 'tracked_centroids'):
+            x,y=new_cell.centroid
+            t=self.stack.tracked_centroids
+            t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n2), 'cell_number']=cell_n1
+            t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n1), 'x']=x
+            t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n1), 'y']=y
 
         # add new cell mask to the overlay
         self.canvas.add_cell_highlight(cell_n1, alpha=0.5, color=new_cell.color_ID, layer='mask')
@@ -2613,6 +2771,7 @@ class MainWidget(QMainWindow):
 
     def reset_display(self):
         self.drawing_cell_roi=False
+        self.drawing_cell_split=False
         self.select_cell(None)
         self.FUCCI_dropdown.setCurrentIndex(0) # clear overlay
         self.seg_overlay_attr.setCurrentIndex(0) # clear attribute overlay

@@ -31,7 +31,6 @@ from tqdm import tqdm
 
 # high priority
 # TODO: LUTs get stuck when custom set, then new cell is drawn
-# TODO: split masks (bigger one keeps the ID)
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: when frame changed, if histogram/overlay stat raise an attribute error, clear the plot(s) and reset the attribute(s)
 # TODO: use fastremap to add cell highlights?
@@ -2472,11 +2471,8 @@ class MainWidget(QMainWindow):
         if hasattr(new_cell, '_centroid'):
             del new_cell._centroid
         if hasattr(self.stack, 'tracked_centroids'):
-            x,y=new_cell.centroid
             t=self.stack.tracked_centroids
-            t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n2), 'cell_number']=cell_n1
-            t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n1), 'x']=x
-            t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n1), 'y']=y
+            t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n1), ['x','y']]=new_cell.centroid
 
         # add new cell mask to the overlay
         self.canvas.add_cell_highlight(cell_n1, alpha=0.5, color=new_cell.color_ID, layer='mask')
@@ -2552,6 +2548,8 @@ class MainWidget(QMainWindow):
 
         t=self.stack.tracked_centroids
         t.drop(t[(t.frame==frame_number)&np.isin(t.cell_number, cell_numbers)].index, inplace=True)
+        
+        # remap cell numbers in tracked_centroids
         cell_remap=fastremap.component_map(idx, np.arange(len(idx)))
         t.loc[t.frame==frame_number, 'cell_number']=t.loc[t.frame==frame_number, 'cell_number'].map(cell_remap)
         

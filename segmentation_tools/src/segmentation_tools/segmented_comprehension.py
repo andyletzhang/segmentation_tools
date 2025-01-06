@@ -19,9 +19,24 @@ import fastremap
 class SegmentedStack:
     '''
     A base class for time lapse or multipoint data.
+    Built around a collection of SegmentedImage objects, stored in the frames attribute.
     '''
-    def __init__(self, stack_path=None, frame_paths=None, coarse_grain=1, verbose_load=False, from_frames=[], progress_bar=lambda x: x, stack_type='time', **kwargs):
-        '''takes the path to the stack and sets up the Stack, an array of Images representing each slice.'''
+    def __init__(self, from_frames=[], stack_path=None, frame_paths=None, coarse_grain=1, verbose_load=False, progress_bar=lambda x: x, stack_type='time', **kwargs):
+        '''
+        Stacks can be initialized from:
+            1. a list of already initialized SegmentedImage objects (from_frames).
+            2. a directory of seg.npy files (stack_path),
+            3. a list of seg.npy file paths (frame_paths).
+            
+        Args:
+            from_frames (list): List of SegmentedImage objects to initialize the stack with.
+            stack_path (str): Path to a directory containing seg.npy files.
+            frame_paths (list): List of paths to seg.npy files.
+            coarse_grain (int): Number of frames to skip when loading a stack from a directory.
+            verbose_load (bool): If True, prints the number of seg.npy files found and loaded.
+            progress_bar (function): Function to display a progress bar.
+            stack_type (str): Type of stack to initialize. Options are 'time', 'suspended', or 'multipoint'.
+        '''
         self.progress_bar=progress_bar
         if len(from_frames)>0:
             self.frames=from_frames
@@ -594,7 +609,10 @@ class TimeStack(SegmentedStack):
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
 
 class SegmentedImage:
-    ''' takes one segmented image as a seg.npy file path and runs the numbers. '''
+    '''
+    A class for storing and manipulating segmented image data.
+    One SegmentedImage object contains data for a single image frame, including masks, outlines, and cell objects.
+    '''
     verbose=False
     def vprint(self, obj):
         if self.verbose:
@@ -604,7 +622,17 @@ class SegmentedImage:
 
     def __init__(self, data, name=None, frame_number=None, verbose=False, scale=None, units=None, **kwargs):
         '''
-        takes a dictionary of data from a seg.npy file and loads it into the Image object.
+        Initializes an Image object.
+        The data can be passed either as a dictionary or as a path to a _seg.npy file containing the data.
+        _seg.npy files are generated either by segmentation_tools or from the Cellpose GUI.
+
+        Args:
+            data (str or dict): Path to a _seg.npy file or a dictionary containing the segmented image data.
+            name (str, optional): Name of the image, which will be used during exporting. Defaults to the loaded file path.
+            frame_number (int, optional): Frame number for the image sequence if loaded in a SegmentedStack.
+            verbose (bool, optional): If True, prints debug statements. Defaults to False.
+            scale (float, optional): XY scale factor for converting pixels to desired units.
+            units (str, optional): Units for measurements.
         '''
         if isinstance(data, str): # if a string is passed, assume it's a path to a seg.npy file
             from segmentation_tools.io import load_seg_npy

@@ -634,13 +634,14 @@ class SegmentedImage:
             scale (float, optional): XY scale factor for converting pixels to desired units.
             units (str, optional): Units for measurements.
         '''
-        if isinstance(data, str): # if a string is passed, assume it's a path to a seg.npy file
+
+        if isinstance(data, str): # if a string is passed, assume it's a path to a seg.npy file containing a dictionary
             from segmentation_tools.io import load_seg_npy
             # pull load_seg_npy parameters from kwargs
             name=data
             load_seg_npy_kwargs={key: kwargs.pop(key) for key in ['load_img', 'mend', 'max_gap_size'] if key in kwargs}
             data=load_seg_npy(data, **load_seg_npy_kwargs)
-        elif isinstance(data, dict): # already loaded seg.npy
+        elif isinstance(data, dict): # already passed a dictionary
             pass
         else:
             raise ValueError('data must be a path to a seg.npy file or a dictionary of data from a seg.npy file.')
@@ -677,10 +678,8 @@ class SegmentedImage:
         self.name=name
         
         # set masks datatype
-        if self.masks.max() < 65535: # there will always be fewer than 65535 cells in a single frame (surely), just a failsafe
-            self.masks = self.masks.astype(np.uint16) # this mostly covers the case where otherwise the masks would default to uint8
-        else:
-            self.masks = self.masks.astype(np.uint32)
+        max_mask=self.masks.max()
+        self.masks=fastremap.refit(self.masks, value=max_mask*2) # refit to a larger datatype to avoid overflow errors
 
         self.resolution = self.masks.shape  # Image resolution
         
@@ -698,6 +697,9 @@ class SegmentedImage:
         cells=fastremap.unique(self.masks)
         cells=cells[cells!=0]-1
         self.n_cells = len(cells)  # Number of detected cells in field of view (FOV)
+        if self.n_cells!=max_mask:
+            print(f'WARNING: {self.name} masks are not contiguous. Renumbering...')
+            fastremap.renumber(self.masks, in_place=True)
 
         # Instantiate Cell objects for each cell labeled in the image
         self.cells = np.array([Cell(n, self.outlines_list[n], frame_number=frame_number) for n in range(self.n_cells)])
@@ -709,9 +711,6 @@ class SegmentedImage:
                 self.cell_cycles=self.cell_cycles[cells]
             self.set_cell_attrs('cycle_stage', self.cell_cycles)
 
-        if len(cells)!=self.masks.max():
-            print(f'WARNING: {self.name} masks are not contiguous. Renumbering...')
-            self.masks=preprocessing.renumber_masks(self.masks)
 
         if hasattr(self, 'heights'):
             if not hasattr(self, 'zero_to_nan'):
@@ -763,52 +762,46 @@ class SegmentedImage:
         Path(export_path).parent.mkdir(parents=True, exist_ok=True) # make sure the directory exists
         np.save(export_path, export) # write segmentation file
     
-    def delete_cell(self, cell_number):
-        '''deletes a cell from the image.'''
-        # remove mask
-        to_clear=self.masks==cell_number+1
-        self.masks[to_clear]=0
+    def renumber_cells(self):
+        '''
+        Renumbers cell masks, sorted by (y,x).
+        Also rearranges self.cells to match the new order. 
+        '''
+        self.masks, order=fastremap.renumber(self.masks)
+        order.pop(0) # remove the 0 key
 
-        # remove outlines
-        self.outlines[to_clear]=False
-        
-        self.n_cells-=1
-        if cell_number==self.n_cells: # deleted last cell, just remove it from the list
-            self.cells=self.cells[:-1]
-        else: # reassign cell numbers to be contiguous
-            self.masks[self.masks==self.masks.max()]=cell_number+1 # reassign mask numbers to be contiguous
-            
-            new_indices=np.arange(self.n_cells)
-            new_indices[cell_number]=self.n_cells
+        cell_order=np.zeros(len(self.cells),dtype=int)
+        for entry,key in order.items():
+            cell_order[key-1]=entry
+        cell_order-=1
 
-            self.cells=self.cells[new_indices]
-            self.cells[cell_number].n=cell_number
+        self.cells=self.cells[cell_order]
+        self.set_cell_attrs('n', range(self.n_cells)) # reassign cell.n values
+        return cell_order
 
     def delete_cells(self, cell_numbers):
-        '''deletes multiple cells from the image.'''
-        cell_numbers=np.array(cell_numbers)
-        cell_numbers.sort()
+        '''deletes a cell from the image.'''
+        if len(cell_numbers)<5: # small number of cells
+            to_clear=np.zeros(self.masks.shape,dtype=bool)
+            for cell_number in cell_numbers:
+                to_clear|=self.masks==cell_number+1
+        else: # large number, use np.isin
+            to_clear=np.isin(self.masks, np.array(cell_numbers)+1)
 
-        keep_mask=np.ones(len(self.cells), dtype=bool)
-        keep_mask[cell_numbers]=False
-
-        old_labels=np.arange(len(self.cells))+1
-        new_labels=np.zeros_like(old_labels)
-        new_labels[keep_mask]=np.arange(1, keep_mask.sum()+1)
-
-        lookup=np.zeros(len(self.cells)+1, dtype=int)
-        lookup[old_labels]=new_labels
-
+        # remove mask and outlines
+        self.masks[to_clear]=0
+        self.outlines[to_clear]=False
         
-        # Update masks using lookup table
-        self.masks = lookup[self.masks]
-        self.outlines=cp_utils.masks_to_outlines(self.masks)
-        
-        # Update cells array
-        self.cells = self.cells[keep_mask]
-        
-        self.n_cells=len(self.cells)
-        self.set_cell_attrs('n', range(self.n_cells)) # renumber cells
+        idx=np.setdiff1d(np.arange(self.n_cells),cell_numbers)
+        self.n_cells-=len(cell_numbers)
+        self.cells=self.cells[idx]
+        self.set_cell_attrs('n',np.arange(self.n_cells))
+
+        remapping=fastremap.component_map(idx+1,np.arange(len(idx))+1)
+        remapping[0]=0
+        self.masks=fastremap.remap(self.masks, remapping)
+
+        return idx
 
 
     # ------------FUCCI----------------        

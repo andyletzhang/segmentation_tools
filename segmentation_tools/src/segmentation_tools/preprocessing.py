@@ -132,12 +132,6 @@ def normalize_grayscale(image, dtype='float32', quantile=(0,1), bounds=None, mas
         image=np.clip(image, a_min=0, a_max=1)
     return image
 
-def renumber_masks(masks):
-    ''' renumber masks from 1 to n, where n is the number of unique labels in the image '''
-    unique_labels=np.unique(masks)
-    renumbered_masks = np.searchsorted(unique_labels, masks)
-    return renumbered_masks
-
 from scipy.optimize import minimize_scalar
 def get_fluor_threshold(img, size_threshold, noise_score=0.02, quantile=(0.5, 0.95), tolerance=1):
     ret=minimize_scalar(nuclear_threshold_loss, bounds=np.quantile(img, quantile), args=(img, size_threshold, noise_score), options={'xatol':tolerance})

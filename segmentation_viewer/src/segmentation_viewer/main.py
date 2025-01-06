@@ -34,6 +34,7 @@ from tqdm import tqdm
 # TODO: import masks (and everything else except img/zstack)
 # TODO: File -> export heights tif, import heights tif
 # TODO: split masks (bigger one keeps the ID)
+# TODO: perimeter, area, etc. scaled with voxel size (in segmented_comprehension?)
 # TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
 # TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
 
@@ -847,10 +848,8 @@ class MainWidget(QMainWindow):
 
             edge_cells-=1 # convert to 0-indexed
             if len(edge_cells)>0:
-                for cell in edge_cells:
-                    self.remove_tracking_data(cell, frame_number=frame.frame_number)
-
-                frame.delete_cells(edge_cells)
+                idx=frame.delete_cells(edge_cells)
+                self.remove_tracking_data(edge_cells, idx, frame_number=frame.frame_number)
                 
                 #frame.masks[changed_masks_bool]=0
                 frame.outlines=utils.masks_to_outlines(frame.masks)
@@ -2287,7 +2286,10 @@ class MainWidget(QMainWindow):
         return outline
 
     def merge_cell_masks(self, cell_n1, cell_n2):
-        ''' merges cell_n2 into cell_n1. '''
+        '''
+        merges cell_n2 into cell_n1.
+        in practice, this reassigns the cell_n2 mask to cell_n1 and deletes cell_n2.
+        '''
         if cell_n1==cell_n2:
             return
         
@@ -2310,8 +2312,8 @@ class MainWidget(QMainWindow):
         self.canvas.add_cell_highlight(cell_n1, alpha=0.5, color=new_cell.color_ID, layer='mask')
 
         # purge cell 2
-        self.frame.delete_cell(cell_n2)
-        self.remove_tracking_data(cell_n2)
+        idx=self.frame.delete_cells([cell_n2])
+        self.remove_tracking_data([cell_n2], idx, frame_number=self.frame_number)
 
         print(f'Merged cell {cell_n2} into cell {cell_n1}')
 
@@ -2357,8 +2359,8 @@ class MainWidget(QMainWindow):
         if frame==self.frame: # remove the cell mask from the mask overlay
             self.canvas.add_cell_highlight(cell_n, alpha=0.5, color='none', img_type='outlines', layer='mask')
         
-        self.remove_tracking_data(cell_n, frame_number=frame.frame_number)
-        frame.delete_cell(cell_n)
+        idx=frame.delete_cells([cell_n])
+        self.remove_tracking_data([cell_n], idx, frame_number=frame.frame_number)
 
         if update_display:
             print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
@@ -2371,17 +2373,18 @@ class MainWidget(QMainWindow):
                 self.update_display()
                 self.update_ROIs_label()
 
-    def remove_tracking_data(self, cell_number, frame_number=None):
-        ''' Remove a cell from one frame of the tracking data. Renumber the cell numbers in the frame to align with the new cell masks. '''
+    def remove_tracking_data(self, cell_numbers, idx, frame_number=None):
+        ''' Remove cells from specified frame of the tracking data. Renumber the cell numbers in the frame to align with the new cell masks. '''
         if not hasattr(self.stack, 'tracked_centroids'):
             return
         if frame_number is None:
             frame_number=self.frame_number
 
         t=self.stack.tracked_centroids
-        t.drop(t[(t.frame==frame_number)&(t.cell_number==cell_number)].index, inplace=True)
-        t.loc[(t.frame==frame_number)&(t.cell_number==self.stack.frames[frame_number].n_cells-1), 'cell_number']=cell_number
-
+        t.drop(t[(t.frame==frame_number)&np.isin(t.cell_number, cell_numbers)].index, inplace=True)
+        cell_remap=fastremap.component_map(idx, np.arange(len(idx)))
+        t.loc[t.frame==frame_number, 'cell_number']=t.loc[t.frame==frame_number, 'cell_number'].map(cell_remap)
+        
     def save_tracking(self, event=None, file_path=None):
         if not self.file_loaded:
             return

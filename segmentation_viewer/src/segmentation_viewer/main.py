@@ -30,7 +30,6 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
-# TODO: whenever stack.tracked_centroids is modified, check 'save tracking' box
 # TODO: LUTs get stuck when custom set, then new cell is drawn
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: when frame changed, if histogram/overlay stat raise an attribute error, clear the plot(s) and reset the attribute(s)
@@ -1006,6 +1005,7 @@ class MainWidget(QMainWindow):
             if hasattr(self.stack, 'tracked_centroids'):
                 t=self.stack.tracked_centroids
                 self.stack.tracked_centroids=t[t.frame!=frame.frame_number]
+                self.also_save_tracking.setChecked(True)
 
         self.update_display()
 
@@ -1354,6 +1354,7 @@ class MainWidget(QMainWindow):
         t=self.stack.tracked_centroids
 
         head_cell_numbers, head_frame_numbers=np.array(t[(t.particle==particle_n)&(t.frame<=current_frame_n)][['cell_number', 'frame']]).T
+        self.also_save_tracking.setChecked(True)
         for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
             self.delete_cell_mask(cell_n, self.stack.frames[frame_n])
 
@@ -1373,6 +1374,7 @@ class MainWidget(QMainWindow):
         t=self.stack.tracked_centroids
 
         head_cell_numbers, head_frame_numbers=np.array(t[(t.particle==particle_n)&(t.frame>=current_frame_n)][['cell_number', 'frame']]).T
+        self.also_save_tracking.setChecked(True)
         for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
             self.delete_cell_mask(cell_n, self.stack.frames[frame_n])
 
@@ -1389,6 +1391,7 @@ class MainWidget(QMainWindow):
         
         particle_n=self.selected_particle_n
         t=self.stack.tracked_centroids
+        self.also_save_tracking.setChecked(True)
 
         head_cell_numbers, head_frame_numbers=np.array(t[t.particle==particle_n][['cell_number', 'frame']]).T
         for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
@@ -1813,7 +1816,8 @@ class MainWidget(QMainWindow):
             cell.color_ID=new_color
             if hasattr(self.stack.frames[cell.frame], 'stored_mask_overlay'):
                 del self.stack.frames[cell.frame].stored_mask_overlay # TODO: recolor only the new particle by breaking up the add_cell_highlight method
-
+        
+        self.also_save_tracking.setChecked(True)
         self.plot_particle_statistic()
         self.highlight_track_ends()
         current_cell=self.cell_from_particle(self.selected_particle_n)
@@ -1826,6 +1830,7 @@ class MainWidget(QMainWindow):
             else:
                 merged_color=self.stack.get_particle(first_particle)[0].color_ID
                 merged, new_head, new_tail=self.stack.merge_particle_tracks(first_particle, second_particle, self.frame_number)
+                self.also_save_tracking.setChecked(True)
                 if new_head is not None:
                     new_head_color=self.canvas.random_cell_color()
                     for cell in self.stack.get_particle(new_head):
@@ -1834,12 +1839,6 @@ class MainWidget(QMainWindow):
                     new_tail_color=self.canvas.random_cell_color()
                     for cell in self.stack.get_particle(new_tail):
                         cell.color_ID=new_tail_color
-                if hasattr(self.stack, 'tracked_centroids'):
-                    # renumber the cells in the merged frame
-                    t=self.stack.tracked_centroids
-                    cell_numbers=np.unique(t[t.frame==self.frame_number]['cell_number'])
-                    new_cell_numbers=np.searchsorted(cell_numbers, t.loc[t.frame==self.frame_number, 'cell_number'])
-                    t.loc[t.frame==self.frame_number, 'cell_number']=new_cell_numbers.astype(t['cell_number'].dtype)
 
                 for cell in self.stack.get_particle(merged):
                     cell.color_ID=merged_color
@@ -2308,6 +2307,7 @@ class MainWidget(QMainWindow):
             new_particle=pd.DataFrame([[new_mask_n, centroid[0], centroid[1], self.frame_number, new_particle_ID, cell_color_n]], columns=t.columns, index=[len(t)])
             self.stack.tracked_centroids=pd.concat([t, new_particle])
             self.stack.tracked_centroids=self.stack.tracked_centroids.sort_values(['frame', 'particle'])
+            self.also_save_tracking.setChecked(True)
 
         self.canvas.draw_outlines()
         self.highlight_track_ends()
@@ -2480,6 +2480,7 @@ class MainWidget(QMainWindow):
         if hasattr(self.stack, 'tracked_centroids'):
             t=self.stack.tracked_centroids
             t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n1), ['x','y']]=new_cell.centroid
+            self.also_save_tracking.setChecked(True)
 
         # add new cell mask to the overlay
         self.canvas.add_cell_highlight(cell_n1, alpha=0.5, color=new_cell.color_ID, layer='mask')
@@ -2559,6 +2560,7 @@ class MainWidget(QMainWindow):
         # remap cell numbers in tracked_centroids
         cell_remap=fastremap.component_map(idx, np.arange(len(idx)))
         t.loc[t.frame==frame_number, 'cell_number']=t.loc[t.frame==frame_number, 'cell_number'].map(cell_remap)
+        self.also_save_tracking.setChecked(True)
         
     def save_tracking(self, event=None, file_path=None):
         if not self.file_loaded:

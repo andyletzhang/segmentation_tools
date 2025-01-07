@@ -30,6 +30,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
+# TODO: whenever stack.tracked_centroids is modified, check 'save tracking' box
 # TODO: LUTs get stuck when custom set, then new cell is drawn
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: when frame changed, if histogram/overlay stat raise an attribute error, clear the plot(s) and reset the attribute(s)
@@ -49,7 +50,7 @@ from tqdm import tqdm
 # TODO: number of neighbors
 
 # eventual QOL improvements
-# TODO: read all kinds of tifs to the best of your ability; maybe have an option to verify dimension order
+# TODO: rename and streamline update_display, imshow. Combine other updates (plot_particle_statistic etc.)
 # TODO: make sure all frames have same number of z slices
 # TODO: perhaps allow for non-contiguous masks and less numerical reordering.
     # 1. Replace masks.max() with n_cells, np.unique(masks) everywhere
@@ -2077,6 +2078,8 @@ class MainWidget(QMainWindow):
                 values=green+2*red
             else:
                 values=self.stack.get_particle_attr(self.selected_particle_n, measurement)
+            if np.all(np.isnan(values)): # no data to plot
+                return
             self.particle_stat_plot.plot(timepoints, values, pen=color, symbol='o', symbolPen='w', symbolBrush=color, symbolSize=7, width=4)
             self.particle_stat_plot.autoRange()
 
@@ -2092,7 +2095,7 @@ class MainWidget(QMainWindow):
         else:
             self.select_cell(None)
 
-    def split_cell_click(self, event):
+    def start_cell_split(self, event):
         self.drawing_cell_split=True
         self.cell_split.clearPoints()
 
@@ -2100,7 +2103,7 @@ class MainWidget(QMainWindow):
         # Add the first handle
         self.cell_split.add_vertex(y, x)
 
-    def segmentation_click(self, event):
+    def start_drawing_segmentation(self, event):
         self.drawing_cell_roi=True
         self.cell_roi.clearPoints()
 
@@ -2134,9 +2137,9 @@ class MainWidget(QMainWindow):
                     if self.selected_particle_n is not None:
                         self.split_particle_tracks()
                 elif event.modifiers() == Qt.KeyboardModifier.AltModifier: # split cells
-                    self.split_cell_click(event)
+                    self.start_cell_split(event)
                 else: # segmentation
-                    self.segmentation_click(event)
+                    self.start_drawing_segmentation(event)
 
             elif event.button() == Qt.MouseButton.LeftButton:
                 if  current_cell_n>=0:
@@ -2253,6 +2256,7 @@ class MainWidget(QMainWindow):
         self.drawing_cell_split=False
         self.split_cell_masks()
         self.cell_split.clearPoints()
+        self.select_cell(cell=self.selected_cell_n)
         self.update_display()
 
     def close_cell_roi(self):
@@ -2321,6 +2325,9 @@ class MainWidget(QMainWindow):
         for i in range(len(curve_coords) - 1):
             rr, cc = draw.line(curve_coords[i][0], curve_coords[i][1],
                             curve_coords[i+1][0], curve_coords[i+1][1])
+            # remove out-of-bounds coordinates
+            inbound_coords=(rr>=0)&(rr<curve_mask.shape[0])&(cc>=0)&(cc<curve_mask.shape[1])
+            rr, cc=rr[inbound_coords], cc[inbound_coords]
             curve_mask[cc, rr] = True
         
         # Find unique labels that intersect with the curve

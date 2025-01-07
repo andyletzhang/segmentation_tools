@@ -30,6 +30,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
+# TODO: ctrl+shift+click to delete particle
 # TODO: LUTs get stuck when custom set, then new cell is drawn
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: when frame changed, if histogram/overlay stat raise an attribute error, clear the plot(s) and reset the attribute(s)
@@ -2261,13 +2262,15 @@ class MainWidget(QMainWindow):
     def close_cell_roi(self):
         ''' Close the cell ROI and add the new cell mask to the frame. '''
         self.drawing_cell_roi=False
-        enclosed_pixels=self.cell_roi.get_enclosed_pixels()
+        enclosed_pixels=self.cell_roi.get_enclosfed_pixels()
         # remove pixels outside the image bounds
         enclosed_pixels=enclosed_pixels[(enclosed_pixels[:,0]>=0)&
                                         (enclosed_pixels[:,0]<self.frame.masks.shape[0])&
                                         (enclosed_pixels[:,1]>=0)&
                                         (enclosed_pixels[:,1]<self.frame.masks.shape[1])]
-        self.add_cell_mask(enclosed_pixels)
+        new_mask_n=self.add_cell_mask(enclosed_pixels)
+        if new_mask_n is not False:
+            print(f'Added cell {new_mask_n}')
         self.cell_roi.clearPoints()
         self.update_display()
 
@@ -2279,7 +2282,7 @@ class MainWidget(QMainWindow):
         return colors
         
     def add_cell_mask(self, enclosed_pixels):
-        new_mask_n=self.frame.n_cells
+        new_mask_n=self.frame.n_cells # new cell number
         cell_mask=np.zeros_like(self.frame.masks, dtype=bool)
         cell_mask[enclosed_pixels[:,0], enclosed_pixels[:,1]]=True
         new_mask=cell_mask & (self.frame.masks==0)
@@ -2288,7 +2291,6 @@ class MainWidget(QMainWindow):
             return False
         
         self.frame.masks[new_mask]=new_mask_n+1
-        print(f'Added cell {new_mask_n}')
 
         cell_color_n=self.canvas.random_color_ID()
         cell_color=self.canvas.cell_cmap(cell_color_n)
@@ -2300,7 +2302,7 @@ class MainWidget(QMainWindow):
         self.frame.outlines[outline[:,1], outline[:,0]]=True
         centroid=np.mean(enclosed_pixels, axis=0)
         self.add_cell(new_mask_n, outline, color_ID=cell_color, centroid=centroid, frame_number=self.frame_number, red=False, green=False)
-
+    
         if hasattr(self.stack, 'tracked_centroids'):
             t=self.stack.tracked_centroids
             new_particle_ID=t['particle'].max()+1
@@ -2314,7 +2316,7 @@ class MainWidget(QMainWindow):
         self.canvas.add_cell_highlight(new_mask_n, alpha=0.5, color=cell_color, layer='mask')
 
         self.update_ROIs_label()
-        return True
+        return new_mask_n
     
     def split_cell_masks(self, min_size=5):
         curve_coords=np.array([(p.x(), p.y()) for p in self.cell_split.points]).astype(int)
@@ -2358,9 +2360,10 @@ class MainWidget(QMainWindow):
             return unique_labels[np.argmax(counts)]
         
         split=False
-        for label in intersected_labels:
+        new_masks=self.frame.masks.copy()
+        for orig_label in intersected_labels:
             # Get the current region
-            region_mask = self.frame.masks == label
+            region_mask = self.frame.masks == orig_label
             
             # Create temporary binary mask with the curve
             temp_mask = region_mask.copy()
@@ -2382,10 +2385,11 @@ class MainWidget(QMainWindow):
             largest_idx = np.argmax(component_sizes) + 1
             
             # Clear original region
-            self.frame.masks[region_mask] = 0
+            new_masks[region_mask] = 0
+            self.frame.masks[region_mask] = 0 # clear the original mask, to be replaced after split computation
             
-            # Restore largest component with original label
-            self.frame.masks[labeled_parts == largest_idx] = label
+            # largest component gets original label
+            new_masks[labeled_parts == largest_idx] = orig_label
             
             # Process other components
             other_indices = [i + 1 for i in range(num_features) if i + 1 != largest_idx]
@@ -2394,15 +2398,19 @@ class MainWidget(QMainWindow):
             for comp_idx in other_indices: # assign new labels to components above minimum size
                 if component_sizes[comp_idx - 1] >= min_size:
                     new_labels.append(next_label)
-                    self.frame.masks[labeled_parts == comp_idx] = next_label
+                    new_masks[labeled_parts == comp_idx] = next_label
                     next_label += 1
                 else: # merge small components with their largest neighbors
                     component = labeled_parts == comp_idx
-                    neighbor_label = find_largest_neighbor_label(component, self.frame.masks)
-                    if neighbor_label is not None:
-                        self.frame.masks[component] = neighbor_label
+                    try:
+                        neighbor_label = find_largest_neighbor_label(component, self.frame.masks)
+                    except ValueError:
+                        neighbor_label=None
 
-            print(f'Split cell {label}, new labels: {", ".join(str(n) for n in new_labels)}')
+                    if neighbor_label is not None:
+                        new_masks[component] = neighbor_label
+
+            print(f'Split cell {orig_label-1}, new labels: {", ".join(str(n-1) for n in new_labels)}')
             
             # Handle curve pixels by assigning them to the most connected component
             curve_points = np.where(curve_pixels)
@@ -2419,22 +2427,24 @@ class MainWidget(QMainWindow):
                 
                 if len(unique_neighbors) > 0:
                     neighbor_counts = [np.sum(neighbor_values == n) for n in unique_neighbors]
-                    self.frame.masks[y, x] = unique_neighbors[np.argmax(neighbor_counts)]
+                    new_masks[y, x] = unique_neighbors[np.argmax(neighbor_counts)]
                 else:
-                    self.frame.masks[y, x] = label
+                    new_masks[y, x] = orig_label
 
-            old_cell=self.frame.cells[label-1]
+            old_cell=self.frame.cells[orig_label-1]
+            old_mask=new_masks==orig_label
             if hasattr(old_cell, '_centroid'):
                 del old_cell._centroid
-            outline=self.add_outline(self.frame.masks==label)
+            outline=self.add_outline(old_mask)
+            self.frame.masks[old_mask]=orig_label # restore the original label to the largest mask
             if self.frame.has_outlines:
                 old_cell.outline=outline
             
             for new_label in new_labels:
-                mask=self.frame.masks==new_label
-                if np.any(mask):
-                    outline=self.add_outline(mask)
-                    self.add_cell(new_label-1, outline, color_ID=self.canvas.random_cell_color(), frame_number=self.frame_number)
+                enclosed_pixels=np.array(np.where(new_masks==new_label)).T
+                if len(enclosed_pixels)>0:
+                    self.add_cell_mask(enclosed_pixels)
+
         if split:
             del self.frame.stored_mask_overlay
 
@@ -3148,20 +3158,20 @@ class MainWidget(QMainWindow):
         for frame in self.stack.frames:
             tracked_frame=t[t.frame==frame.frame_number]
             tracked_cells=tracked_frame['cell_number']
-            tracked_ns=frame.get_cell_attrs('n')
+            frame_cells=frame.get_cell_attrs('n')
 
-            missing_tracks=set(tracked_ns)-set(tracked_cells)
+            missing_tracks=set(frame_cells)-set(tracked_cells)
             if len(missing_tracks)>0:
-                print(f'Frame {frame.frame_number} is missing {len(missing_tracks)} cells: {missing_tracks}')
+                print(f'tracked_centroids is missing {len(missing_tracks)} cells in frame {frame.frame_number}: {missing_tracks}')
                 new_particle_numbers=np.arange(len(missing_tracks))+t['particle'].max()+1
                 new_particles=pd.DataFrame([[cell.n, cell.centroid[0], cell.centroid[1], frame.frame_number, particle_number] for cell, particle_number in zip(frame.cells[list(missing_tracks)], new_particle_numbers)], columns=['cell_number', 'y', 'x', 'frame', 'particle'])
                 if 'color' in t.columns:
                     new_particles['color']=self.canvas.random_color_ID(len(new_particles))
                 t=pd.concat([t, new_particles])
 
-            extra_tracks=set(tracked_cells)-set(tracked_ns)
+            extra_tracks=set(tracked_cells)-set(frame_cells)
             if len(extra_tracks)>0:
-                print(f'Frame {frame.frame_number} has {len(extra_tracks)} extra tracks: {extra_tracks}')
+                print(f'tracked_centroids has {len(extra_tracks)} extra tracks in frame {frame.frame_number}: {extra_tracks}')
                 t.drop(tracked_frame[tracked_frame.cell_number.isin(extra_tracks)].index, inplace=True)
         
         t=t.sort_values(['frame', 'particle'])

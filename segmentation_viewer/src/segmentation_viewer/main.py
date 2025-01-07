@@ -30,6 +30,9 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
+# TODO: something is breaking tracking in the last frame when earlier tracks are modified (/cells are added?)
+# looks like cells get renumbered but not the tracks, or the tracks are just deleted? Cells in the last frame no longer have a particle assigned
+# also occasionally happens in not the last frame. Not sure if this is the same bug, seems to happen less often.
 # TODO: ctrl+shift+click to delete particle
 # TODO: LUTs get stuck when custom set, then new cell is drawn
 # TODO: frame histogram should have options for aggregating over frame or stack
@@ -116,7 +119,7 @@ class MainWidget(QMainWindow):
         self.edit_menu.addAction(create_action("Remove Edge Masks", self.remove_edge_masks))
 
         self.view_menu = self.menu_bar.addMenu("View")
-        self.view_menu.addAction(create_action("Reset View", self.reset_view, 'Esc'))
+        self.view_menu.addAction(create_action("Reset View", self.reset_view))
         self.view_menu.addAction(create_action("Show Grayscale", self.toggle_grayscale))
         #self.view_menu.addAction(create_action("Segmentation Plot", self.toggle_segmentation_plot))
 
@@ -2142,6 +2145,15 @@ class MainWidget(QMainWindow):
                     self.start_drawing_segmentation(event)
 
             elif event.button() == Qt.MouseButton.LeftButton:
+                # cancel right-click actions
+                if self.drawing_cell_roi:
+                    self.cell_roi.clearPoints()
+                    self.drawing_cell_roi=False
+                elif self.drawing_cell_split:
+                    self.cell_split.clearPoints()
+                    self.drawing_cell_split=False
+
+                # cell selection actions
                 if  current_cell_n>=0:
                     if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
                         # ctrl click deletes cells
@@ -2262,7 +2274,7 @@ class MainWidget(QMainWindow):
     def close_cell_roi(self):
         ''' Close the cell ROI and add the new cell mask to the frame. '''
         self.drawing_cell_roi=False
-        enclosed_pixels=self.cell_roi.get_enclosfed_pixels()
+        enclosed_pixels=self.cell_roi.get_enclosed_pixels()
         # remove pixels outside the image bounds
         enclosed_pixels=enclosed_pixels[(enclosed_pixels[:,0]>=0)&
                                         (enclosed_pixels[:,0]<self.frame.masks.shape[0])&
@@ -2596,7 +2608,7 @@ class MainWidget(QMainWindow):
             return
         
         self.stack.tracked_centroids=self.load_tracking_data(file_path)
-        self.stack.tracked_centroids=self.fix_tracked_centroids(self.stack.tracked_centroids)
+        self.stack.tracked_centroids=self.fix_tracked_centroids()
         self.statusBar().showMessage(f'Loaded tracking data from {file_path}', 2000)
         self.propagate_FUCCI_checkbox.setEnabled(True)
         self.recolor_tracks()
@@ -2883,8 +2895,16 @@ class MainWidget(QMainWindow):
         elif event.key() == Qt.Key.Key_Delete:
             if self.selected_cell_n is not None:
                 self.delete_cell_mask(self.selected_cell_n)
+                self.select_cell(None)
 
+        # cancel drawing, loading
         if event.key() == Qt.Key.Key_Escape:
+            if self.drawing_cell_roi:
+                self.cell_roi.clearPoints()
+                self.drawing_cell_roi=False
+            if self.drawing_cell_split:
+                self.cell_split.clearPoints()
+                self.drawing_cell_split=False
             if self.is_iterating: # cancel progress bar iteration
                 self.cancel_iter=True
                 print('Cancel signal received.')
@@ -3153,8 +3173,10 @@ class MainWidget(QMainWindow):
         files = [u.toLocalFile() for u in event.mimeData().urls()]
         self.open_stack(natsorted(files))
 
-    def fix_tracked_centroids(self, t):
+    def fix_tracked_centroids(self, t=None, inplace=True):
         ''' make sure every cell is accounted for in the tracking data. '''
+        if t is None:
+            t=self.stack.tracked_centroids
         for frame in self.stack.frames:
             tracked_frame=t[t.frame==frame.frame_number]
             tracked_cells=tracked_frame['cell_number']
@@ -3177,6 +3199,8 @@ class MainWidget(QMainWindow):
         t=t.sort_values(['frame', 'particle'])
         t['particle']=t.groupby('particle').ngroup() # renumber particles contiguously
 
+        if inplace:
+            self.stack.tracked_centroids=t
         return t
 
     def auto_range_sliders(self):
@@ -3207,7 +3231,7 @@ class MainWidget(QMainWindow):
         self.file_loaded=True
         if tracked_centroids is not None:
             self.stack.tracked_centroids=tracked_centroids
-            self.stack.tracked_centroids=self.fix_tracked_centroids(self.stack.tracked_centroids)
+            self.stack.tracked_centroids=self.fix_tracked_centroids()
             self.propagate_FUCCI_checkbox.setEnabled(True)
             self.recolor_tracks()
         else:

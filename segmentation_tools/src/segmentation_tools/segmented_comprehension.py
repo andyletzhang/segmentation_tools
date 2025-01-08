@@ -264,9 +264,12 @@ class TimeStack(SegmentedStack):
         """
         t=self.tracked_centroids
         new_particle_ID=t['particle'].max()+1
-        t.loc[(t.particle==particle_ID)&(t.frame>=split_frame), 'particle']=new_particle_ID
-
-        return new_particle_ID
+        if np.sum((t.particle==particle_ID)&(t.frame<split_frame))==0:
+            # if the particle doesn't exist before the split frame, nothing to do
+            return None
+        else:
+            t.loc[(t.particle==particle_ID)&(t.frame>=split_frame), 'particle']=new_particle_ID
+            return new_particle_ID
 
     def get_particle(self, input_ID):
         """

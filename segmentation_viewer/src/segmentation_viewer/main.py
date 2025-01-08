@@ -1811,7 +1811,10 @@ class MainWidget(QMainWindow):
         
     def split_particle_tracks(self):
         new_particle=self.stack.split_particle_track(self.selected_particle_n, self.frame_number)
-        t=self.stack.tracked_centroids
+
+        if new_particle is None:
+            return
+        
         self.selected_particle_n=new_particle
         
         # assign a random color to the new particle
@@ -1820,6 +1823,8 @@ class MainWidget(QMainWindow):
             cell.color_ID=new_color
             if hasattr(self.stack.frames[cell.frame], 'stored_mask_overlay'):
                 del self.stack.frames[cell.frame].stored_mask_overlay # TODO: recolor only the new particle by breaking up the add_cell_highlight method
+        
+        print(f'Split particle {self.selected_particle_n} at frame {self.frame_number}')
         
         self.also_save_tracking.setChecked(True)
         self.plot_particle_statistic()
@@ -1847,7 +1852,7 @@ class MainWidget(QMainWindow):
                 for cell in self.stack.get_particle(merged):
                     cell.color_ID=merged_color
 
-                print(f'Merged particles {first_particle} and {second_particle}')
+                print(f'Merged particles {first_particle} and {second_particle} at frame {self.frame_number}')
                 self.plot_particle_statistic()
                 self.highlight_track_ends()
                 current_cell=self.cell_from_particle(merged)

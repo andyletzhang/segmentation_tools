@@ -3,7 +3,7 @@ _Created by Andy Zhang for use in the [Gardel Lab at the University of Chicago](
 
 This repository contains two packages installable via pip: `segmentation_tools`, which provides a suite of analytical tools to segment, track, and analyze fluorescent microscopy data of tissue monolayers, and `segmentation_viewer`, which is a graphical frontend for `segmentation_tools` and offers some additional manual annotation functionality.
 
-![Animated visual of segmented data in the Segmentation Viewer](segmentation_viewer/src/segmentation_viewer/assets/segmentation_viewer.gif)
+![Animated visual of segmented data in the Segmentation Viewer](segmentation_viewer/src/segmentation_viewer/assets/segmentation_viewer_v2.gif)
 
 Segmentation is done using [Cellpose](https://github.com/mouseland/cellpose), and tracking is built on top of [trackpy](https://github.com/soft-matter/trackpy).
 

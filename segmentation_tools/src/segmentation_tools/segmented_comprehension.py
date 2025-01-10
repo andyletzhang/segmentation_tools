@@ -571,7 +571,7 @@ class TimeStack(SegmentedStack):
                 mother_cell = self.frames[potential_mother_ID['frame'].item()].cells[potential_mother_ID['cell_number'].item()]
                 
                 # Potential mother attributes
-                m_size = np.sqrt(mother_cell.area)
+                m_size = np.sqrt(mother_cell.area_pixels)
                 extended_mother = trajectories.loc[potential_mother_ID['particle']].iloc[-3:].reset_index()
                 m_circ = 1 - np.max([self.frames[frame_number].cells[cell_number].circularity for frame_number, cell_number in np.array(extended_mother[['frame', 'cell_number']])])
                 
@@ -581,7 +581,7 @@ class TimeStack(SegmentedStack):
                 for frame_number, cell_number in np.array(potential_daughter_IDs[['frame', 'cell_number']]):
                     daughter_cell = self.frames[frame_number].cells[cell_number]
                     d_circs.append(daughter_cell.circularity)
-                    d_areas.append(daughter_cell.area)
+                    d_areas.append(daughter_cell.area_pixels)
                 d_circs = 1 - np.array(d_circs)
                 d_areas = np.array(d_areas)
 
@@ -1153,7 +1153,7 @@ class Cell:
     
     def spherical_volume_pixels(self):
         '''returns the volume of the cell if the area were a maximal cross-section of a sphere.'''
-        return 4/3*np.pi*(self.area/np.pi)**(3/2)
+        return 4/3*np.pi*(self.area_pixels/np.pi)**(3/2)
     spherical_volume_pixels._scaling=3
     
     def perimeter_pixels(self):
@@ -1256,7 +1256,7 @@ class Cell:
         segment_lengths = np.linalg.norm(np.diff(vertices, append=[vertices[0]], axis=0), axis=1)
         
         # Calculate center of mass of the perimeter
-        CoM_P = np.sum([1 / 2 * (vertices[i] + vertices[(i + 1) % len(vertices)]) * segment_lengths[i] for i in range(len(vertices))], axis=0) / self.perimeter
+        CoM_P = np.sum([1 / 2 * (vertices[i] + vertices[(i + 1) % len(vertices)]) * segment_lengths[i] for i in range(len(vertices))], axis=0) / self.perimeter_pixels
         
         # Translate vertices to center of mass
         zeroed_vertices = vertices - CoM_P

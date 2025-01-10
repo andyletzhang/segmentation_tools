@@ -1937,6 +1937,15 @@ class MainWidget(QMainWindow):
             for frame in self.stack.frames:
                 frame.z_scale=z_size
         self.update_voxel_size_labels()
+
+        # update right toolbar if necessary
+        if 'scaled' in self.histogram_menu.currentText():
+            self.plot_histogram()
+        if 'scaled' in self.particle_stat_menu.currentText():
+            self.plot_particle_statistic()
+        if 'scaled' in self.seg_overlay_attr.currentText():
+            self.show_seg_overlay()
+
     
     def update_voxel_size_labels(self):
         ''' Update the labels next to the voxel size boxes with the current values. '''

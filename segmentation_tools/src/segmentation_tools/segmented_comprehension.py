@@ -705,7 +705,7 @@ class SegmentedImage:
             fastremap.renumber(self.masks, in_place=True)
 
         # Instantiate Cell objects for each cell labeled in the image
-        self.cells = np.array([Cell(n, self.outlines_list[n], frame_number=frame_number) for n in range(self.n_cells)])
+        self.cells = np.array([Cell(n, self.outlines_list[n], parent=self, frame_number=frame_number) for n in range(self.n_cells)])
 
         # assign cell cycle to cell objects
         if hasattr(self, 'cell_cycles'):
@@ -805,7 +805,6 @@ class SegmentedImage:
         self.masks=fastremap.remap(self.masks, remapping)
 
         return idx
-
 
     # ------------FUCCI----------------        
     def measure_FUCCI(self, percent_threshold=0.15, red_fluor_threshold=None, green_fluor_threshold=None, orange_brightness=1.5, threshold_offset=0, noise_score=0.02):
@@ -1104,37 +1103,70 @@ class HeightMap(SegmentedImage):
         return self.volumes
 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
+def scaled_properties(cls):
+    for _, func in list(cls.__dict__.items()):
+        if hasattr(func, "_scaling"):
+            original_name = func.__name__
+            scaling=func._scaling
+            scaled_name = original_name.replace('_pixels','')
 
+            # Define the original property
+            def original_property(self, func=func):
+                return func(self)
+
+            # Define the scaled property
+            def scaled_property(self, func=func):
+                try:
+                    scale=self.parent.scale
+                except AttributeError:
+                    scale=None
+                
+                if scale is None:
+                    return None
+                else:
+                    value = func(self)
+                    if value is None:
+                        return None
+                    return value * scale**scaling
+
+            # Add the properties to the class
+            setattr(cls, original_name, property(original_property))
+            setattr(cls, scaled_name, property(scaled_property))
+    return cls
+
+@scaled_properties
 class Cell:
     '''class for each labeled cell membrane.'''
-    def __init__(self, n, outline, frame_number=None, **kwargs):
+    def __init__(self, n, outline, parent=None, frame_number=None, **kwargs):
         self.frame=frame_number
         self.n=n
         self.outline=outline
+        self.parent=parent
 
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    @property
-    def area(self):
+    def area_pixels(self):
         area=0.5*np.abs(np.dot(self.outline.T[0],np.roll(self.outline.T[1],1))-np.dot(self.outline.T[1],np.roll(self.outline.T[0],1)))
         return area
+    area_pixels._scaling=1
     
-    @property
-    def spherical_volume(self):
+    def spherical_volume_pixels(self):
         '''returns the volume of the cell if the area were a maximal cross-section of a sphere.'''
         return 4/3*np.pi*(self.area/np.pi)**(3/2)
-    @property
-    def perimeter(self):
+    spherical_volume_pixels._scaling=3
+    
+    def perimeter_pixels(self):
         if len(self.outline)==0:
             return 0
         else:
             perimeter=np.sum(np.linalg.norm(np.diff(self.outline, axis=0, append=[self.outline[0]]).T, axis=0))
             return perimeter
+    perimeter_pixels._scaling=1
     
     @property
     def circularity(self):
-        circularity=4*np.pi*self.area/self.perimeter**2
+        circularity=4*np.pi*self.area_pixels/self.perimeter_pixels**2
         return circularity
 
     @property
@@ -1152,7 +1184,7 @@ class Cell:
     def get_centroid(self):
         x=self.outline[:,0]
         y=self.outline[:,1]
-        A=self.area
+        A=self.area_pixels
         Cx = np.sum((x + np.roll(x, 1)) * (x * np.roll(y, 1) - np.roll(x, 1) * y))
         Cy = np.sum((y + np.roll(y, 1)) * (x * np.roll(y, 1) - np.roll(x, 1) * y))
 

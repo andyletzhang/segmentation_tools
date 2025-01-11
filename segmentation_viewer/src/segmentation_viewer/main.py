@@ -2434,11 +2434,15 @@ class MainWidget(QMainWindow):
             if num_features < 2: # Didn't split the label, move on to next candidate
                 continue
             
-            split=True
             # Get sizes of all components
-            component_sizes = [np.sum(labeled_parts == i) 
-                            for i in range(1, num_features + 1)]
+            component_sizes = np.array([np.sum(labeled_parts == i) for i in range(1, num_features + 1)])
             
+            num_labels=component_sizes>=min_size
+
+            if np.sum(num_labels)<2: # only one component is above the minimum size
+                continue
+            
+            split=True
             # Find largest component to keep original label
             largest_idx = np.argmax(component_sizes) + 1
             

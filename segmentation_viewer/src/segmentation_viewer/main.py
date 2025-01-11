@@ -474,12 +474,8 @@ class MainWidget(QMainWindow):
 
                 self.overlay_seg_stat(self.frame.scaled_heights)
             else:
-                try:
-                    cell_attrs=np.array(self.frame.get_cell_attrs(plot_attr))
+                cell_attrs=np.array(self.frame.get_cell_attrs(plot_attr, fill_value=np.nan))
 
-                except AttributeError:
-                    print(f'Attribute {plot_attr} not found in cells')
-                    return
                 value_map=np.concatenate([[np.nan], cell_attrs.astype(float)])
                 mask_values=value_map[self.frame.masks]
                 self.overlay_seg_stat(mask_values)
@@ -491,6 +487,7 @@ class MainWidget(QMainWindow):
             stat=self.canvas.seg_stat_overlay.image
         if np.all(np.isnan(stat)):
             levels=(0, 1)
+            self.canvas.seg_stat_overlay.clear()
         else:
             stat_range=(np.nanmin(stat), np.nanmax(stat))
             if self.stat_LUT_type=='frame':
@@ -499,8 +496,8 @@ class MainWidget(QMainWindow):
                 levels=(stat_range) # TODO: stack levels
             elif self.stat_LUT_type=='custom':
                 levels=self.stat_LUT_slider.value()
+            self.canvas.seg_stat_overlay.setImage(self.canvas.transform_image(stat))
 
-        self.canvas.seg_stat_overlay.setImage(self.canvas.transform_image(stat))
         self.stat_LUT_slider.blockSignals(True)
         self.set_stat_LUT_levels(levels)
         self.stat_LUT_slider.blockSignals(False)
@@ -1491,6 +1488,14 @@ class MainWidget(QMainWindow):
         for frame in self.progress_bar(frames):
             self.measure_frame_volumes(frame)
 
+        # update the display if necessary
+        if self.histogram_menu.currentText()=='volume':
+            self.plot_histogram()
+        if self.seg_overlay_attr.currentText()=='volume':
+            self.show_seg_overlay()
+        if self.particle_stat_menu.currentText()=='volume':
+            self.plot_particle_statistic()
+
     def measure_frame_volumes(self, frame):
         if not hasattr(frame, 'heights'):
             if hasattr(frame, 'zstack'):
@@ -1522,10 +1527,9 @@ class MainWidget(QMainWindow):
             return
         # get the attribute values
         # TODO: check whether to operate on stack or frame
-        try:
-            cell_attrs=np.array(self.frame.get_cell_attrs(hist_attr))
-        except AttributeError:
-            print(f'Attribute {hist_attr} not found in cells')
+        cell_attrs=np.array(self.frame.get_cell_attrs(hist_attr, fill_value=np.nan))
+        
+        if np.all(np.isnan(cell_attrs)):
             return
         
         hist_data=np.array(cell_attrs)[~np.isnan(cell_attrs)]
@@ -2099,7 +2103,7 @@ class MainWidget(QMainWindow):
                 green, red=np.array(self.stack.get_particle_attr(self.selected_particle_n, ['green', 'red'], fill_value=False)).T
                 values=green+2*red
             else:
-                values=self.stack.get_particle_attr(self.selected_particle_n, measurement)
+                values=self.stack.get_particle_attr(self.selected_particle_n, measurement, fill_value=np.nan)
             if np.all(np.isnan(values)): # no data to plot
                 return
             self.particle_stat_plot.plot(timepoints, values, pen=color, symbol='o', symbolPen='w', symbolBrush=color, symbolSize=7, width=4)

@@ -106,16 +106,12 @@ class SegmentedStack:
             frame.load_img(**kwargs)
 
     def delete_frame(self, frame_number):
-        print(f'Deleting frame {frame_number}...')
         self.frames=np.delete(self.frames, frame_number)
-        print('Reindexing frames...')
         for n, frame in enumerate(self.frames):
             frame.frame_number=n
-        print('renumbering tracking data...')
         if hasattr(self, 'tracked_centroids'):
             self.tracked_centroids=self.tracked_centroids[self.tracked_centroids['frame']!=frame_number]
             self.tracked_centroids.loc[self.tracked_centroids['frame']>frame_number, 'frame']-=1
-        print('done')
 
     # -------------Magic-------------
     def __len__(self):

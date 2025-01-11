@@ -126,6 +126,7 @@ class MainWidget(QMainWindow):
         # STACK
         self.stack_menu = self.menu_bar.addMenu("Stack")
         self.stack_menu.addAction(create_action("Delete frame", self.delete_frame, self))
+        self.stack_menu.addAction(create_action("Make substack...", self.make_substack, self))
 
         # HELP
         self.help_menu = self.menu_bar.addMenu("Help")
@@ -3421,6 +3422,20 @@ class MainWidget(QMainWindow):
         self.frame_slider.setRange(0, len(self.stack.frames)-1)
         self.change_current_frame(min(frame_number, len(self.stack.frames)-1))
 
+    def make_substack(self):
+        if not self.file_loaded:
+            return
+        # popup dialog to select the range of frames to include in the substack
+        dialog=SubstackDialog(len(self.stack.frames), self)
+        if dialog.exec() == QDialog.Accepted:
+            substack_frames = dialog.get_input()
+            if substack_frames is None:
+                return
+            substack_frames=np.array(substack_frames)
+            self.stack.make_substack(substack_frames)
+            self.frame_slider.setRange(0, len(self.stack.frames)-1)
+            self.change_current_frame(min(self.frame_number, len(self.stack.frames)-1))
+    
     #def import_masks(self):
     
     def import_images(self):

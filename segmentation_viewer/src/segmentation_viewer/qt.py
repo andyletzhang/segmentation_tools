@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QComboBox, QDialog, QVBoxLayout, QLabel, QLineEdit, 
 from PyQt6.QtGui import QAction, QMouseEvent
 from PyQt6.QtCore import Qt, pyqtSignal, QPointF
 from superqt import QRangeSlider
+from segmentation_viewer.io import RangeStringValidator, range_string_to_list
 
 def create_action(name, func, parent=None, shortcut=None):
     action=QAction(name, parent)
@@ -80,3 +81,41 @@ class FineScrubQRangeSlider(QRangeSlider):
             super().mouseMoveEvent(modified_event)
         else:
             super().mouseMoveEvent(event)
+
+class SubstackDialog(QDialog):
+    def __init__(self, array_length, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Input Substack Frames")
+        
+        # Layout and widgets
+        layout = QVBoxLayout(self)
+        self.label = QLabel("Input substack frames:", self)
+        layout.addWidget(self.label)
+        
+        self.line_edit = QLineEdit(self)
+        self.line_edit.setPlaceholderText("e.g. 1-10, 15, 17-18")
+        
+        # Set the validator to the QLineEdit
+        self.line_edit.setValidator(RangeStringValidator(array_length-1, self))
+        
+        layout.addWidget(self.line_edit)
+        
+        # Confirm and Cancel buttons
+        self.button_confirm = QPushButton("Confirm", self)
+        self.button_cancel = QPushButton("Cancel", self)
+        layout.addWidget(self.button_confirm)
+        layout.addWidget(self.button_cancel)
+        
+        # Connect buttons
+        self.button_confirm.clicked.connect(self.accept)
+        self.button_cancel.clicked.connect(self.reject)
+
+    def get_input(self):
+        """
+        Returns the text entered by the user in the QLineEdit.
+        """
+        try:
+            return range_string_to_list(self.line_edit.text())
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Input", "Invalid input. Please enter a valid range of frames.")
+            return None

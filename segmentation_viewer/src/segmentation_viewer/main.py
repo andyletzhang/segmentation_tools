@@ -1066,7 +1066,7 @@ class MainWidget(QMainWindow):
         frame.has_outlines=False
         frame.outlines=utils.masks_to_outlines(frame.masks)
         frame.n_cells=np.max(frame.masks)
-        frame.cells = np.array([Cell(n, np.empty((0,2)), frame_number=frame.frame_number) for n in range(frame.n_cells)])
+        frame.cells = np.array([Cell(n, np.empty((0,2)), frame_number=frame.frame_number, parent=frame) for n in range(frame.n_cells)])
         if hasattr(frame, 'stored_mask_overlay'):
             del frame.stored_mask_overlay
 
@@ -2508,7 +2508,7 @@ class MainWidget(QMainWindow):
 
     def add_cell(self, n, outline, color_ID=None, red=False, green=False, frame_number=None, **kwargs):
         if frame_number is None: frame_number=self.frame_number
-        self.frame.cells=np.append(self.frame.cells, Cell(n, outline, color_ID=color_ID, red=red, green=green, frame_number=frame_number, **kwargs))
+        self.frame.cells=np.append(self.frame.cells, Cell(n, outline, color_ID=color_ID, red=red, green=green, frame_number=frame_number, parent=self.stack.frames[self.frame_number], **kwargs))
         self.frame.n_cells+=1
     
     def add_outline(self, mask):

@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QTableWidget
 )
 from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics, QMouseEvent, QAction
+from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics, QMouseEvent
 from superqt import QRangeSlider
 import pyqtgraph as pg
 
@@ -89,47 +89,43 @@ class MainWidget(QMainWindow):
         self.cancel_iter=False # flag to cancel progress bar iteration
 
         # Menu bar
+        from segmentation_viewer.qt import create_action
         self.menu_bar = self.menuBar()
-
-        def create_action(name, func, shortcut=None):
-            action=QAction(name, self)
-            action.triggered.connect(func)
-            if shortcut is not None:
-                action.setShortcut(shortcut)
-            return action
         
         # FILE
         self.file_menu = self.menu_bar.addMenu("File")
-        self.file_menu.addAction(create_action("Open File(s)", self.open_files, 'Ctrl+O'))
-        self.file_menu.addAction(create_action("Open Folder", self.open_folder_dialog, 'Ctrl+Shift+O'))
-        self.file_menu.addAction(create_action("Save", self.save_segmentation, 'Ctrl+S'))
-        self.file_menu.addAction(create_action("Save As", self.save_as_segmentation, 'Ctrl+Shift+S'))
-        self.file_menu.addAction(create_action("Export CSV...", self.export_csv, 'Ctrl+Shift+E'))
-        self.file_menu.addAction(create_action("Import Image(s)", self.import_images))
-        self.file_menu.addAction(create_action("Exit", self.close, 'Ctrl+Q'))
-        #self.file_menu.addAction(create_action("Import Masks...", self.import_masks))
+        self.file_menu.addAction(create_action("Open File(s)", self.open_files, self, 'Ctrl+O'))
+        self.file_menu.addAction(create_action("Open Folder", self.open_folder_dialog, self, 'Ctrl+Shift+O'))
+        self.file_menu.addAction(create_action("Save", self.save_segmentation, self, 'Ctrl+S'))
+        self.file_menu.addAction(create_action("Save As", self.save_as_segmentation, self, 'Ctrl+Shift+S'))
+        self.file_menu.addAction(create_action("Export CSV...", self.export_csv, self, 'Ctrl+Shift+E'))
+        self.file_menu.addAction(create_action("Import Image(s)", self.import_images, self))
+        self.file_menu.addAction(create_action("Exit", self.close, self, 'Ctrl+Q'))
+        #self.file_menu.addAction(create_action("Import Masks...", self.import_masks, self))
 
         # EDIT
         self.edit_menu = self.menu_bar.addMenu("Edit")
-        #self.edit_menu.addAction(create_action("Undo", self.undo, 'Ctrl+Z'))
-        #self.edit_menu.addAction(create_action("Redo", self.redo, 'Ctrl+Shift+Z'))
-        self.edit_menu.addAction(create_action("Clear Masks", self.clear_masks))
-        self.edit_menu.addAction(create_action("Generate Outlines", self.generate_outlines_list))
-        self.edit_menu.addAction(create_action("Mend Gaps", self.mend_gaps))
-        self.edit_menu.addAction(create_action("Remove Edge Masks", self.remove_edge_masks))
+        #self.edit_menu.addAction(create_action("Undo", self.undo, self, 'Ctrl+Z'))
+        #self.edit_menu.addAction(create_action("Redo", self.redo, self, 'Ctrl+Shift+Z'))
+        self.edit_menu.addAction(create_action("Clear Masks", self.clear_masks, self))
+        self.edit_menu.addAction(create_action("Generate Outlines", self.generate_outlines_list, self))
+        self.edit_menu.addAction(create_action("Mend Gaps", self.mend_gaps, self))
+        self.edit_menu.addAction(create_action("Remove Edge Masks", self.remove_edge_masks, self))
 
+        # VIEW
         self.view_menu = self.menu_bar.addMenu("View")
-        self.view_menu.addAction(create_action("Reset View", self.reset_view))
-        self.view_menu.addAction(create_action("Show Grayscale", self.toggle_grayscale))
-        #self.view_menu.addAction(create_action("Segmentation Plot", self.toggle_segmentation_plot))
+        self.view_menu.addAction(create_action("Reset View", self.reset_view, self))
+        self.view_menu.addAction(create_action("Show Grayscale", self.toggle_grayscale, self))
+        #self.view_menu.addAction(create_action("Segmentation Plot", self.toggle_segmentation_plot, self))
 
+        # IMAGE
         self.image_menu = self.menu_bar.addMenu("Image")
-        self.image_menu.addAction(create_action("Reorder Channels", self.reorder_channels))
-        #self.image_menu.addAction(create_action("Set Voxel Size", self.voxel_size_prompt))
+        self.image_menu.addAction(create_action("Reorder Channels", self.reorder_channels, self))
+        #self.image_menu.addAction(create_action("Set Voxel Size", self.voxel_size_prompt, self))
 
         # HELP
         self.help_menu = self.menu_bar.addMenu("Help")
-        self.help_menu.addAction(create_action("Pull updates", self.update_packages))
+        self.help_menu.addAction(create_action("Pull updates", self.update_packages, self))
 
         # Status bar
         self.status_cell=QLabel("Selected Cell: None", self)

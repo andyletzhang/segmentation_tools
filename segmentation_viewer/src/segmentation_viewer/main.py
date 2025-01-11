@@ -2364,7 +2364,7 @@ class MainWidget(QMainWindow):
         if hasattr(self.stack, 'tracked_centroids'):
             t=self.stack.tracked_centroids
             new_particle_ID=t['particle'].max()+1
-            new_particle=pd.DataFrame([[new_mask_n, centroid[0], centroid[1], self.frame_number, new_particle_ID, cell_color_n]], columns=t.columns, index=[len(t)])
+            new_particle=pd.DataFrame([[new_mask_n, centroid[0], centroid[1], self.frame_number, new_particle_ID, cell_color_n]], columns=t.columns, index=[t.index.max()+1]) # TODO: handle situations where tracked_centroids has more or fewer columns
             self.stack.tracked_centroids=pd.concat([t, new_particle])
             self.stack.tracked_centroids=self.stack.tracked_centroids.sort_values(['frame', 'particle'])
             self.also_save_tracking.setChecked(True)

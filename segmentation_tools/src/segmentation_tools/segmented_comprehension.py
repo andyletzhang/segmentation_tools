@@ -1,12 +1,14 @@
 import numpy as np
 import pandas as pd
 from scipy import ndimage
+
 from natsort import natsorted
 from glob import glob
 from pathlib import Path
-import cellpose.utils as cp_utils
-from segmentation_tools import preprocessing # from my module
+
 import fastremap
+import cellpose.utils as cp_utils
+from segmentation_tools import preprocessing
 
 '''
     Stacks are collections of time lapse images on a single stage.
@@ -27,7 +29,7 @@ class SegmentedStack:
             1. a list of already initialized SegmentedImage objects (from_frames).
             2. a directory of seg.npy files (stack_path),
             3. a list of seg.npy file paths (frame_paths).
-            
+
         Args:
             from_frames (list): List of SegmentedImage objects to initialize the stack with.
             stack_path (str): Path to a directory containing seg.npy files.
@@ -98,10 +100,24 @@ class SegmentedStack:
         all_q=pd.concat(all_q).rename_axis('cell_number').reset_index()
         return all_q
     
+    # -------------Exporting Data-------------
     def load_img(self, **kwargs):
         for frame in self.frames:
             frame.load_img(**kwargs)
 
+    def delete_frame(self, frame_number):
+        print(f'Deleting frame {frame_number}...')
+        self.frames=np.delete(self.frames, frame_number)
+        print('Reindexing frames...')
+        for n, frame in enumerate(self.frames):
+            frame.frame_number=n
+        print('renumbering tracking data...')
+        if hasattr(self, 'tracked_centroids'):
+            self.tracked_centroids=self.tracked_centroids[self.tracked_centroids['frame']!=frame_number]
+            self.tracked_centroids.loc[self.tracked_centroids['frame']>frame_number, 'frame']-=1
+        print('done')
+
+    # -------------Magic-------------
     def __len__(self):
         return len(self.frames)
     

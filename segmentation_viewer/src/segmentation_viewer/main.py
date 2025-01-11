@@ -123,6 +123,10 @@ class MainWidget(QMainWindow):
         self.image_menu.addAction(create_action("Reorder Channels", self.reorder_channels, self))
         #self.image_menu.addAction(create_action("Set Voxel Size", self.voxel_size_prompt, self))
 
+        # STACK
+        self.stack_menu = self.menu_bar.addMenu("Stack")
+        self.stack_menu.addAction(create_action("Delete frame", self.delete_frame, self))
+
         # HELP
         self.help_menu = self.menu_bar.addMenu("Help")
         self.help_menu.addAction(create_action("Pull updates", self.update_packages, self))
@@ -3371,6 +3375,20 @@ class MainWidget(QMainWindow):
         else: # can't find any seg.npy or tiff files, ignore
             self.statusBar().showMessage(f'ERROR: File {files[0]} is not a seg.npy or tiff file, cannot be loaded.', 4000)
             return False, None
+
+    def delete_frame(self, event=None, frame_number=None):
+        if not self.file_loaded:
+            return
+        
+        if frame_number is None:
+            frame_number=self.frame_number
+
+        if len(self.stack.frames)==1:
+            return
+        
+        self.stack.delete_frame(frame_number)
+        self.frame_slider.setRange(0, len(self.stack.frames)-1)
+        self.change_current_frame(min(frame_number, len(self.stack.frames)-1))
 
     #def import_masks(self):
     

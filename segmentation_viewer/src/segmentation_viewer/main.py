@@ -2600,7 +2600,7 @@ class MainWidget(QMainWindow):
         
         # remap cell numbers in tracked_centroids
         cell_remap=fastremap.component_map(idx, np.arange(len(idx)))
-        t.loc[t.frame==frame_number, 'cell_number']=t.loc[t.frame==frame_number, 'cell_number'].map(cell_remap)
+        t.loc[t.frame==frame_number, 'cell_number']=t.loc[t.frame==frame_number, 'cell_number'].map(cell_remap).astype(t.cell_number.dtype)
         self.also_save_tracking.setChecked(True)
         
     def save_tracking(self, event=None, file_path=None):

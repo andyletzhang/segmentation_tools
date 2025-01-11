@@ -2688,9 +2688,6 @@ class MainWidget(QMainWindow):
     def save_as_segmentation(self):
         if not self.file_loaded:
             return
-        
-        if self.also_save_tracking.isChecked():
-            self.save_tracking(file_path=self.stack.name+'tracking.csv')
 
         if self.save_stack.isChecked():
             folder_path=QFileDialog.getExistingDirectory(self, 'Save stack to folder...')
@@ -2701,11 +2698,16 @@ class MainWidget(QMainWindow):
                 self.save_frame(frame, file_path=file_path)
         else:
             file_path=QFileDialog.getSaveFileName(self, 'Save frame as...', filter='*_seg.npy')[0]
+            folder_path=Path(file_path).parent
             if file_path=='':
                 return
             if not file_path.endswith('_seg.npy'):
                 file_path=file_path+'_seg.npy'
             self.save_frame(self.frame, file_path)
+        
+        if self.also_save_tracking.isChecked():
+            self.save_tracking(file_path=folder_path+'/tracking.csv')
+
 
     def save_frame(self, frame, file_path=None):
         if file_path is None:

@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QComboBox, QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox
+from PyQt6.QtWidgets import QComboBox, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox
 from PyQt6.QtGui import QAction, QMouseEvent
 from PyQt6.QtCore import Qt, pyqtSignal, QPointF
 from superqt import QRangeSlider
@@ -101,10 +101,13 @@ class SubstackDialog(QDialog):
         layout.addWidget(self.line_edit)
         
         # Confirm and Cancel buttons
+        submit_layout=QHBoxLayout()
         self.button_confirm = QPushButton("Confirm", self)
         self.button_cancel = QPushButton("Cancel", self)
-        layout.addWidget(self.button_confirm)
-        layout.addWidget(self.button_cancel)
+        submit_layout.addWidget(self.button_confirm)
+        submit_layout.addWidget(self.button_cancel)
+
+        layout.addLayout(submit_layout)
         
         # Connect buttons
         self.button_confirm.clicked.connect(self.accept)

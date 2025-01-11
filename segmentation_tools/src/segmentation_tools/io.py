@@ -94,7 +94,7 @@ def read_nd2(nd2_file):
     return placeholder
 
 #----------Creating Segmentation Objects--------------------
-from segmentation_tools.segmented_comprehension import SegmentedStack, SuspendedStack, TimeStack, SegmentedImage, HeightMap
+from segmentation_tools.segmented_comprehension import SegmentedImage
     
 def load_seg_npy(file_path, load_img=False, mend=False, max_gap_size=300):
     data=np.load(file_path, allow_pickle=True).item()

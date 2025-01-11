@@ -37,7 +37,7 @@ class SegmentedStack:
             coarse_grain (int): Number of frames to skip when loading a stack from a directory.
             verbose_load (bool): If True, prints the number of seg.npy files found and loaded.
             progress_bar (function): Function to display a progress bar.
-            stack_type (str): Type of stack to initialize. Options are 'time', 'suspended', or 'multipoint'.
+            stack_type (str): Type of stack to initialize. Options are 'time' or 'multipoint'.
         '''
         self.progress_bar=progress_bar
         if len(from_frames)>0:
@@ -66,14 +66,10 @@ class SegmentedStack:
         
         if stack_type=='time':
             self.__class__=TimeStack
-        elif stack_type=='suspended':
-            # TODO: handle kwargs
-            self.__class__=SuspendedStack
-            self.suspended_init()
         elif stack_type=='multipoint':
             pass
         else:
-            raise ValueError('Invalid stack type. Recognized formats are "time", "suspended", or "multipoint".')
+            raise ValueError('Invalid stack type. Recognized formats are "time" or "multipoint".')
     
      # -------------Indexing Lower Objects-------------
     def densities(self):
@@ -119,63 +115,6 @@ class SegmentedStack:
     
     def __getitem__(self, idx):
         return self.frames[idx]
-    
-class SuspendedStack(SegmentedStack):
-    def __init__(self, scale=0.1625, preprocess_FUCCI=False, blur_sigma=5, mask_zeros=False, quantile=(0.01,0.99), progress_bar=lambda x: x, **kwargs):
-        super().__init__(scale=scale, progress_bar=progress_bar, load_img=True, **kwargs)
-        self.suspended_init(preprocess_FUCCI, blur_sigma, mask_zeros, quantile)
-
-    def suspended_init(self, preprocess_FUCCI, blur_sigma, mask_zeros, quantile):
-        imgs=np.array([frame.img for frame in self.frames])
-        color_ax=np.where(np.array(imgs.shape[1:])==3)[0][0]+1 # identify the color axis (in case the image has a weird shape)
-        self.red=imgs.take(0, axis=color_ax)
-        self.green=imgs.take(1, axis=color_ax)
-        self.membrane=imgs.take(2, axis=color_ax)
-
-        if preprocess_FUCCI:
-            if preprocess_FUCCI==True or preprocess_FUCCI=='blur':
-                self.red, self.green=self._blur_FUCCI(blur_sigma)
-            if preprocess_FUCCI==True or preprocess_FUCCI=='normalize':
-                self.red, self.green=self._normalize_FUCCI(*self._blur_FUCCI(blur_sigma), mask_zeros=mask_zeros, quantile=quantile)
-        for frame, red, green in zip(self.frames, self.red, self.green):
-            frame.FUCCI=[red, green]
-
-    def _blur_FUCCI(self, sigma=5):
-        from segmentation_tools.preprocessing import gaussian_parallel
-        red=gaussian_parallel(self.red, sigma=sigma)
-        green=gaussian_parallel(self.green, sigma=sigma)
-        return np.array(red), np.array(green)
-    
-    def _normalize_FUCCI(self, red, green, **kwargs):
-        from segmentation_tools.preprocessing import normalize_grayscale
-        red=normalize_grayscale(red, **kwargs)
-        green=normalize_grayscale(green, **kwargs)
-        return red, green
-
-    def measure_FUCCI(self, red_threshold=0.3, green_threshold=0.3, orange_brightness=1.5, percent_threshold=0.15):
-        for frame in self.progress_bar(self.frames):
-            frame.measure_FUCCI(red_threshold, green_threshold, orange_brightness, percent_threshold)
-    
-    def get_volumes(self, circ_threshold=0.85):
-        try:
-            cell_cycles=np.concatenate([frame.cell_cycles for frame in self.frames])
-        except AttributeError:
-            self.measure_FUCCI()
-            cell_cycles=np.concatenate([frame.cell_cycles for frame in self.frames])
-        
-        all_cells=np.concatenate([frame.cells for frame in self.frames])
-    
-        circs=np.array([cell.circularity for cell in all_cells])
-        self.circs=circs
-        self.circ_threshold=circ_threshold
-        circular_cells=all_cells[circs>circ_threshold]
-        circular_cc=cell_cycles[circs>circ_threshold]
-
-        volumes=[]
-        for stage in range(4):
-            volumes.append([cell.spherical_volume for cell, cc in zip(circular_cells, circular_cc) if cc==stage])
-        self.volumes=volumes
-        return self.volumes
 
 class TimeStack(SegmentedStack):
     ''' Time lapse data. Provides methods for tracking cells through time, identifying cell cycle and mitotic events. '''
@@ -1169,11 +1108,6 @@ class Cell:
         area=0.5*np.abs(np.dot(self.outline.T[0],np.roll(self.outline.T[1],1))-np.dot(self.outline.T[1],np.roll(self.outline.T[0],1)))
         return area
     area_pixels._scaling=1
-    
-    def spherical_volume_pixels(self):
-        '''returns the volume of the cell if the area were a maximal cross-section of a sphere.'''
-        return 4/3*np.pi*(self.area_pixels/np.pi)**(3/2)
-    spherical_volume_pixels._scaling=3
     
     def perimeter_pixels(self):
         if len(self.outline)==0:

@@ -3,6 +3,7 @@ from nd2 import ND2File
 from segmentation_tools.io import read_nd2, read_nd2_shape, read_tif, read_tif_shape
 from tifffile import TiffFile
 from PyQt6.QtGui import QValidator
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QWidget, QDialog, QVBoxLayout, QFormLayout, QLineEdit, QPushButton, QHBoxLayout, QLabel, QFileDialog, QTableWidget, QTableWidgetItem, QCheckBox, QMessageBox
 from pathlib import Path
 import re
@@ -121,6 +122,138 @@ class ShapeDialog(QDialog):
         except ValueError as e:
             QMessageBox.warning(self, "Invalid Input", str(e))
             return None
+        
+class ExportWizard(QDialog):
+    def __init__(self, dataframe, parent=None, root_path=''):
+        super().__init__(parent)
+        self.setWindowTitle("Export Wizard")
+        self.setMinimumWidth(300)
+        self.setFixedHeight(300)
+        self.resize(400,300)
+        self.attributes = dataframe.columns.tolist()
+        self.data = dataframe
+        self.checked_attributes = []
+        self.save_path = ""
+        self.preview_rows=3
+        self.minimumColumnWidth=60
+
+        # Main layout
+        main_layout = QVBoxLayout(self)
+
+        # Save As section
+        save_layout = QHBoxLayout()
+        save_label = QLabel("Save As:")
+        self.save_input = QLineEdit(self, text=root_path)
+        browse_button = QPushButton("Browse...")
+        browse_button.clicked.connect(self.browse_save_location)
+        save_layout.addWidget(save_label)
+        save_layout.addWidget(self.save_input)
+        save_layout.addWidget(browse_button)
+        main_layout.addLayout(save_layout)
+
+        # CSV Preview section
+        preview_label = QLabel("CSV Preview:")
+        main_layout.addWidget(preview_label)
+        self.table_preview = QTableWidget(self.preview_rows+2, len(self.attributes), self)
+        self.populate_table_preview()
+        self.table_preview.resizeColumnsToContents()
+        for col in range(len(self.attributes)):
+            column_width=max(self.table_preview.columnWidth(col)+10, self.minimumColumnWidth)
+            self.table_preview.setColumnWidth(col, column_width)
+        main_layout.addWidget(self.table_preview)
+        n_rows_label = QLabel(f"Total rows: {len(self.data)}")
+        main_layout.addWidget(n_rows_label)
+
+        # Confirm and Cancel buttons
+        button_layout = QHBoxLayout()
+        confirm_button = QPushButton("Confirm")
+        cancel_button = QPushButton("Cancel")
+        confirm_button.clicked.connect(self.confirm)
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(confirm_button)
+        button_layout.addWidget(cancel_button)
+        main_layout.addLayout(button_layout)
+
+    def browse_save_location(self):
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save As", "", "CSV Files (*.csv);;All Files (*)"
+        )
+        if file_path:
+            self.save_input.setText(file_path)
+
+
+    def populate_table_preview(self):
+        self.table_preview.horizontalHeader().hide() # Hide default headers
+        self.table_preview.setColumnCount(len(self.attributes))
+        
+        self.checkboxes={} # Store references to checkboxes for later access
+        # create headers with checkboxes
+        for col, attribute in enumerate(self.attributes):
+            header_widget = QWidget()
+            header_layout = QHBoxLayout(header_widget)
+            header_layout.setContentsMargins(0, 0, 0, 0)
+            header_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            # Add a checkbox to the header
+            checkbox = QCheckBox(attribute)
+            checkbox.setChecked(True)  # Default: selected
+            checkbox.clicked.connect(lambda state, col=col: self.toggle_column_visibility(col, state))
+            self.checkboxes[attribute] = checkbox  # Store reference to checkbox for later access
+            header_layout.addWidget(checkbox)
+
+            # Set the widget to the header
+            self.table_preview.setCellWidget(0, col, header_widget)  # Column-index base `wiring`
+        # Fill the remaining rows with placeholder data
+        self.table_preview.setVerticalHeaderItem(0, QTableWidgetItem(""))
+        for row in range(self.preview_rows):
+            self.table_preview.setVerticalHeaderItem(row+1, QTableWidgetItem(f"{row}"))
+            for col in range(len(self.attributes)):
+                try:
+                    cell_str = f'{self.data.iloc[row,col]:.4g}' # Limit to 4 significant digits
+                    cell_item = QTableWidgetItem(cell_str)  # Add sample data
+                    cell_item.setTextAlignment(Qt.AlignmentFlag.AlignRight| Qt.AlignmentFlag.AlignVCenter)  # right-align numbers
+                except ValueError:
+                    cell_str = str(self.data.iloc[row,col]) # Fallback to string
+                    cell_item = QTableWidgetItem(cell_str)  # Add sample data
+                    cell_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)  # left-align strings
+
+                cell_item.setFlags(cell_item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # Disable editing
+                self.table_preview.setItem(row+1, col, cell_item)
+        
+        self.table_preview.setVerticalHeaderItem(self.preview_rows+1, QTableWidgetItem("..."))
+        for col in range(len(self.attributes)):
+            cell_item = QTableWidgetItem("...")
+            cell_item.setFlags(cell_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            cell_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table_preview.setItem(self.preview_rows+1, col, cell_item)
+
+    def toggle_column_visibility(self, col, state):
+        """Gray out or restore a column based on checkbox state."""
+        for row in range(1, self.table_preview.rowCount()):  # Skip header row
+            cell_item = self.table_preview.item(row, col)
+            if state:  # Checkbox checked
+                cell_item.setForeground(Qt.GlobalColor.white)  # Restore text color
+            else:  # Checkbox unchecked
+                cell_item.setForeground(Qt.GlobalColor.gray)  # Gray out text
+
+    def confirm(self):
+        # Validate save path
+        self.save_path = self.save_input.text().strip()
+        if not self.save_path:
+            QMessageBox.warning(self, "Validation Error", "Please specify a save location.")
+            return
+
+        # Collect selected attributes
+        self.checked_attributes = [
+            key for key, checkbox in self.checkboxes.items() if checkbox.isChecked()
+        ]
+        if not self.checked_attributes:
+            QMessageBox.warning(self, "Validation Error", "Please select at least one column.")
+            return
+
+        # Close dialog with success
+        self.accept()
+
 class RangeStringValidator(QValidator):
     def __init__(self, max_value, parent=None):
         """

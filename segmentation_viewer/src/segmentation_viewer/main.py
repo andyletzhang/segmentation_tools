@@ -2551,7 +2551,7 @@ class MainWidget(QMainWindow):
             del new_cell._centroid
         if hasattr(self.stack, 'tracked_centroids'):
             t=self.stack.tracked_centroids
-            t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n1), ['x','y']]=new_cell.centroid
+            t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n1), ['x','y']]=new_cell.centroid.astype(t['x'].dtype)
             self.also_save_tracking.setChecked(True)
 
         # add new cell mask to the overlay

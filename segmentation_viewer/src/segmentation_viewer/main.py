@@ -3383,7 +3383,6 @@ class MainWidget(QMainWindow):
             stack=SegmentedStack(frame_paths=seg_files, load_img=True, progress_bar=self.progress_bar)
             if tracking_file is not None:
                 tracked_centroids=self.load_tracking_data(tracking_file)
-                print(f'Loaded tracking data from {tracking_file}')
             self.file_loaded = True
             return stack, tracked_centroids
 

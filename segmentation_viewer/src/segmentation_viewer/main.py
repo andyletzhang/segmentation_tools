@@ -321,6 +321,8 @@ class MainWidget(QMainWindow):
 
     def set_stat_LUT_levels(self, levels):
         # TODO: RuntimeWarning: invalid value encountered in cast data=data.astype(int) at level=256, only when working with a stack
+        if levels[0]==np.nan and levels[1]==np.nan:
+            levels=(0,1)
         self.canvas.seg_stat_overlay.setLevels(levels)
         self.stat_LUT_slider.blockSignals(True)
         self.stat_LUT_slider.setValue(levels)
@@ -487,13 +489,16 @@ class MainWidget(QMainWindow):
             return
         if stat is None:
             stat=self.canvas.seg_stat_overlay.image
-        stat_range=(np.nanmin(stat), np.nanmax(stat))
-        if self.stat_LUT_type=='frame':
-            levels=(stat_range)
-        elif self.stat_LUT_type=='stack':
-            levels=(stat_range) # TODO: stack levels
-        elif self.stat_LUT_type=='custom':
-            levels=self.stat_LUT_slider.value()
+        if np.all(np.isnan(stat)):
+            levels=(0, 1)
+        else:
+            stat_range=(np.nanmin(stat), np.nanmax(stat))
+            if self.stat_LUT_type=='frame':
+                levels=(stat_range)
+            elif self.stat_LUT_type=='stack':
+                levels=(stat_range) # TODO: stack levels
+            elif self.stat_LUT_type=='custom':
+                levels=self.stat_LUT_slider.value()
 
         self.canvas.seg_stat_overlay.setImage(self.canvas.transform_image(stat))
         self.stat_LUT_slider.blockSignals(True)

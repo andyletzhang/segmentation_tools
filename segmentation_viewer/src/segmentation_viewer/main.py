@@ -42,7 +42,6 @@ from tqdm import tqdm
 # TODO: File -> export heights tif, import heights tif
 # TODO: perimeter, area, etc. scaled with voxel size (in segmented_comprehension?)
 # TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
-# TODO: frame mode for stat seg overlay shouldn't break if some frames don't have the attribute
 
 # low priority
 # TODO: normalize the summed channels when show_grayscale
@@ -609,6 +608,7 @@ class MainWidget(QMainWindow):
         self.tabbed_menu_widget.addTab(self.get_segmentation_tab(), "Segmentation")
         self.tabbed_menu_widget.addTab(self.get_FUCCI_tab(), "FUCCI")
         self.tabbed_menu_widget.addTab(self.get_tracking_tab(), "Tracking")
+        self.tabbed_menu_widget.addTab(self.get_volumes_tab(), 'Volumes')
 
         # Command Line Interface
         self.command_line_button=QPushButton("Open Command Line", self)
@@ -1625,11 +1625,7 @@ class MainWidget(QMainWindow):
             self.is_zstack=False
 
         if self.is_zstack or hasattr(self.frame, 'heights'):
-            # create the volumes tab if it doesn't exist
-            if not hasattr(self, 'volumes_tab'):
-                self.tabbed_menu_widget.addTab(self.get_volumes_tab(), 'Volumes')
-            
-            if not self.is_zstack:
+            if not self.is_zstack: # enable/disable z-stack specific options
                 self.get_heights_button.setEnabled(False)
                 self.peak_prominence.setEnabled(False)
             else:
@@ -1641,10 +1637,10 @@ class MainWidget(QMainWindow):
             else:
                 self.coverslip_height.setText('')
         else:
-            # remove the volumes tab
-            if hasattr(self, 'volumes_tab'):
-                self.tabbed_menu_widget.removeTab(self.tabbed_menu_widget.indexOf(self.volumes_tab))
-                del self.volumes_tab
+            self.get_heights_button.setEnabled(False)
+            self.peak_prominence.setEnabled(False)
+            self.volume_button.setEnabled(False)
+            self.coverslip_height.setText('')
 
         self.imshow()
 

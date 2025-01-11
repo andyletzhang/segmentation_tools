@@ -1249,15 +1249,6 @@ class MainWidget(QMainWindow):
         self.volumes_on_frame.setChecked(True)
         self.get_heights_layout=QHBoxLayout()
         self.get_heights_button=QPushButton("Measure Heights", self)
-        self.get_coverslip_height_layout=QHBoxLayout()
-        coverslip_height_label=QLabel("Coverslip Height (μm):", self)
-        self.coverslip_height=QLineEdit(self, placeholderText='Auto')
-        self.coverslip_height.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
-        self.coverslip_height.setFixedWidth(60)
-        self.get_coverslip_height=QPushButton("Calibrate", self)
-        self.get_coverslip_height_layout.addWidget(coverslip_height_label)
-        self.get_coverslip_height_layout.addWidget(self.coverslip_height)
-        self.get_coverslip_height_layout.addWidget(self.get_coverslip_height)
         self.volume_button=QPushButton("Measure Volumes", self)
         self.get_heights_layout.addWidget(self.get_heights_button)
         self.get_heights_layout.addWidget(self.volume_button)
@@ -1268,16 +1259,28 @@ class MainWidget(QMainWindow):
         self.peak_prominence_layout=QHBoxLayout()
         self.peak_prominence_layout.addWidget(peak_prominence_label)
         self.peak_prominence_layout.addWidget(self.peak_prominence)
+        self.get_coverslip_height_layout=QHBoxLayout()
+        coverslip_height_label=QLabel("Coverslip Height (μm):", self)
+        self.coverslip_height=QLineEdit(self, placeholderText='Auto')
+        self.coverslip_height.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
+        self.coverslip_height.setFixedWidth(60)
+        self.get_coverslip_height=QPushButton("Calibrate", self)
+        self.get_coverslip_height_layout.addWidget(coverslip_height_label)
+        self.get_coverslip_height_layout.addWidget(self.coverslip_height)
+        self.get_coverslip_height_layout.addWidget(self.get_coverslip_height)
+        self.get_spherical_volumes=QPushButton("Compute Spherical Volumes", self)
 
         self.volume_button.clicked.connect(self.measure_volumes)
         self.get_heights_button.clicked.connect(self.measure_heights)
         self.get_coverslip_height.clicked.connect(self.calibrate_coverslip_height)
+        self.get_spherical_volumes.clicked.connect(self.compute_spherical_volumes)
 
         volumes_layout.addWidget(operate_on_label)
         volumes_layout.addLayout(operate_on_layout)
         volumes_layout.addLayout(self.get_heights_layout)
         volumes_layout.addLayout(self.peak_prominence_layout)
         volumes_layout.addLayout(self.get_coverslip_height_layout)
+        volumes_layout.addWidget(self.get_spherical_volumes)
 
         return self.volumes_tab
     
@@ -1477,6 +1480,19 @@ class MainWidget(QMainWindow):
         self.imshow()
         self.normalize()
 
+    def refresh_right_toolbar(self, cell_attr=None):
+        if cell_attr is None:
+            self.plot_histogram()
+            self.show_seg_overlay()
+            self.plot_particle_statistic()
+        else:
+            if self.histogram_menu.currentText()==cell_attr:
+                self.plot_histogram()
+            if self.seg_overlay_attr.currentText()==cell_attr:
+                self.show_seg_overlay()
+            if self.particle_stat_menu.currentText()==cell_attr:
+                self.plot_particle_statistic()
+
     def measure_volumes(self):
         if not self.file_loaded:
             return
@@ -1489,12 +1505,7 @@ class MainWidget(QMainWindow):
             self.measure_frame_volumes(frame)
 
         # update the display if necessary
-        if self.histogram_menu.currentText()=='volume':
-            self.plot_histogram()
-        if self.seg_overlay_attr.currentText()=='volume':
-            self.show_seg_overlay()
-        if self.particle_stat_menu.currentText()=='volume':
-            self.plot_particle_statistic()
+        self.refresh_right_toolbar('volume')
 
     def measure_frame_volumes(self, frame):
         if not hasattr(frame, 'heights'):
@@ -1605,6 +1616,20 @@ class MainWidget(QMainWindow):
                 frame.to_heightmap()
                 frame.coverslip_height=coverslip_height
                 self.show_seg_overlay()
+
+    def compute_spherical_volumes(self):
+        if not self.file_loaded:
+            return
+        
+        if self.volumes_on_stack.isChecked():
+            frames=self.stack.frames
+        else:
+            frames=[self.frame]
+
+        for frame in self.progress_bar(frames):
+            frame.get_spherical_volumes()
+        
+        self.refresh_right_toolbar('volume')
 
     def change_current_frame(self, frame_number, reset=False):
         if not self.file_loaded:

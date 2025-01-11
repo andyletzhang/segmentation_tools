@@ -1026,6 +1026,13 @@ class SegmentedImage:
             shape_parameters.append(cell.shape_parameter)
         return np.array(shape_parameters)
 
+    def get_spherical_volumes(self):
+        '''returns the volumes of all cells in the image, assuming they are spherical.'''
+        areas=np.array(self.get_cell_attrs('area'))
+        volumes=4/3*np.pi*(areas/np.pi)**(3/2)
+        self.set_cell_attrs('volume', volumes)
+        return volumes
+    
     def cell_polygons(self,ec='k',fc='lightsteelblue',linewidths=0.8,**kwargs):
         '''returns a matplotlib PatchCollection of vertex-reconstructed cells for efficient plotting.'''
         from matplotlib.patches import Polygon

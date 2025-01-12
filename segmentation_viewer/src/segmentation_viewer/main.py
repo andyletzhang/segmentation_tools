@@ -31,22 +31,17 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
-# TODO: something is breaking tracking in the last frame when earlier tracks are modified (/cells are added?)
-# looks like cells get renumbered but not the tracks, or the tracks are just deleted? Cells in the last frame no longer have a particle assigned
-# also occasionally happens in not the last frame. Not sure if this is the same bug, seems to happen less often.
-# TODO: ctrl+shift+click to delete particle
 # TODO: LUTs get stuck when custom set, then new cell is drawn
 # TODO: frame histogram should have options for aggregating over frame or stack
-# TODO: when frame changed, if histogram/overlay stat raise an attribute error, clear the plot(s) and reset the attribute(s)
-# TODO: use fastremap to add cell highlights?
 # TODO: import masks (and everything else except img/zstack)
 # TODO: File -> export heights tif, import heights tif
-# TODO: perimeter, area, etc. scaled with voxel size (in segmented_comprehension?)
 # TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
 
 # low priority
-# TODO: normalize the summed channels when show_grayscale
+# TODO: ctrl+shift+click to delete particle
+# TODO: when cell is clicked, have option to show its entire colormapped track
 # TODO: get_mitoses, visualize mitoses, edit mitoses
+# TODO: use fastremap to add cell highlights?
 
 # TODO: some image pyramid approach to speed up work on large images??
 # TODO: maybe load images/frames only when they are accessed? (lazy loading)
@@ -54,6 +49,7 @@ from tqdm import tqdm
 
 # eventual QOL improvements
 # TODO: rename and streamline update_display, imshow. Combine other updates (plot_particle_statistic etc.)
+# TODO: normalize the summed channels when show_grayscale
 # TODO: make sure all frames have same number of z slices
 # TODO: perhaps allow for non-contiguous masks and less numerical reordering.
     # 1. Replace masks.max() with n_cells, np.unique(masks) everywhere
@@ -208,67 +204,12 @@ class MainWidget(QMainWindow):
     
     def get_right_toolbar(self):
         self.stat_tabs=QTabWidget()
-        self.stat_tabs.addTab(self.get_frame_stat_tab(), "Frame")
+        self.stat_tabs.addTab(self.get_histogram_tab(), "Histogram")
         self.stat_tabs.addTab(self.get_particle_stat_tab(), "Particle")
 
-        cell_ID_widget=QWidget(objectName='bordered')
-        self.cell_ID_layout=QFormLayout(cell_ID_widget)
-        selected_cell_label=QLabel("Cell ID:", self)
-        self.selected_cell_prompt=QLineEdit(self, placeholderText='None')
-        self.selected_cell_prompt.setValidator(QIntValidator(bottom=0)) # non-negative integers only
-        selected_particle_label=QLabel("Tracking ID:", self)
-        self.selected_particle_prompt=QLineEdit(self, placeholderText='None')
-        self.selected_particle_prompt.setValidator(QIntValidator(bottom=0)) # non-negative integers only
-        self.cell_properties_label=QLabel(self)
-        self.cell_ID_layout.addRow(selected_cell_label, self.selected_cell_prompt)
-        self.cell_ID_layout.addRow(selected_particle_label, self.selected_particle_prompt)
-        self.cell_ID_layout.addRow(self.cell_properties_label)
-
-        # Create a container widget for all content
-        particle_stat_widget = QWidget()
-        particle_stat_layout = QVBoxLayout(particle_stat_widget)
-        particle_stat_layout.setSpacing(10)
-        particle_stat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        particle_stat_layout.addWidget(self.stat_tabs)
-        particle_stat_layout.addWidget(cell_ID_widget)
-
-        # Set up scroll area
-        right_scroll_area = QScrollArea()
-        right_scroll_area.setWidgetResizable(True)
-        right_scroll_area.setWidget(particle_stat_widget)
-        right_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        right_scroll_area.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred)
-        right_scroll_area.setMinimumWidth(250)
-
-        # connections
-        # cell selection
-        self.selected_cell_prompt.textChanged.connect(self.cell_prompt_changed)
-        self.selected_cell_prompt.returnPressed.connect(self.cell_prompt_changed)
-        self.selected_particle_prompt.textChanged.connect(self.particle_prompt_changed)
-        self.selected_particle_prompt.returnPressed.connect(self.particle_prompt_changed)
-
-        return right_scroll_area
-
-    def get_frame_stat_tab(self):
-        stat_tab_layout=QSplitter()
-        stat_tab_layout.setOrientation(Qt.Orientation.Vertical)
-        frame_histogram_widget=QWidget()
-        frame_histogram_layout=QVBoxLayout(frame_histogram_widget)
-        histogram_menu_layout=QHBoxLayout()
-        self.histogram_menu=CustomComboBox(self)
-        self.histogram_menu.addItems(['Select Cell Attribute'])
-        histogram_menu_layout.addWidget(self.histogram_menu)
-        histogram_menu_layout.setContentsMargins(40, 0, 0, 0) # indent the title/menu
-        self.histogram=pg.PlotWidget(background='transparent')
-        self.histogram.setMinimumHeight(200)
-        self.histogram.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.histogram.setLabel('bottom', 'Select Cell Attribute')
-        self.histogram.setLabel('left', 'Probability Density')
-        self.histogram.showGrid(x=True, y=True)
-
-        frame_stat_widget=QWidget()
-        frame_stat_layout=QVBoxLayout(frame_stat_widget)
-        frame_stat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        stat_overlay_widget=QWidget(objectName='bordered')
+        stat_overlay_layout=QVBoxLayout(stat_overlay_widget)
+        stat_overlay_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         seg_overlay_layout=QHBoxLayout()
         self.seg_overlay_label=QLabel("Overlay Statistic:", self)
@@ -291,19 +232,47 @@ class MainWidget(QMainWindow):
         self.stat_LUT_type='frame'
         slider_layout, self.stat_LUT_slider, self.stat_range_labels=self.labeled_LUT_slider(default_range=(0, 255))
 
-        frame_histogram_layout.addLayout(histogram_menu_layout)
-        frame_histogram_layout.addWidget(self.histogram)
-        stat_tab_layout.addWidget(frame_histogram_widget)
+        cell_ID_widget=QWidget(objectName='bordered')
+        self.cell_ID_layout=QFormLayout(cell_ID_widget)
+        selected_cell_label=QLabel("Cell ID:", self)
+        self.selected_cell_prompt=QLineEdit(self, placeholderText='None')
+        self.selected_cell_prompt.setValidator(QIntValidator(bottom=0)) # non-negative integers only
+        selected_particle_label=QLabel("Tracking ID:", self)
+        self.selected_particle_prompt=QLineEdit(self, placeholderText='None')
+        self.selected_particle_prompt.setValidator(QIntValidator(bottom=0)) # non-negative integers only
+        self.cell_properties_label=QLabel(self)
+        self.cell_ID_layout.addRow(selected_cell_label, self.selected_cell_prompt)
+        self.cell_ID_layout.addRow(selected_particle_label, self.selected_particle_prompt)
+        self.cell_ID_layout.addRow(self.cell_properties_label)
 
-        frame_stat_layout.addLayout(seg_overlay_layout)
-        frame_stat_layout.addWidget(normalize_label)
-        frame_stat_layout.addWidget(normalize_widget)
-        frame_stat_layout.addLayout(slider_layout)
-        stat_tab_layout.addWidget(frame_stat_widget)
+        stat_overlay_layout.addLayout(seg_overlay_layout)
+        stat_overlay_layout.addWidget(normalize_label)
+        stat_overlay_layout.addWidget(normalize_widget)
+        stat_overlay_layout.addLayout(slider_layout)
 
-        self.histogram_menu.dropdownOpened.connect(self.get_histogram_attrs)
-        self.histogram_menu.activated.connect(self.new_histogram)
-        self.histogram_menu.currentIndexChanged.connect(self.new_histogram)
+        # Create a container widget for all content
+        particle_stat_layout=QSplitter(Qt.Orientation.Vertical)
+        particle_stat_layout.setContentsMargins(5,10,10,10)
+        particle_stat_layout.addWidget(self.stat_tabs)
+        particle_stat_layout.addWidget(stat_overlay_widget)
+        particle_stat_layout.addWidget(cell_ID_widget)
+        particle_stat_layout.setSizes([200, 300, 200])
+
+        # Set up scroll area
+        right_scroll_area = QScrollArea()
+        right_scroll_area.setWidgetResizable(True)
+        right_scroll_area.setWidget(particle_stat_layout)
+        right_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        right_scroll_area.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred)
+        right_scroll_area.setMinimumWidth(250)
+
+        #----connections-----
+        # cell selection
+        self.selected_cell_prompt.textChanged.connect(self.cell_prompt_changed)
+        self.selected_cell_prompt.returnPressed.connect(self.cell_prompt_changed)
+        self.selected_particle_prompt.textChanged.connect(self.particle_prompt_changed)
+        self.selected_particle_prompt.returnPressed.connect(self.particle_prompt_changed)
+        # stat overlay
         self.seg_overlay_attr.dropdownOpened.connect(self.get_overlay_attrs)
         self.seg_overlay_attr.activated.connect(self.new_seg_overlay)
         self.seg_overlay_attr.currentIndexChanged.connect(self.new_seg_overlay)
@@ -311,8 +280,30 @@ class MainWidget(QMainWindow):
         self.stat_frame_button.toggled.connect(self.update_stat_LUT)
         self.stat_stack_button.toggled.connect(self.update_stat_LUT)
         self.stat_custom_button.toggled.connect(self.update_stat_LUT)
-        stat_tab_layout.setSizes([200, 400])
-        return stat_tab_layout
+        return right_scroll_area
+
+    def get_histogram_tab(self):
+        frame_histogram_widget=QWidget()
+        frame_histogram_layout=QVBoxLayout(frame_histogram_widget)
+        histogram_menu_layout=QHBoxLayout()
+        self.histogram_menu=CustomComboBox(self)
+        self.histogram_menu.addItems(['Select Cell Attribute'])
+        histogram_menu_layout.addWidget(self.histogram_menu)
+        histogram_menu_layout.setContentsMargins(40, 0, 0, 0) # indent the title/menu
+        self.histogram=pg.PlotWidget(background='transparent')
+        self.histogram.setMinimumHeight(200)
+        self.histogram.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.histogram.setLabel('bottom', 'Select Cell Attribute')
+        self.histogram.setLabel('left', 'Probability Density')
+        self.histogram.showGrid(x=True, y=True)
+
+        frame_histogram_layout.addLayout(histogram_menu_layout)
+        frame_histogram_layout.addWidget(self.histogram)
+
+        self.histogram_menu.dropdownOpened.connect(self.get_histogram_attrs)
+        self.histogram_menu.activated.connect(self.new_histogram)
+        self.histogram_menu.currentIndexChanged.connect(self.new_histogram)
+        return frame_histogram_widget
 
     def stat_LUT_slider_changed(self):
         self.stat_custom_button.blockSignals(True)
@@ -510,8 +501,6 @@ class MainWidget(QMainWindow):
         self.canvas.seg_stat_overlay.clear()
 
     def get_particle_stat_tab(self):
-        stat_tab_layout=QSplitter()
-        stat_tab_layout.setOrientation(Qt.Orientation.Vertical)
         particle_plot_widget=QWidget()
         particle_plot_layout=QVBoxLayout(particle_plot_widget)
         particle_stat_menu_layout=QHBoxLayout()
@@ -526,20 +515,15 @@ class MainWidget(QMainWindow):
         self.stat_plot_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
         self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
 
-        spacer_widget=QWidget()
 
         particle_plot_layout.addLayout(particle_stat_menu_layout)
         particle_plot_layout.addWidget(self.particle_stat_plot)
-        stat_tab_layout.addWidget(particle_plot_widget)
-        stat_tab_layout.addWidget(spacer_widget)
-        stat_tab_layout.setCollapsible(1, False)
-        stat_tab_layout.setSizes([200, 400])
 
         # connect particle measurements
         self.particle_stat_menu.dropdownOpened.connect(self.get_particle_attrs)
         self.particle_stat_menu.currentIndexChanged.connect(self.plot_particle_statistic)
 
-        return stat_tab_layout
+        return particle_plot_widget
 
     def get_left_toolbar(self):
         open_menu=QHBoxLayout()

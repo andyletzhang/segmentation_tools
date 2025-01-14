@@ -63,7 +63,6 @@ from tqdm import tqdm
 # TODO: pick better colors for highlight track ends which don't overlap with FUCCI
 # TODO: user can specify membrane channel for volumes tab
 # TODO: mask nan slices during normalization
-# TODO: modify add_cell_highlight to take a frame, and change split_particle, delete_particle, etc. to recolor instead of deleting mask overlay
 
 class MainWidget(QMainWindow):
     def __init__(self):
@@ -1337,25 +1336,28 @@ class MainWidget(QMainWindow):
         return tracking_tab
 
     def delete_particle_head(self):
-        # TODO: fix these once add_cell_highlight is generalized to overwrite mask_overlays
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
             self.delete_cell_mask(self.selected_cell_n)
             return
         
-        particle_n=self.selected_particle_n
-        current_frame_n=self.frame_number
-        t=self.stack.tracked_centroids
+        else:
+            particle_n=self.selected_particle_n
+            current_frame_n=self.frame_number
+            t=self.stack.tracked_centroids
 
-        head_cell_numbers, head_frame_numbers=np.array(t[(t.particle==particle_n)&(t.frame<=current_frame_n)][['cell_number', 'frame']]).T
-        self.also_save_tracking.setChecked(True)
-        for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
-            self.delete_cell_mask(cell_n, self.stack.frames[frame_n])
+            head_cell_numbers, head_frame_numbers=np.array(t[(t.particle==particle_n)&(t.frame<=current_frame_n)][['cell_number', 'frame']]).T
+            self.also_save_tracking.setChecked(True)
+            for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
+                frame=self.stack.frames[frame_n]
+                if hasattr(frame, 'stored_mask_overlay'):
+                    self.canvas.add_cell_highlight(cell_n, frame, color='none', layer='mask')
+                self.delete_cell_mask(cell_n, frame)
 
-        # reselect the particle
-        self.selected_particle_n=particle_n
-        self.plot_particle_statistic()
+            # reselect the particle
+            self.selected_particle_n=particle_n
+            self.plot_particle_statistic()
 
     def delete_particle_tail(self):
         if not self.file_loaded:
@@ -1364,18 +1366,22 @@ class MainWidget(QMainWindow):
             self.delete_cell_mask(self.selected_cell_n)
             return
         
-        particle_n=self.selected_particle_n
-        current_frame_n=self.frame_number
-        t=self.stack.tracked_centroids
+        else:
+            particle_n=self.selected_particle_n
+            current_frame_n=self.frame_number
+            t=self.stack.tracked_centroids
 
-        head_cell_numbers, head_frame_numbers=np.array(t[(t.particle==particle_n)&(t.frame>=current_frame_n)][['cell_number', 'frame']]).T
-        self.also_save_tracking.setChecked(True)
-        for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
-            self.delete_cell_mask(cell_n, self.stack.frames[frame_n])
+            head_cell_numbers, head_frame_numbers=np.array(t[(t.particle==particle_n)&(t.frame>=current_frame_n)][['cell_number', 'frame']]).T
+            self.also_save_tracking.setChecked(True)
+            for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
+                frame=self.stack.frames[frame_n]
+                if hasattr(frame, 'stored_mask_overlay'):
+                    self.canvas.add_cell_highlight(cell_n, frame, color='none', layer='mask')
+                self.delete_cell_mask(cell_n, frame)
 
-        # reselect the particle
-        self.selected_particle_n=particle_n
-        self.plot_particle_statistic()
+            # reselect the particle
+            self.selected_particle_n=particle_n
+            self.plot_particle_statistic()
 
     def delete_particle(self):
         if not self.file_loaded:
@@ -1384,13 +1390,17 @@ class MainWidget(QMainWindow):
             self.delete_cell_mask(self.selected_cell_n)
             return
         
-        particle_n=self.selected_particle_n
-        t=self.stack.tracked_centroids
-        self.also_save_tracking.setChecked(True)
+        else:
+            particle_n=self.selected_particle_n
+            t=self.stack.tracked_centroids
+            self.also_save_tracking.setChecked(True)
 
-        head_cell_numbers, head_frame_numbers=np.array(t[t.particle==particle_n][['cell_number', 'frame']]).T
-        for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
-            self.delete_cell_mask(cell_n, self.stack.frames[frame_n])
+            head_cell_numbers, head_frame_numbers=np.array(t[t.particle==particle_n][['cell_number', 'frame']]).T
+            for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
+                frame=self.stack.frames[frame_n]
+                if hasattr(frame, 'stored_mask_overlay'):
+                    self.canvas.add_cell_highlight(cell_n, frame, color='none', layer='mask')
+                self.delete_cell_mask(cell_n, frame)
 
     def clear_tracking(self):
         if not self.file_loaded:
@@ -1837,36 +1847,44 @@ class MainWidget(QMainWindow):
         new_color=self.canvas.random_cell_color()
         for cell in self.stack.get_particle(self.selected_particle_n):
             cell.color_ID=new_color
-            if hasattr(self.stack.frames[cell.frame], 'stored_mask_overlay'):
-                del self.stack.frames[cell.frame].stored_mask_overlay # TODO: recolor only the new particle by breaking up the add_cell_highlight method
+            frame=self.stack.frames[cell.frame]
+            if hasattr(frame, 'stored_mask_overlay'):
+                self.canvas.add_cell_highlight(cell.n, frame=frame, color=new_color, alpha=0.5, layer='mask')
         
         print(f'Split particle {self.selected_particle_n} at frame {self.frame_number}')
         
         self.also_save_tracking.setChecked(True)
         self.plot_particle_statistic()
         self.highlight_track_ends()
-        current_cell=self.cell_from_particle(self.selected_particle_n)
-        self.canvas.add_cell_highlight(current_cell, color=new_color, alpha=0.5, layer='mask')
 
     def merge_particle_tracks(self, first_particle, second_particle):
         if hasattr(self.stack, 'tracked_centroids'):
             if first_particle==second_particle: # same particle, no need to merge
                 return
             else:
-                merged_color=self.stack.get_particle(first_particle)[0].color_ID
+                first_particle_cell=self.stack.get_particle(first_particle)[0]
+                if first_particle_cell.frame==self.frame_number: # merging parent only appears in current frame. Merging not possible.
+                    return
+                merged_color=first_particle_cell.color_ID
                 merged, new_head, new_tail=self.stack.merge_particle_tracks(first_particle, second_particle, self.frame_number)
                 self.also_save_tracking.setChecked(True)
                 if new_head is not None:
                     new_head_color=self.canvas.random_cell_color()
                     for cell in self.stack.get_particle(new_head):
                         cell.color_ID=new_head_color
+                        if hasattr(self.stack.frames[cell.frame], 'stored_mask_overlay'):
+                            self.canvas.add_cell_highlight(cell.n, frame=self.stack.frames[cell.frame], color=new_head_color, alpha=0.5, layer='mask')
                 if new_tail is not None:
                     new_tail_color=self.canvas.random_cell_color()
                     for cell in self.stack.get_particle(new_tail):
                         cell.color_ID=new_tail_color
+                        if hasattr(self.stack.frames[cell.frame], 'stored_mask_overlay'):
+                            self.canvas.add_cell_highlight(cell.n, frame=self.stack.frames[cell.frame], color=new_tail_color, alpha=0.5, layer='mask')
 
                 for cell in self.stack.get_particle(merged):
                     cell.color_ID=merged_color
+                    if hasattr(self.stack.frames[cell.frame], 'stored_mask_overlay'):
+                        self.canvas.add_cell_highlight(cell.n, frame=self.stack.frames[cell.frame], color=merged_color, alpha=0.5, layer='mask')
 
                 print(f'Merged particles {first_particle} and {second_particle} at frame {self.frame_number}')
                 self.plot_particle_statistic()

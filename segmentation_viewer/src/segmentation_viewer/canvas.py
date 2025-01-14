@@ -209,67 +209,76 @@ class PyQtGraphCanvas(QWidget):
 
         return mask_overlay, opaque_mask
 
-    def add_cell_highlight(self, cell_index, layer='selection', alpha=0.3, color='white', img_type='masks', seg_type='masks'):
+    def add_cell_highlight(self, cell_index, frame=None, layer='selection', alpha=0.3, color='white', img_type='masks', seg_type='masks'):
         from matplotlib.colors import to_rgb
-        masks = self.parent.frame.masks
+        if frame is None:
+            frame=self.parent.frame
+            
+        # get the binarized mask for the specified cell
+        cell_mask=self.transform_image(frame.masks == cell_index + 1)
 
-        # Get the specified overlay layer: selection for highlighting, mask for colored masks
-        layer = getattr(self, f'{layer}_overlay')
-        
-        cell_mask=self.transform_image(masks == cell_index + 1)
+        if frame==self.parent.frame:
+            drawing_layers=True
+            layer_overlay=getattr(self, f'{layer}_overlay')
+            for l in layer_overlay:
+                if l.image is None: # initialize the overlay
+                    l.image=np.zeros(cell_mask.shape+(4,))
+            overlays=[layer_overlay[0].image, layer_overlay[1].image]
+        else:
+            if layer!='mask':
+                Warning(f"Only mask overlay can be drawn on stored frames, but add_cell_highlight was called with layer {layer}. Proceeding with mask overlay.")
+            layer='mask'
+            drawing_layers=False
+            if hasattr(frame, 'stored_mask_overlay'):
+                overlays=frame.stored_mask_overlay
+            else:
+                Warning(f"No stored mask overlay found for frame {frame.frame_number}. No cell highlight will be drawn.")
+                return
 
-        for l in layer:
-            if l.image is None: # initialize the overlay
-                l.image=np.zeros(cell_mask.shape+(4,))
-
-        if isinstance(color, int):
-            color=self.cell_cmap(color)
-
-        elif isinstance(color, str) and color=='none':
+        if isinstance(color, str) and color=='none':
             # remove the cell from the overlay
-            layer[0].image[cell_mask] = 0
-            layer[1].image[cell_mask] = 0
+            overlays[0][cell_mask]=0
+            overlays[1][cell_mask]=0
+        else:
+            if isinstance(color, int):
+                color=self.cell_cmap(color)
 
-            layer[0].setImage(layer[0].image)
-            layer[1].setImage(layer[1].image)
-            return None, None
-        
-        # Convert color to RGBA
-        color = [*to_rgb(color), alpha]
-        
-        # get bounding box of cell mask
-        xmin, xmax, ymin, ymax=self.get_bounding_box(cell_mask)
-        if xmin is None:
-            raise IndexError(f"No pixels found for cell number {cell_index}.")
+            # Convert color to RGBA
+            color = [*to_rgb(color), alpha]
+            
+            # get bounding box of cell mask
+            xmin, xmax, ymin, ymax=self.get_bounding_box(cell_mask)
+            if xmin is None:
+                raise IndexError(f"No pixels found for cell number {cell_index}.")
 
-        cell_mask_bbox=cell_mask[xmin:xmax, ymin:ymax]
-        # Get the mask for the specified cell
-        img_cell_mask = cell_mask_bbox[..., np.newaxis] * color
-        # Create an opaque mask for the specified cell
-        seg_cell_mask = img_cell_mask.copy()
-        seg_cell_mask[cell_mask_bbox, -1] = 1
+            cell_mask_bbox=cell_mask[xmin:xmax, ymin:ymax]
+            # Get the mask for the specified cell
+            img_cell_mask = cell_mask_bbox[..., np.newaxis] * color
+            # Create an opaque mask for the specified cell
+            seg_cell_mask = img_cell_mask.copy()
+            seg_cell_mask[cell_mask_bbox, -1] = 1
 
-        if img_type == 'outlines' or seg_type == 'outlines':
-            outlines=self.get_mask_boundary(cell_mask_bbox)
-            if img_type == 'outlines':
-                img_cell_mask[~outlines] = 0
-            if seg_type == 'outlines':
-                seg_cell_mask[~outlines] = 0
+            if img_type == 'outlines' or seg_type == 'outlines':
+                outlines=self.get_mask_boundary(cell_mask_bbox)
+                if img_type == 'outlines':
+                    img_cell_mask[~outlines] = 0
+                if seg_type == 'outlines':
+                    seg_cell_mask[~outlines] = 0
 
-        # Rotate and flip the masks to match the display orientation
-        # Add the cell mask to the existing overlay
-        layer[0].image[xmin:xmax, ymin:ymax][cell_mask_bbox] = img_cell_mask[cell_mask_bbox]
-        layer[1].image[xmin:xmax, ymin:ymax][cell_mask_bbox] = seg_cell_mask[cell_mask_bbox]
+            # Add the cell mask to the existing overlay
+            overlays[0][xmin:xmax, ymin:ymax][cell_mask_bbox] = img_cell_mask[cell_mask_bbox]
+            overlays[1][xmin:xmax, ymin:ymax][cell_mask_bbox] = seg_cell_mask[cell_mask_bbox]
 
         # Update the overlay images
-        layer[0].setImage(layer[0].image)
-        layer[1].setImage(layer[1].image)
+        if drawing_layers:
+            layer_overlay[0].setImage(overlays[0])
+            layer_overlay[1].setImage(overlays[1])
 
         # store mask overlays if layer is mask
-        if layer==self.mask_overlay:
-            self.parent.frame.stored_mask_overlay=[layer[0].image, layer[1].image]
+        if layer=='mask':
+            frame.stored_mask_overlay=overlays
 
-        return img_cell_mask, seg_cell_mask
+        return
     
     def get_bounding_box(self, cell_mask):
         # UTIL

@@ -40,7 +40,10 @@ def read_image_file(file_path, progress_bar=None, **progress_kwargs):
 
     # Read the data from the file
     for idx, func in progress_bar(np.ndenumerate(sliced), length=sliced.size, **progress_kwargs):
-        result_array[idx] = func()[c_bounds].transpose(1,2,0)  # Call the function and store the result
+        img=func()
+        if img.ndim==2: # mono
+            img=img[np.newaxis]
+        result_array[idx] = img.transpose(1,2,0)[...,c_bounds]  # Call the function and store the result
     file.close()
     return result_array
 

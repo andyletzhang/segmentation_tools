@@ -240,23 +240,29 @@ class TimeStack(SegmentedStack):
         Returns:
             list: List of Cell objects in time order representing the trajectory of the particle.
         """
-        t = self.tracked_centroids
-        
-        if isinstance(input_ID, (int, np.integer)):  # If the input is already a particle ID, proceed
-            particle_ID = input_ID
-        elif isinstance(input_ID, Cell):  # If input is a Cell object, find its corresponding particle ID
-            particle_ID = t[(t['frame'] == input_ID.frame) & (t['cell_number'] == input_ID.n)]['particle'].iloc[0]
-        elif input_ID is None:  # If no input is provided, return an empty list
-            return []
+        if hasattr(self, 'tracked_centroids'):
+            t = self.tracked_centroids
+            
+            if isinstance(input_ID, (int, np.integer)):  # If the input is already a particle ID, proceed
+                particle_ID = input_ID
+            elif isinstance(input_ID, Cell):  # If input is a Cell object, find its corresponding particle ID
+                particle_ID = t[(t['frame'] == input_ID.frame) & (t['cell_number'] == input_ID.n)]['particle'].iloc[0]
+            elif input_ID is None:  # If no input is provided, return an empty list
+                return []
+            else:
+                raise ValueError(f'Invalid input for get_particle function {input_ID}. Please provide a valid particle ID or Cell object.')
+
+            cell_rows = t[t.particle == particle_ID][['frame', 'cell_number']] # Locate particle
+
+            # Build list of particle appearances over time
+            particle = []
+            for frame_number, cell_number in np.array(cell_rows):
+                particle.append(self.frames[frame_number].cells[cell_number])
         else:
-            raise ValueError(f'Invalid input for get_particle function {input_ID}. Please provide a valid particle ID or Cell object.')
-
-        cell_rows = t[t.particle == particle_ID][['frame', 'cell_number']] # Locate particle
-
-        # Build list of particle appearances over time
-        particle = []
-        for frame_number, cell_number in np.array(cell_rows):
-            particle.append(self.frames[frame_number].cells[cell_number])
+            if isinstance(input_ID, (int, np.integer)):
+                raise ValueError(f'No tracking data available, can\'t fetch particle {input_ID}.')
+            elif isinstance(input_ID, Cell):
+                particle=[input_ID]
 
         return particle
     

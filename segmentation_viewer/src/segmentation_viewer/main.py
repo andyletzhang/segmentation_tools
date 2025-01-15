@@ -2244,11 +2244,12 @@ class MainWidget(QMainWindow):
                 cell.red=True
         
         if self.propagate_FUCCI_checkbox.isChecked():
-            particle=self.stack.get_particle(cell)
-            for cell_timepoint in particle:
-                if cell_timepoint.frame>cell.frame:
-                    cell_timepoint.green=cell.green
-                    cell_timepoint.red=cell.red
+            if hasattr(self.stack, 'tracked_centroids'):
+                particle=self.stack.get_particle(cell)
+                for cell_timepoint in particle:
+                    if cell_timepoint.frame>cell.frame:
+                        cell_timepoint.green=cell.green
+                        cell_timepoint.red=cell.red
 
         if self.FUCCI_mode:
             overlay_color=self.FUCCI_dropdown.currentText().lower()
@@ -3289,6 +3290,7 @@ class MainWidget(QMainWindow):
             self.propagate_FUCCI_checkbox.setEnabled(True)
             self.recolor_tracks()
         else:
+            self.propagate_FUCCI_checkbox.setChecked(False)
             self.propagate_FUCCI_checkbox.setEnabled(False)
 
         if len(self.stack.frames)==1:

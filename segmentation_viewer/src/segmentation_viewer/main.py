@@ -111,6 +111,7 @@ class MainWidget(QMainWindow):
         self.view_menu = self.menu_bar.addMenu("View")
         self.view_menu.addAction(create_action("Reset View", self.reset_view, self))
         self.view_menu.addAction(create_action("Show Grayscale", self.toggle_grayscale, self))
+        self.view_menu.addAction(create_action("Overlay Settings...", self.open_overlay_settings, self))
         #self.view_menu.addAction(create_action("Segmentation Plot", self.toggle_segmentation_plot, self))
 
         # IMAGE
@@ -1849,7 +1850,7 @@ class MainWidget(QMainWindow):
             cell.color_ID=new_color
             frame=self.stack.frames[cell.frame]
             if hasattr(frame, 'stored_mask_overlay'):
-                self.canvas.add_cell_highlight(cell.n, frame=frame, color=new_color, alpha=0.5, layer='mask')
+                self.canvas.add_cell_highlight(cell.n, frame=frame, color=new_color, alpha=self.canvas.masks_alpha, layer='mask')
         
         print(f'Split particle {self.selected_particle_n} at frame {self.frame_number}')
         
@@ -1873,28 +1874,28 @@ class MainWidget(QMainWindow):
                     for cell in self.stack.get_particle(new_head):
                         cell.color_ID=new_head_color
                         if hasattr(self.stack.frames[cell.frame], 'stored_mask_overlay'):
-                            self.canvas.add_cell_highlight(cell.n, frame=self.stack.frames[cell.frame], color=new_head_color, alpha=0.5, layer='mask')
+                            self.canvas.add_cell_highlight(cell.n, frame=self.stack.frames[cell.frame], color=new_head_color, alpha=self.canvas.masks_alpha, layer='mask')
                 if new_tail is not None:
                     new_tail_color=self.canvas.random_cell_color()
                     for cell in self.stack.get_particle(new_tail):
                         cell.color_ID=new_tail_color
                         if hasattr(self.stack.frames[cell.frame], 'stored_mask_overlay'):
-                            self.canvas.add_cell_highlight(cell.n, frame=self.stack.frames[cell.frame], color=new_tail_color, alpha=0.5, layer='mask')
+                            self.canvas.add_cell_highlight(cell.n, frame=self.stack.frames[cell.frame], color=new_tail_color, alpha=self.canvas.masks_alpha, layer='mask')
 
                 for cell in self.stack.get_particle(merged):
                     cell.color_ID=merged_color
                     if hasattr(self.stack.frames[cell.frame], 'stored_mask_overlay'):
-                        self.canvas.add_cell_highlight(cell.n, frame=self.stack.frames[cell.frame], color=merged_color, alpha=0.5, layer='mask')
+                        self.canvas.add_cell_highlight(cell.n, frame=self.stack.frames[cell.frame], color=merged_color, alpha=self.canvas.masks_alpha, layer='mask')
 
                 print(f'Merged particles {first_particle} and {second_particle} at frame {self.frame_number}')
                 self.plot_particle_statistic()
                 self.highlight_track_ends()
                 current_cell=self.cell_from_particle(merged)
-                self.canvas.add_cell_highlight(current_cell, color=merged_color, alpha=0.5, layer='mask')
+                self.canvas.add_cell_highlight(current_cell, color=merged_color, alpha=self.canvas.masks_alpha, layer='mask')
 
                 new_tail_cell=self.cell_from_particle(new_tail)
                 if new_tail_cell is not None:
-                    self.canvas.add_cell_highlight(new_tail_cell, color=new_tail_color, alpha=0.5, layer='mask')
+                    self.canvas.add_cell_highlight(new_tail_cell, color=new_tail_color, alpha=self.canvas.masks_alpha, layer='mask')
             
     def set_LUTs(self):
         ''' Set the LUTs for the image display based on the current slider values. '''
@@ -2072,7 +2073,7 @@ class MainWidget(QMainWindow):
             return
         
         # highlight cell
-        self.canvas.add_cell_highlight(self.selected_cell_n)
+        self.canvas.add_cell_highlight(self.selected_cell_n, alpha=self.canvas.selected_cell_alpha, color=self.canvas.selected_cell_color)
 
         # show cell attributes in right toolbar
         if len(self.selected_cell.outline)>0: 
@@ -2374,7 +2375,7 @@ class MainWidget(QMainWindow):
 
         self.canvas.draw_outlines()
         self.highlight_track_ends()
-        self.canvas.add_cell_highlight(new_mask_n, alpha=0.5, color=cell_color, layer='mask')
+        self.canvas.add_cell_highlight(new_mask_n, alpha=self.canvas.masks_alpha, color=cell_color, layer='mask')
 
         self.update_ROIs_label()
         return new_mask_n
@@ -2558,7 +2559,7 @@ class MainWidget(QMainWindow):
             self.also_save_tracking.setChecked(True)
 
         # add new cell mask to the overlay
-        self.canvas.add_cell_highlight(cell_n1, alpha=0.5, color=new_cell.color_ID, layer='mask')
+        self.canvas.add_cell_highlight(cell_n1, alpha=self.canvas.masks_alpha, color=new_cell.color_ID, layer='mask')
 
         # purge cell 2
         idx=self.frame.delete_cells([cell_n2])
@@ -3077,6 +3078,24 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         self.canvas.img.set_grayscale(self.show_grayscale_checkbox.isChecked())
+
+    def open_overlay_settings(self):
+        from segmentation_viewer.qt import OverlaySettingsDialog
+        overlay_dialog = OverlaySettingsDialog(parent=self.canvas)
+        overlay_dialog.settings_applied.connect(self.update_gui_elements)
+        if overlay_dialog.exec() == QDialog.DialogCode.Accepted:
+            self.update_gui_elements(overlay_dialog.get_settings())
+
+    def update_gui_elements(self, settings):
+        if self.canvas.masks_alpha!=settings[2]:
+            for frame in self.stack.frames:
+                if hasattr(frame, 'stored_mask_overlay'):
+                    del frame.stored_mask_overlay
+        for attr, setting in zip(['selected_cell_color', 'selected_cell_alpha', 'masks_alpha', 'outlines_color', 'outlines_alpha'], settings):
+            setattr(self.canvas, attr, setting)
+
+        self.imshow()
+        self.select_cell(cell=self.selected_cell_n)
 
     def clear_channel_layout(self):
         self.clear_layout(self.segmentation_channels_layout)

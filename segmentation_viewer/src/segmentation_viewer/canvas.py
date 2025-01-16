@@ -13,6 +13,11 @@ class PyQtGraphCanvas(QWidget):
         from matplotlib import colormaps
         super().__init__(parent)
         self.parent = parent
+        self.selected_cell_color='white'
+        self.selected_cell_alpha=0.3
+        self.outlines_color='white'
+        self.outlines_alpha=0.5
+        self.masks_alpha=0.5
 
         # cell mask colors
         self.cell_n_colors=cell_n_colors
@@ -109,8 +114,13 @@ class PyQtGraphCanvas(QWidget):
     def overlay_outlines(self):
         self.img_outline_overlay.setVisible(self.parent.outlines_checkbox.isChecked())
 
-    def draw_outlines(self, color='white', alpha=0.5):
+    def draw_outlines(self, color=None, alpha=None):
         ''' Overlay the outlines of the masks on the image plot. '''
+        if alpha is None:
+            alpha=self.outlines_alpha
+        if color is None:
+            color=self.outlines_color
+
         from matplotlib.colors import to_rgb
         color=[*to_rgb(color), alpha]
 
@@ -147,7 +157,9 @@ class PyQtGraphCanvas(QWidget):
         else:
             return random_IDs
 
-    def draw_masks(self, alpha=0.5):
+    def draw_masks(self, alpha=None):
+        if alpha is None:
+            alpha=self.masks_alpha
         # get cell colors
         try:
             cell_colors=self.parent.frame.get_cell_attrs('color_ID') # retrieve the stored colors for each cell
@@ -171,8 +183,13 @@ class PyQtGraphCanvas(QWidget):
         self.tracking_overlay[0].clear()
         self.tracking_overlay[1].clear()
 
-    def highlight_cells(self, cell_indices, layer='selection', alpha=0.3, color='white', cell_colors=None, img_type='masks', seg_type='masks'):
+    def highlight_cells(self, cell_indices, layer='selection', alpha=None, color=None, cell_colors=None, img_type='masks', seg_type='masks'):
         from matplotlib.colors import to_rgb
+        if alpha is None:
+            alpha=self.selected_cell_alpha
+        if color is None:
+            color=self.selected_cell_color
+            
         masks=self.parent.frame.masks
 
         layer=getattr(self, f'{layer}_overlay') # get the specified overlay layer: selection for highlighting, mask for colored masks
@@ -209,10 +226,15 @@ class PyQtGraphCanvas(QWidget):
 
         return mask_overlay, opaque_mask
 
-    def add_cell_highlight(self, cell_index, frame=None, layer='selection', alpha=0.3, color='white', img_type='masks', seg_type='masks'):
+    def add_cell_highlight(self, cell_index, frame=None, layer='selection', alpha=None, color=None, img_type='masks', seg_type='masks'):
         from matplotlib.colors import to_rgb
         if frame is None:
             frame=self.parent.frame
+
+        if alpha is None:
+            alpha=self.selected_cell_alpha
+        if color is None:
+            color=self.selected_cell_color
             
         # get the binarized mask for the specified cell
         cell_mask=self.transform_image(frame.masks == cell_index + 1)

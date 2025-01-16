@@ -1647,6 +1647,7 @@ class MainWidget(QMainWindow):
             self.is_zstack=False
 
         if self.is_zstack or hasattr(self.frame, 'heights'):
+            self.volume_button.setEnabled(True)
             if not self.is_zstack: # enable/disable z-stack specific options
                 self.get_heights_button.setEnabled(False)
                 self.peak_prominence.setEnabled(False)

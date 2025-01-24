@@ -2809,9 +2809,9 @@ class MainWidget(QMainWindow):
         if hasattr(self.stack, 'tracked_centroids'):
             if not hasattr(self.stack, 'velocities'):
                 self.stack.get_velocities()
-            df=self.stack.velocities
+            df=self.stack.velocities.sort_values(['frame','cell_number'])
             if 'color' in df.columns:
-                df.drop(columns='color', inplace=True)
+                df.drop(columns='color', inplace=True) # don't save this cosmetic column
         else:
             df=self.stack.centroids()
         

@@ -386,6 +386,84 @@ class TimeStack(SegmentedStack):
             propagated_cell_cycle=np.maximum.accumulate(cell_cycle)
             self.set_particle_attr(ID, 'cycle_stage', propagated_cell_cycle)
 
+    def measure_FUCCI_by_transitions(self, green_threshold=-10, G2_peak_prominence=0.005, progress=lambda x: x):
+        from scipy.signal import find_peaks
+        def rolling_smooth(arr, window_size):
+            if window_size % 2 == 0:
+                raise ValueError("Window size must be odd")
+            # Create window weights
+            window = np.ones(window_size) / window_size
+            
+            # Use 'same' mode to preserve array size and edge padding
+            smoothed = np.convolve(arr, window, mode='same')
+            
+            # Handle edge effects by using smaller windows at the edges
+            half_window = window_size // 2
+            for i in range(half_window):
+                smoothed[i] = np.mean(arr[max(0, i-half_window):i+half_window+1])
+                smoothed[-(i+1)] = np.mean(arr[-(i+half_window+1):])
+                
+            return smoothed
+        
+        for frame in progress(self.frames):
+            if not hasattr(frame.cells[0], 'red_intensity'):
+                frame.get_red_green_intensities()
+
+        for particle in progress(np.unique(self.tracked_centroids['particle'])):
+            cells=self.get_particle(particle)
+            if len(cells)<15:
+                continue
+            red, green=np.array(self.get_particle_attr(particle, ['red_intensity','green_intensity'])).T
+            
+            green_gradient=np.gradient(green)
+            G1_threshold=min(green_threshold, green_gradient.min()*0.9) # normalize somehow
+            G1_transition=np.where(green_gradient[:-3]<=G1_threshold)[0]
+
+            if len(G1_transition)>0:
+                G1_transition=G1_transition[0]+1
+                green_G1=green[:G1_transition]
+                green_SG2=green[G1_transition:]
+                if len(green_G1)>5:
+                    green_G1=rolling_smooth(green_G1, 5)
+                if len(green_SG2)>5:
+                    green_SG2=rolling_smooth(green_SG2, 5)
+                smoothed_green=np.concatenate([green_G1, green_SG2])
+            else:
+                G1_transition=-1
+                green_G1=green
+                smoothed_green=rolling_smooth(green, 5)
+
+            smoothed_red=rolling_smooth(red, 7)
+            difference=smoothed_green/smoothed_red
+            
+            if G1_transition>=0:
+                S_phase=difference[G1_transition+5:] # 5 frame offset to avoid G1 noise (should normalize to time scale)
+                offset=G1_transition+5
+            else:
+                S_phase=difference
+                offset=0
+            candidates, properties=find_peaks(-S_phase, prominence=0)
+            if len(candidates)>0:
+                biggest_peak=np.argmax(properties['prominences'])
+                G2_prominence=properties['prominences'][biggest_peak]
+                if G2_prominence<G2_peak_prominence:
+                    G2_transition=-1
+                else:
+                    G2_transition=candidates[biggest_peak]+offset
+            else:
+                G2_transition=-1
+                G2_prominence=0
+            
+            if G1_transition>=0 or G2_transition>=0:
+                for cell in cells:
+                    cell.cycle_stage=2
+                if G1_transition>=0:
+                    for cell in cells[:G1_transition]:
+                        cell.cycle_stage=1
+                if G2_transition>=0:
+                    for cell in cells[G2_transition:]:
+                        cell.cycle_stage=3
+
     def get_interpretable_FUCCI(self, zero_remainder=True, impute_zeros=True):
         from .FUCCI_linking import get_problematic_IDs, impute_fill, smooth_small_flickers, correct_mother_G2, correct_daughter_G1, remove_sandwich_flicker
         cell_cycle=np.concatenate([frame.fetch_cell_cycle() for frame in self.frames])
@@ -772,6 +850,22 @@ class SegmentedImage:
         return idx
 
     # ------------FUCCI----------------        
+    def get_red_green_intensities(self, percentile=90, blur_sigma=4):
+        def nth_percentile(x):
+            return np.percentile(x, percentile)
+        
+        red_channel=self.img[:,:,0]
+        green_channel=self.img[:,:,1]
+
+        # gaussian blur
+        red_channel=ndimage.gaussian_filter(red_channel, sigma=blur_sigma)
+        green_channel=ndimage.gaussian_filter(green_channel, sigma=blur_sigma)
+
+        red_frame=ndimage.labeled_comprehension(red_channel, default=0, out_dtype=np.uint16, func=nth_percentile, labels=self.masks, index=np.arange(1, self.masks.max()+1))
+        green_frame=ndimage.labeled_comprehension(green_channel, default=0, out_dtype=np.uint16, func=nth_percentile, labels=self.masks, index=np.arange(1, self.masks.max()+1))
+
+        self.set_cell_attrs(['red_intensity','green_intensity'], [red_frame, green_frame])
+
     def measure_FUCCI(self, percent_threshold=0.15, red_fluor_threshold=None, green_fluor_threshold=None, orange_brightness=1.5, threshold_offset=0, noise_score=0.02):
         """
         Measure the FUCCI (Fluorescence Ubiquitination Cell Cycle Indicator) levels in cells.

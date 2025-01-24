@@ -1060,6 +1060,8 @@ class MainWidget(QMainWindow):
         FUCCI_tab_layout.setSpacing(10)
         FUCCI_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
+        get_intensities_button=QPushButton("Get Cell Red/Green Intensities", self)
+        get_tracked_FUCCI_button=QPushButton("FUCCI from tracks", self)
         measure_FUCCI_widget=QWidget(objectName='bordered')
         measure_FUCCI_layout=QVBoxLayout(measure_FUCCI_widget)
 
@@ -1124,9 +1126,13 @@ class MainWidget(QMainWindow):
         annotate_FUCCI_layout.addWidget(self.propagate_FUCCI_checkbox)
         annotate_FUCCI_layout.addLayout(clear_FUCCI_layout)
 
+        FUCCI_tab_layout.addWidget(get_intensities_button)
+        FUCCI_tab_layout.addWidget(get_tracked_FUCCI_button)
         FUCCI_tab_layout.addWidget(measure_FUCCI_widget)
         FUCCI_tab_layout.addWidget(annotate_FUCCI_widget)
 
+        get_intensities_button.clicked.connect(self.cell_red_green_intensities)
+        get_tracked_FUCCI_button.clicked.connect(self.get_tracked_FUCCI)
         self.FUCCI_dropdown.currentIndexChanged.connect(self.FUCCI_overlay_changed)
         self.FUCCI_checkbox.stateChanged.connect(self.update_display)
         FUCCI_frame_button.clicked.connect(self.measure_FUCCI_frame)
@@ -1137,6 +1143,26 @@ class MainWidget(QMainWindow):
 
         return FUCCI_tab
     
+    def get_tracked_FUCCI(self):
+        if not self.file_loaded:
+            return
+        if not hasattr(self.stack, 'tracked_centroids'):
+            self.statusBar().showMessage('No tracked centroids found.', 2000)
+            return
+        
+        self.stack.measure_FUCCI_by_transitions(progress=self.progress_bar)
+
+        for frame in self.stack.frames:
+            self.get_red_green(frame)
+
+        self.FUCCI_overlay()
+
+    def cell_red_green_intensities(self, event=None, percentile=90, sigma=4):
+        if not self.file_loaded:
+            return
+        for frame in self.progress_bar(self.stack.frames):
+            frame.get_red_green_intensities(percentile, sigma)
+
     def propagate_FUCCI_toggled(self, state):
         ''' Propagate the FUCCI labels forward in time. '''
         if state!=2 or not self.file_loaded:
@@ -1613,6 +1639,8 @@ class MainWidget(QMainWindow):
                 frame.to_heightmap()
                 frame.coverslip_height=coverslip_height
                 self.show_seg_overlay()
+
+        self.volume_button.setEnabled(True)
 
     def compute_spherical_volumes(self):
         if not self.file_loaded:

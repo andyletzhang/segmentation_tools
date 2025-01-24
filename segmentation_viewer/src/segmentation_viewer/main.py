@@ -31,7 +31,6 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
-# TODO: LUTs get stuck when custom set, then new cell is drawn
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
 # TODO: File -> export heights tif, import heights tif
@@ -190,7 +189,9 @@ class MainWidget(QMainWindow):
         main_widget.setCollapsible(1, False)
         main_widget.setSizes([250, 800, 250])
 
-        self.saved_visual_settings=[self.get_visual_settings() for _ in range(4)]
+        self.default_visual_settings=self.visual_settings
+        self.default_visual_settings['LUTs']=None
+        self.saved_visual_settings=[self.default_visual_settings for _ in range(4)]
         self.current_tab=0
         self.FUCCI_mode=False
 
@@ -552,7 +553,6 @@ class MainWidget(QMainWindow):
         self.normalize_layout.addWidget(self.normalize_frame_button)
         self.normalize_layout.addWidget(self.normalize_stack_button)
         self.normalize_layout.addWidget(self.normalize_custom_button)
-        self.normalize_frame_button.setChecked(True)
         self.normalize_type='frame'
 
         # LUTs
@@ -656,24 +656,37 @@ class MainWidget(QMainWindow):
             self.current_tab=index
             return
         
-        self.saved_visual_settings[self.current_tab]=self.get_visual_settings()
+        # save visual settings for the previous tab
+        self.saved_visual_settings[self.current_tab]=self.visual_settings
+
+        # load visual settings for the new tab
         self.current_tab=index
-        self.set_visual_settings(self.saved_visual_settings[index])
+        self.visual_settings=self.saved_visual_settings[index]
 
         self.highlight_track_ends()
         self.FUCCI_overlay()
-    
-    def set_visual_settings(self, settings):
-        if settings[0] is not None: # RGB
-            self.set_RGB(settings[0])
-        self.normalize_type=settings[1]
-        self.masks_checkbox.setChecked(settings[2])
-        self.outlines_checkbox.setChecked(settings[3])
 
-    def get_visual_settings(self):
+    @property
+    def visual_settings(self):
         # retrieve the current visual settings
-        return [self.get_RGB(), self.normalize_type, self.masks_checkbox.isChecked(), self.outlines_checkbox.isChecked()]
+        out={'RGB': self.get_RGB(),
+             'normalize_type': self.normalize_type,
+             'masks': self.masks_checkbox.isChecked(),
+             'outlines': self.outlines_checkbox.isChecked(),
+             'LUTs': self.LUT_slider_values
+             }
+        return out
     
+    @visual_settings.setter
+    def visual_settings(self, settings):
+        if settings['RGB'] is not None: # RGB
+            self.set_RGB(settings[0])
+        self.normalize_type=settings['normalize_type']
+        self.masks_checkbox.setChecked(settings['masks'])
+        self.outlines_checkbox.setChecked(settings['outlines'])
+        if settings['LUTs'] is not None: # LUT
+            self.LUT_slider_values=settings['LUTs']
+
     def get_segmentation_tab(self):
         segmentation_tab=QWidget()
         segmentation_layout=QVBoxLayout(segmentation_tab)
@@ -1928,8 +1941,7 @@ class MainWidget(QMainWindow):
             
     def set_LUTs(self):
         ''' Set the LUTs for the image display based on the current slider values. '''
-        bounds=self.get_LUT_slider_values()
-        self.canvas.img.setLevels(bounds)
+        self.canvas.img.setLevels(self.LUT_slider_values)
         self.update_LUT_labels()
 
     def update_LUT_labels(self):
@@ -1948,19 +1960,31 @@ class MainWidget(QMainWindow):
         self.canvas.update_display(img_data=img_data, seg_data=seg_data, RGB_checks=self.get_RGB())
         self.normalize()
     
-    def get_normalize_buttons(self):
+    @property
+    def normalize_type(self):
         ''' Get the state of the normalize buttons. Returns the selected button as a string. '''
         button_status=[self.normalize_frame_button.isChecked(), self.normalize_stack_button.isChecked(), self.normalize_custom_button.isChecked()]
         button_names=np.array(['frame', 'stack', 'lut'])
         return button_names[button_status][0]
     
-    def get_LUT_slider_values(self):
+    @normalize_type.setter
+    def normalize_type(self, value):
+        ''' Set the state of the normalize buttons based on the input string. '''
+        button_names=np.array(['frame', 'stack', 'lut'])
+        button_status=button_names==value
+        self.normalize_frame_button.setChecked(button_status[0])
+        self.normalize_stack_button.setChecked(button_status[1])
+        self.normalize_custom_button.setChecked(button_status[2])
+    
+    @property
+    def LUT_slider_values(self):
         ''' Get the current values of the LUT sliders. '''
         slider_values=[slider.value() for slider in self.LUT_range_sliders]
         
         return slider_values
     
-    def set_LUT_slider_values(self, bounds):
+    @LUT_slider_values.setter
+    def LUT_slider_values(self, bounds):
         for slider, bound in zip(self.LUT_range_sliders, bounds):
             if bound[0]==bound[1]: # prevent division by zero
                 bound=(0,1)
@@ -2023,11 +2047,10 @@ class MainWidget(QMainWindow):
     def update_normalize_frame(self):
         if not self.file_loaded:
             return
-        self.normalize_type=self.get_normalize_buttons()
         self.normalize()
 
     def normalize(self):
-        if self.canvas.img_data.ndim==2: # single channel
+        if self.is_grayscale: # single channel
             colors=1
         else:
             colors=3
@@ -2065,7 +2088,7 @@ class MainWidget(QMainWindow):
         else: # custom: use the slider values
             bounds=np.array([slider.value() for slider in self.LUT_range_sliders])
         
-        self.set_LUT_slider_values(bounds)
+        self.LUT_slider_values=bounds
 
         return bounds
     
@@ -3092,7 +3115,6 @@ class MainWidget(QMainWindow):
                         frame.bounds = frame.bounds[..., channel_order, :]
 
                 self.update_display()
-                self.auto_range_sliders()
                 self.normalize()
             except ValueError as e:
                 # Show an error message if the input is invalid
@@ -3306,24 +3328,6 @@ class MainWidget(QMainWindow):
             self.stack.tracked_centroids=t
         return t
 
-    def auto_range_sliders(self):
-        if self.is_grayscale:
-            n_colors=1
-        else:
-            n_colors=3
-
-        if self.is_zstack:
-            all_imgs=np.array([frame.zstack for frame in self.stack.frames]).reshape(-1, n_colors)
-        else:
-            all_imgs=np.array([frame.img for frame in self.stack.frames]).reshape(-1, n_colors)
-        
-        if len(all_imgs)>1e6:
-            # downsample to speed up calculation
-            all_imgs=all_imgs[::len(all_imgs)//int(1e6)]
-        stack_range=np.array([np.min(all_imgs, axis=0), np.max(all_imgs, axis=0)]).T
-        self.stack.min_max=stack_range
-        self.set_LUT_slider_ranges(stack_range)
-
     #--------------I/O----------------
     def open_stack(self, files):
         self.stack, tracked_centroids=self.load_files(files)
@@ -3381,11 +3385,11 @@ class MainWidget(QMainWindow):
 
         self.canvas.img_plot.autoRange()
 
-        # set slider ranges
-        self.auto_range_sliders()
-
         # reset visual settings
-        self.saved_visual_settings=[self.get_visual_settings() for _ in range(4)]
+        self.saved_visual_settings=[self.default_visual_settings for _ in range(4)]
+
+        # set slider ranges
+        self.normalize()
         
     def open_files(self):
         files = QFileDialog.getOpenFileNames(self, 'Open file(s)', filter='*seg.npy *.tif *.tiff *.nd2')[0]

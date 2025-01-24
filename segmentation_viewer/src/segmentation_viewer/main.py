@@ -680,7 +680,7 @@ class MainWidget(QMainWindow):
     @visual_settings.setter
     def visual_settings(self, settings):
         if settings['RGB'] is not None: # RGB
-            self.set_RGB(settings[0])
+            self.set_RGB(settings['RGB'])
         self.normalize_type=settings['normalize_type']
         self.masks_checkbox.setChecked(settings['masks'])
         self.outlines_checkbox.setChecked(settings['outlines'])

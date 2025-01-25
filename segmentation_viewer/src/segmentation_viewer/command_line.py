@@ -1,6 +1,6 @@
 from PyQt6.QtCore import pyqtSignal, pyqtSlot, QThread, Qt
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLineEdit, QMainWindow
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QTextCursor
 import importlib.resources
 import io
 import sys
@@ -91,7 +91,7 @@ class CommandLineWidget(QWidget):
         # Get the command from the input box
         command = self.command_input.text()
         self.command_input.clear()
-        
+
         if command:
             if command in self.command_history: # remove redundant commands further back in the history
                 self.command_history.remove(command)
@@ -106,13 +106,16 @@ class CommandLineWidget(QWidget):
             self.worker.start()
             # block text input until the command is executed
             self.command_input.setDisabled(True)
+        self.terminal_display.moveCursor(QTextCursor.End)
 
     @pyqtSlot(str, str) # Decorator to specify the type of the signal
     def on_code_execution_done(self, output, error):
         if output:
             self.terminal_display.append(output)
+            self.terminal_display.moveCursor(QTextCursor.End)
         if error:
             self.terminal_display.append(f"Error: {error}")
+            self.terminal_display.moveCursor(QTextCursor.End)
         
         # Re-enable the command input box
         self.command_input.setDisabled(False)

@@ -124,7 +124,7 @@ class SubstackDialog(QDialog):
             return None
         
 class OverlaySettingsDialog(QDialog):
-    settings_applied = pyqtSignal(tuple)
+    settings_applied = pyqtSignal(dict)
     def __init__(self, parent: QWidget = None):
         """
         Initialize the dialog. Inherit initial settings from the parent.
@@ -276,10 +276,9 @@ class OverlaySettingsDialog(QDialog):
         """
         Returns the selected settings.
         """
-        return (
-            self.selected_cell_color.name(),
-            float(self.selected_cell_alpha_line.text()),
-            float(self.masks_alpha_line.text()),
-            self.outlines_color.name(),
-            float(self.outlines_alpha_line.text())
-            )
+        return {'selected_cell_color': self.selected_cell_color.name(),
+            'selected_cell_alpha': float(self.selected_cell_alpha_line.text()),
+            'masks_alpha': float(self.masks_alpha_line.text()),
+            'outlines_color': self.outlines_color.name(),
+            'outlines_alpha': float(self.outlines_alpha_line.text())
+        }

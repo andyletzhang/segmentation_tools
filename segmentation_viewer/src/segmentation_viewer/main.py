@@ -196,6 +196,9 @@ class MainWidget(QMainWindow):
         self.current_tab=0
         self.FUCCI_mode=False
 
+        self.load_config()
+        self.apply_overlay_settings()
+
         #----------------Connections----------------
         self.frame_slider.valueChanged.connect(self.change_current_frame)
         self.zstack_slider.valueChanged.connect(self.update_zstack_number)
@@ -204,6 +207,54 @@ class MainWidget(QMainWindow):
         self.canvas.img_plot.scene().sigMouseClicked.connect(self.on_click)
         self.canvas.seg_plot.scene().sigMouseClicked.connect(self.on_click)
     
+    def load_config(self):
+        from platformdirs import user_config_dir
+        config_path=Path(user_config_dir('segmentation_viewer')).joinpath('config.yaml')
+        if config_path.exists():
+            import yaml
+            try:
+                with open(config_path, 'r') as f:
+                    config=yaml.safe_load(f)
+                self.set_config(config)
+                return
+            
+            except Exception as e:
+                print(f'Error loading config file: {e} - using defaults instead.')
+
+        print(f'Creating config file at {config_path}')
+        config=self.dump_config(config_path)
+        self.set_config(config)
+
+    def set_config(self, config):
+        self.canvas.dark_overlay_settings=config['overlay_settings']
+        self.canvas.light_overlay_settings=config['inverted_overlay_settings']
+        self.inverted_checkbox.setChecked(config['inverted'])
+
+    def dump_config(self, config_path=None):
+        import yaml
+        from platformdirs import user_config_dir
+        config_path=Path(user_config_dir('segmentation_viewer')).joinpath('config.yaml')
+        inverted=self.inverted_checkbox.isChecked()
+
+        current_overlay_settings={attr:getattr(self.canvas, attr) for attr in ['selected_cell_color',
+                                                                       'selected_cell_alpha',
+                                                                       'outlines_color',
+                                                                       'outlines_alpha',
+                                                                       'masks_alpha']}
+        
+        overlay_settings=getattr(self.canvas, 'dark_overlay_settings', current_overlay_settings.copy())
+        inverted_overlay_settings=getattr(self.canvas, 'light_overlay_settings', current_overlay_settings.copy())
+
+        config={'overlay_settings':overlay_settings,
+                'inverted_overlay_settings':inverted_overlay_settings,
+                'inverted':inverted,
+        }
+        # create the config directory if it doesn't exist
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, 'w') as f:
+            yaml.dump(config, f)
+        return config
+
     def get_right_toolbar(self):
         self.stat_tabs=QTabWidget()
         self.stat_tabs.addTab(self.get_histogram_tab(), "Histogram")
@@ -3161,25 +3212,42 @@ class MainWidget(QMainWindow):
         self.inverted_checkbox.toggle()
 
     def invert_toggled(self):
+        self.apply_overlay_settings()
         self.canvas.img.refresh()
 
     def open_overlay_settings(self):
         from segmentation_viewer.qt import OverlaySettingsDialog
-        overlay_dialog = OverlaySettingsDialog(parent=self.canvas)
-        overlay_dialog.settings_applied.connect(self.update_gui_elements)
-        if overlay_dialog.exec() == QDialog.DialogCode.Accepted:
-            self.update_gui_elements(overlay_dialog.get_settings())
+        self.overlay_dialog = OverlaySettingsDialog(parent=self.canvas)
+        self.overlay_dialog.settings_applied.connect(self.apply_overlay_settings)
+        if self.overlay_dialog.exec() == QDialog.DialogCode.Accepted:
+            self.apply_overlay_settings(self.overlay_dialog.get_settings())
 
-    def update_gui_elements(self, settings):
-        if self.canvas.masks_alpha!=settings[2]:
-            for frame in self.stack.frames:
-                if hasattr(frame, 'stored_mask_overlay'):
-                    del frame.stored_mask_overlay
-        for attr, setting in zip(['selected_cell_color', 'selected_cell_alpha', 'masks_alpha', 'outlines_color', 'outlines_alpha'], settings):
+    def apply_overlay_settings(self, settings=None):
+        inverted=self.inverted_checkbox.isChecked()
+        if settings is None:
+            if inverted:
+                settings=self.canvas.light_overlay_settings
+            else:
+                settings=self.canvas.dark_overlay_settings
+        else:
+            if inverted:
+                self.canvas.light_overlay_settings=settings
+            else:
+                self.canvas.dark_overlay_settings=settings
+
+        redraw_masks=self.canvas.masks_alpha!=settings['masks_alpha']
+        
+        for attr, setting in settings.items():
             setattr(self.canvas, attr, setting)
+        
+        if self.file_loaded:
+            if redraw_masks:
+                for frame in self.stack.frames:
+                    if hasattr(frame, 'stored_mask_overlay'):
+                        del frame.stored_mask_overlay
 
-        self.imshow()
-        self.select_cell(cell=self.selected_cell_n)
+            self.imshow()
+            self.select_cell(cell=self.selected_cell_n)
 
     def clear_channel_layout(self):
         self.clear_layout(self.segmentation_channels_layout)
@@ -3604,6 +3672,10 @@ class MainWidget(QMainWindow):
             self.shape_dialog.close()
         if hasattr(self, 'cli_window'):
             self.cli_window.close()
+        if hasattr(self, 'overlay_dialog'):
+            self.overlay_dialog.close()
+
+        self.dump_config()
         event.accept()
 
 

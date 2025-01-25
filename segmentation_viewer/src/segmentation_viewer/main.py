@@ -1977,7 +1977,25 @@ class MainWidget(QMainWindow):
         self.normalize_frame_button.setChecked(button_status[0])
         self.normalize_stack_button.setChecked(button_status[1])
         self.normalize_custom_button.setChecked(button_status[2])
-    
+
+    def auto_range_sliders(self):
+        if self.is_grayscale:
+            n_colors=1
+        else:
+            n_colors=3
+
+        if self.is_zstack:
+            all_imgs=np.array([frame.zstack for frame in self.stack.frames]).reshape(-1, n_colors)
+        else:
+            all_imgs=np.array([frame.img for frame in self.stack.frames]).reshape(-1, n_colors)
+        
+        if len(all_imgs)>1e6:
+            # downsample to speed up calculation
+            all_imgs=all_imgs[::len(all_imgs)//int(1e6)]
+        stack_range=np.array([np.min(all_imgs, axis=0), np.max(all_imgs, axis=0)]).T
+        self.stack.min_max=stack_range
+        self.set_LUT_slider_ranges(stack_range)
+
     @property
     def LUT_slider_values(self):
         ''' Get the current values of the LUT sliders. '''
@@ -3117,6 +3135,7 @@ class MainWidget(QMainWindow):
                         frame.bounds = frame.bounds[..., channel_order, :]
 
                 self.update_display()
+                self.auto_range_sliders()
                 self.normalize()
             except ValueError as e:
                 # Show an error message if the input is invalid
@@ -3389,8 +3408,7 @@ class MainWidget(QMainWindow):
 
         # reset visual settings
         self.saved_visual_settings=[self.default_visual_settings for _ in range(4)]
-
-        # set slider ranges
+        self.auto_range_sliders()
         self.normalize()
         
     def open_files(self):

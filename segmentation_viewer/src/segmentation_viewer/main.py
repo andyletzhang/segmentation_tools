@@ -110,6 +110,7 @@ class MainWidget(QMainWindow):
         self.view_menu = self.menu_bar.addMenu("View")
         self.view_menu.addAction(create_action("Reset View", self.reset_view, self))
         self.view_menu.addAction(create_action("Show Grayscale", self.toggle_grayscale, self))
+        self.view_menu.addAction(create_action("Invert Contrast", self.toggle_inverted, self, 'I'))
         self.view_menu.addAction(create_action("Overlay Settings...", self.open_overlay_settings, self))
         #self.view_menu.addAction(create_action("Segmentation Plot", self.toggle_segmentation_plot, self))
 
@@ -533,6 +534,8 @@ class MainWidget(QMainWindow):
         # RGB
         self.RGB_checkbox_layout = QVBoxLayout()
         self.add_RGB_checkboxes(self.RGB_checkbox_layout)
+        self.inverted_checkbox=QCheckBox("Invert [I]", self)
+        self.inverted_checkbox.setChecked(False)
 
         # Segmentation Overlay
         segmentation_overlay_widget = QWidget()
@@ -563,6 +566,8 @@ class MainWidget(QMainWindow):
         LUT_layout=QVBoxLayout(LUT_widget)
         LUT_layout.setSpacing(0)
         LUT_layout.addLayout(self.RGB_checkbox_layout)
+        LUT_layout.addSpacerItem(self.vertical_spacer(0.5))
+        LUT_layout.addWidget(self.inverted_checkbox)
         LUT_layout.addItem(self.vertical_spacer())
         LUT_layout.addWidget(self.normalize_label)
         LUT_layout.addWidget(self.normalize_widget)
@@ -631,6 +636,7 @@ class MainWidget(QMainWindow):
         left_toolbar_layout.addWidget(save_widget)
         
         # normalize
+        self.inverted_checkbox.stateChanged.connect(self.invert_toggled)
         self.normalize_frame_button.toggled.connect(self.update_normalize_frame)
         self.normalize_stack_button.toggled.connect(self.update_normalize_frame)
         self.normalize_custom_button.toggled.connect(self.update_normalize_frame)
@@ -684,7 +690,7 @@ class MainWidget(QMainWindow):
         self.normalize_type=settings['normalize_type']
         self.masks_checkbox.setChecked(settings['masks'])
         self.outlines_checkbox.setChecked(settings['outlines'])
-        if settings['LUTs'] is not None: # LUT
+        if settings['normalize_type']=='lut' and settings['LUTs'] is not None: # LUT
             self.LUT_slider_values=settings['LUTs']
 
     def get_segmentation_tab(self):
@@ -1208,6 +1214,8 @@ class MainWidget(QMainWindow):
     def vertical_spacer(self, spacing=None, hSizePolicy=QSizePolicy.Policy.Fixed, vSizePolicy=QSizePolicy.Policy.Fixed):
         if spacing is None:
             spacing=self.spacer
+        elif np.isscalar(spacing):
+            spacing=(np.array(self.spacer)*spacing).astype(int)
         return QSpacerItem(*spacing, hSizePolicy, vSizePolicy)
     
     def measure_FUCCI_frame(self):
@@ -2011,7 +2019,7 @@ class MainWidget(QMainWindow):
             slider.blockSignals(True)
             slider.setValue(tuple(bound))
             slider.blockSignals(False)
-            self.set_LUTs()
+        self.set_LUTs()
 
     def set_LUT_slider_ranges(self, ranges):
         for slider, slider_range in zip(self.LUT_range_sliders, ranges):
@@ -2054,7 +2062,6 @@ class MainWidget(QMainWindow):
         if 'scaled' in self.seg_overlay_attr.currentText():
             self.show_seg_overlay()
 
-    
     def update_voxel_size_labels(self):
         ''' Update the labels next to the voxel size boxes with the current values. '''
         if hasattr(self.frame, 'scale'):
@@ -3099,10 +3106,13 @@ class MainWidget(QMainWindow):
         for checkbox in self.RGB_checkboxes:
             checkbox.setChecked(True)
             color_channels_layout.addWidget(checkbox)
+        
         self.show_grayscale_checkbox=QCheckBox("Grayscale", self)
         self.show_grayscale_checkbox.setChecked(False)
+
         layout.addSpacerItem(self.vertical_spacer())
         layout.addLayout(color_channels_layout)
+        layout.addSpacerItem(self.vertical_spacer())
         layout.addWidget(self.show_grayscale_checkbox)
         
         for checkbox in self.RGB_checkboxes:
@@ -3142,14 +3152,16 @@ class MainWidget(QMainWindow):
                 QMessageBox.critical(self, 'Invalid Input', str(e))
 
     def toggle_grayscale(self):
-        if not self.file_loaded:
-            return
         self.show_grayscale_checkbox.toggle()
 
     def show_grayscale_toggled(self):
-        if not self.file_loaded:
-            return
         self.canvas.img.set_grayscale(self.show_grayscale_checkbox.isChecked())
+
+    def toggle_inverted(self):
+        self.inverted_checkbox.toggle()
+
+    def invert_toggled(self):
+        self.canvas.img.refresh()
 
     def open_overlay_settings(self):
         from segmentation_viewer.qt import OverlaySettingsDialog

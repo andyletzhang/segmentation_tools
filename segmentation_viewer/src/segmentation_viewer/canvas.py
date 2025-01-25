@@ -2,12 +2,21 @@ import numpy as np
 import fastremap
 
 import pyqtgraph as pg
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QGraphicsPolygonItem, QGraphicsPathItem
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QGraphicsPolygonItem, QGraphicsPathItem, QGraphicsScene
 from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QPen, QColor, QBrush, QPolygonF, QPainter, QCursor, QPainterPath
+from PyQt6.QtGui import QPen, QColor, QBrush, QPolygonF, QPainter, QCursor, QPainterPath, QImage
 from shapely.geometry import LineString
 from shapely.ops import polygonize, unary_union
 
+try:
+    from cucim.skimage.color import rgb2hsv, hsv2rgb
+    import cupy as xp
+    on_gpu=True
+except ImportError:
+    from skimage.color import rgb2hsv, hsv2rgb
+    import numpy as xp
+    Warning('cupy and/or cucim not found. Inverted contrast may be slow.')
+    on_gpu=False
 class PyQtGraphCanvas(QWidget):
     def __init__(self, parent=None, cell_n_colors=10, cell_cmap='tab10'):
         from matplotlib import colormaps
@@ -464,7 +473,12 @@ class RGB_ImageItem():
         self.show_grayscale=False
         self.toggle_grayscale()
 
-    
+    @property
+    def inverted(self):
+        try:
+            return self.parent.parent.inverted_checkbox.isChecked()
+        except AttributeError:
+            return False
     
     def image(self):
         ''' Get the rendered image from the specified plot. '''
@@ -480,7 +494,9 @@ class RGB_ImageItem():
         composite_array = np.array(ptr).reshape((height, width, 4))  # Format_RGB32 includes alpha
         rgb_array = composite_array[..., :3][..., ::-1]
 
-    
+        if self.inverted:
+            rgb_array=inverted_contrast(rgb_array)
+        return rgb_array
     
     def refresh(self):
         ''' Refresh the image item. '''
@@ -671,3 +687,18 @@ def get_matplotlib_LUT(name):
     colormap=cm.get_cmap(name)
     lut = (colormap(np.linspace(0, 1, 256)) * 255).astype(np.uint8)
     return lut
+
+def inverted_contrast(img):
+    img=xp.asarray(img)
+    if img.ndim==2:
+        inverted=255-img
+    else:
+        hsv=rgb2hsv(img)
+        hsv[...,0]=xp.mod(hsv[...,0]+0.5,1)
+        inverted=1-hsv2rgb(hsv)
+    
+    inverted=(inverted*255).astype(np.uint8)
+
+    if on_gpu:
+        inverted=inverted.get()
+    return inverted

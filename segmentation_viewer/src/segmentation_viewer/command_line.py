@@ -93,6 +93,8 @@ class CommandLineWidget(QWidget):
         self.command_input.clear()
         
         if command:
+            if command in self.command_history: # remove redundant commands further back in the history
+                self.command_history.remove(command)
             self.command_history.append(command)
             self.history_index = len(self.command_history)  # Reset index to point to the latest command
             # Display the command in the terminal display
@@ -102,6 +104,8 @@ class CommandLineWidget(QWidget):
             self.worker = CodeExecutionWorker(command, self.globals_dict, self.locals_dict)
             self.worker.execution_done.connect(self.on_code_execution_done)
             self.worker.start()
+            # block text input until the command is executed
+            self.command_input.setDisabled(True)
 
     @pyqtSlot(str, str) # Decorator to specify the type of the signal
     def on_code_execution_done(self, output, error):
@@ -109,6 +113,11 @@ class CommandLineWidget(QWidget):
             self.terminal_display.append(output)
         if error:
             self.terminal_display.append(f"Error: {error}")
+        
+        # Re-enable the command input box
+        self.command_input.setDisabled(False)
+        # Set the focus back to the command input box
+        self.command_input.setFocus()
 
 class CodeExecutionWorker(QThread):
     execution_done = pyqtSignal(str, str)  # Signal to emit output and error

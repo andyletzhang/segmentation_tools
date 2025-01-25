@@ -1673,7 +1673,9 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         self.frame_number = frame_number
+        self.frame_slider.blockSignals(True)
         self.frame_slider.setValue(frame_number)
+        self.frame_slider.blockSignals(False)
         self.frame=self.stack.frames[self.frame_number]
         self.globals_dict['frame']=self.frame
 

@@ -489,7 +489,7 @@ class MainWidget(QMainWindow):
                 levels=(stat_range) # TODO: stack levels
             elif self.stat_LUT_type=='custom':
                 levels=self.stat_LUT_slider.value()
-            self.canvas.seg_stat_overlay.setImage(self.canvas.transform_image(stat))
+            self.canvas.seg_stat_overlay.setImage(self.canvas.image_transform(stat))
 
         self.stat_LUT_slider.blockSignals(True)
         self.set_stat_LUT_levels(levels)
@@ -1765,7 +1765,7 @@ class MainWidget(QMainWindow):
             return None, None, None
         elif not hasattr(self, 'frame'): # catch case where file_loaded is mistakenly True due to some exception
             return None, None, None
-        img=self.canvas.inverse_transform_image(self.canvas.img_data)
+        img=self.canvas.inverse_image_transform(self.canvas.img_data)
 
         if x<0 or y<0 or x>=img.shape[1] or y>=img.shape[0]: # outside image bounds
             return None, None, None
@@ -1957,8 +1957,8 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         self.show_seg_overlay()
-        img_data=self.canvas.transform_image(self.frame.img)
-        seg_data=self.canvas.transform_image(self.frame.outlines)
+        img_data=self.frame.img
+        seg_data=self.canvas.image_transform(self.frame.outlines)
         self.canvas.update_display(img_data=img_data, seg_data=seg_data, RGB_checks=self.get_RGB())
         self.normalize()
     

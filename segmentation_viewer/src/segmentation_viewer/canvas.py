@@ -41,7 +41,7 @@ class PyQtGraphCanvas(QWidget):
         self.seg_data = self.img_data.copy()
 
         # Plot the data
-        self.img = RGB_ImageItem(self.img_data, parent=self, plot=self.img_plot)
+        self.img = RGB_ImageItem(img_data=self.img_data, plot=self.img_plot, parent=self)
         self.seg = pg.ImageItem(self.seg_data)
         self.img_outline_overlay=pg.ImageItem()
         self.seg_stat_overlay=pg.ImageItem()
@@ -127,7 +127,7 @@ class PyQtGraphCanvas(QWidget):
         overlay=np.zeros((*self.parent.frame.masks.shape, 4))
         overlay[self.parent.frame.outlines]=color
 
-        overlay=self.transform_image(overlay)
+        overlay=self.image_transform(overlay)
         self.img_outline_overlay.setImage(overlay)
         self.overlay_outlines()
 
@@ -214,8 +214,8 @@ class PyQtGraphCanvas(QWidget):
         if seg_type=='outlines':
             opaque_mask[self.parent.frame.outlines==0]=0
 
-        mask_overlay=self.transform_image(mask_overlay)
-        opaque_mask=self.transform_image(opaque_mask)
+        mask_overlay=self.image_transform(mask_overlay)
+        opaque_mask=self.image_transform(opaque_mask)
         
         layer[0].setImage(mask_overlay)
         layer[1].setImage(opaque_mask)
@@ -237,7 +237,7 @@ class PyQtGraphCanvas(QWidget):
             color=self.selected_cell_color
             
         # get the binarized mask for the specified cell
-        cell_mask=self.transform_image(frame.masks == cell_index + 1)
+        cell_mask=self.image_transform(frame.masks == cell_index + 1)
 
         if frame==self.parent.frame:
             drawing_layers=True
@@ -373,6 +373,11 @@ class PyQtGraphCanvas(QWidget):
         return self.get_plot_coords(pixels=False)
     
     def update_display(self, img_data=None, seg_data=None, RGB_checks=None):
+        if img_data is None:
+            img_data=self.img_data
+        if seg_data is None:
+            seg_data=self.seg_data
+
         # RGB checkboxes
         self.img_data=img_data.copy()
         self.seg_data=seg_data.copy()
@@ -394,10 +399,10 @@ class PyQtGraphCanvas(QWidget):
         self.img.setImage(self.img_data)
         self.seg.setImage(self.seg_data)
 
-    def transform_image(self, img_data):
+    def image_transform(self, img_data):
         return np.fliplr(np.rot90(img_data, 3))
     
-    def inverse_transform_image(self, img_data):
+    def inverse_image_transform(self, img_data):
         return np.rot90(np.fliplr(img_data), 1)
     
     def sync_img_plot(self, view_box):
@@ -435,28 +440,52 @@ class SegPlot(pg.PlotWidget):
             event.ignore()
 
 class RGB_ImageItem():
-    def __init__(self, img_data=None, parent=None, plot:pg.PlotWidget=None):
+    def __init__(self, plot:pg.PlotWidget, img_data=None, parent=None):
         self.parent=parent
         if img_data is None:
             img_data=np.zeros((512, 512, 3), dtype=np.uint8)
+
+        self.scene=QGraphicsScene()
         self.img_data=img_data
         self.red=pg.ImageItem(self.img_data[..., 0])
         self.green=pg.ImageItem(self.img_data[..., 1])
         self.blue=pg.ImageItem(self.img_data[..., 2])
+        self.channels=[self.red, self.green, self.blue]
 
         # Add items to the view
-        plot.addItem(self.red)
-        plot.addItem(self.green)
-        plot.addItem(self.blue)
+        for item in self.channels:
+            self.scene.addItem(item)
+            item.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
 
-        self.red.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
-        self.green.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
-        self.blue.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
         self.setLookupTable('RGB')
 
+        self.img_item=pg.ImageItem(self.image())
+        plot.addItem(self.img_item)
         self.show_grayscale=False
         self.toggle_grayscale()
+
     
+    
+    def image(self):
+        ''' Get the rendered image from the specified plot. '''
+        height, width=self.red.image.shape
+        output_img=QImage(width, height, QImage.Format.Format_RGB32)
+        output_img.fill(0)
+        painter=QPainter(output_img)
+        self.scene.render(painter)
+        painter.end()
+        ptr = output_img.bits()
+
+        ptr.setsize(output_img.sizeInBytes())
+        composite_array = np.array(ptr).reshape((height, width, 4))  # Format_RGB32 includes alpha
+        rgb_array = composite_array[..., :3][..., ::-1]
+
+    
+    
+    def refresh(self):
+        ''' Refresh the image item. '''
+        self.img_item.setImage(self.image())
+
     def setImage(self, img_data):
         self.img_data=img_data
         if img_data.ndim==2:
@@ -470,6 +499,7 @@ class RGB_ImageItem():
             self.red.setImage(self.img_data[..., 0])
             self.green.setImage(self.img_data[..., 1])
             self.blue.setImage(self.img_data[..., 2])
+        self.refresh()
 
     def toggle_grayscale(self):
         if self.show_grayscale:
@@ -479,8 +509,9 @@ class RGB_ImageItem():
 
     def setLevels(self, levels):
         ''' Update the levels of the image items based on the sliders. '''
-        for l, item in zip(levels, [self.red, self.green, self.blue]):
+        for l, item in zip(levels, self.channels):
             item.setLevels(l)
+        self.refresh()
 
     def create_lut(self, color):
         lut = np.zeros((256, 3), dtype=np.ubyte)
@@ -507,6 +538,7 @@ class RGB_ImageItem():
     def set_grayscale(self, grayscale):
         self.show_grayscale=grayscale
         self.toggle_grayscale()
+        self.refresh()
 
 class CellMaskPolygons():
     '''

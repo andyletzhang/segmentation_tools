@@ -17,6 +17,7 @@ except ImportError:
     import numpy as xp
     Warning('cupy and/or cucim not found. Inverted contrast may be slow.')
     on_gpu=False
+
 class PyQtGraphCanvas(QWidget):
     def __init__(self, parent=None, cell_n_colors=10, cell_cmap='tab10'):
         from matplotlib import colormaps
@@ -482,7 +483,7 @@ class RGB_ImageItem():
     
     def image(self):
         ''' Get the rendered image from the specified plot. '''
-        height, width=self.red.image.shape
+        width, height=self.red.image.shape
         output_img=QImage(width, height, QImage.Format.Format_RGB32)
         output_img.fill(0)
         painter=QPainter(output_img)
@@ -515,6 +516,7 @@ class RGB_ImageItem():
             self.red.setImage(self.img_data[..., 0])
             self.green.setImage(self.img_data[..., 1])
             self.blue.setImage(self.img_data[..., 2])
+        self.scene.setSceneRect(self.scene.itemsBoundingRect())
         self.refresh()
 
     def toggle_grayscale(self):

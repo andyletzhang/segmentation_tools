@@ -276,9 +276,24 @@ class OverlaySettingsDialog(QDialog):
         """
         Returns the selected settings.
         """
+        if not self.selected_cell_alpha_line.text():
+            selected_cell_alpha=self.selected_cell_alpha
+        else:
+            selected_cell_alpha=float(self.selected_cell_alpha_line.text())
+        
+        if not self.masks_alpha_line.text():
+            masks_alpha=self.masks_alpha
+        else:
+            masks_alpha=float(self.masks_alpha_line.text())
+
+        if not self.outlines_alpha_line.text():
+            outlines_alpha=self.outlines_alpha
+        else:
+            outlines_alpha=float(self.outlines_alpha_line.text())
+        
         return {'selected_cell_color': self.selected_cell_color.name(),
-            'selected_cell_alpha': float(self.selected_cell_alpha_line.text()),
-            'masks_alpha': float(self.masks_alpha_line.text()),
+            'selected_cell_alpha': selected_cell_alpha,
+            'masks_alpha': masks_alpha,
             'outlines_color': self.outlines_color.name(),
-            'outlines_alpha': float(self.outlines_alpha_line.text())
+            'outlines_alpha': outlines_alpha
         }

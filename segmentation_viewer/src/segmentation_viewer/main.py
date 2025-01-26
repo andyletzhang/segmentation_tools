@@ -259,6 +259,7 @@ class MainWidget(QMainWindow):
         self.stat_tabs=QTabWidget()
         self.stat_tabs.addTab(self.get_histogram_tab(), "Histogram")
         self.stat_tabs.addTab(self.get_particle_stat_tab(), "Particle")
+        self.stat_tabs.addTab(self.get_time_series_tab(), "Time Series")
 
         stat_overlay_widget=QWidget(objectName='bordered')
         stat_overlay_layout=QVBoxLayout(stat_overlay_widget)
@@ -334,7 +335,7 @@ class MainWidget(QMainWindow):
         self.stat_stack_button.toggled.connect(self.update_stat_LUT)
         self.stat_custom_button.toggled.connect(self.update_stat_LUT)
         return right_scroll_area
-
+    
     def get_histogram_tab(self):
         frame_histogram_widget=QWidget()
         frame_histogram_layout=QVBoxLayout(frame_histogram_widget)
@@ -358,6 +359,55 @@ class MainWidget(QMainWindow):
         self.histogram_menu.currentIndexChanged.connect(self.new_histogram)
         return frame_histogram_widget
 
+    def get_particle_stat_tab(self):
+        particle_plot_widget=QWidget()
+        particle_plot_layout=QVBoxLayout(particle_plot_widget)
+        particle_stat_menu_layout=QHBoxLayout()
+        self.particle_stat_menu=CustomComboBox(self)
+        particle_stat_menu_layout.addWidget(self.particle_stat_menu)
+        particle_stat_menu_layout.setContentsMargins(40, 0, 0, 0) # indent the title/menu
+        self.particle_stat_menu.addItem('Select Cell Attribute')
+        self.particle_stat_plot=pg.PlotWidget(background='transparent')
+        self.particle_stat_plot.setLabel('left', 'Select Cell Attribute')
+        self.particle_stat_plot.setMinimumHeight(200)
+        self.particle_stat_plot.setLabel('bottom', 'Frame')
+        self.stat_plot_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
+        self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
+
+
+        particle_plot_layout.addLayout(particle_stat_menu_layout)
+        particle_plot_layout.addWidget(self.particle_stat_plot)
+
+        # connect particle measurements
+        self.particle_stat_menu.dropdownOpened.connect(self.get_particle_attrs)
+        self.particle_stat_menu.currentIndexChanged.connect(self.plot_particle_statistic)
+
+        return particle_plot_widget
+    
+    def get_time_series_tab(self):
+        time_series_widget=QWidget()
+        time_series_layout=QVBoxLayout(time_series_widget)
+        time_series_menu_layout=QHBoxLayout()
+        self.time_series_menu=CustomComboBox(self)
+        self.time_series_menu.addItems(['Select Cell Attribute'])
+        time_series_menu_layout.addWidget(self.time_series_menu)
+        time_series_menu_layout.setContentsMargins(40, 0, 0, 0) # indent the title/menu
+
+        self.time_series_plot=pg.PlotWidget(background='transparent')
+        self.time_series_plot.setLabel('left', 'Select Cell Attribute')
+        self.time_series_plot.setLabel('bottom', 'Frame')
+        self.time_series_plot.setMinimumHeight(200)
+        self.time_series_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
+        self.time_series_plot.addItem(self.time_series_frame_marker)
+
+        time_series_layout.addLayout(time_series_menu_layout)
+        time_series_layout.addWidget(self.time_series_plot)
+
+        # connect time series measurements
+        self.time_series_menu.dropdownOpened.connect(self.get_time_series_attrs)
+        self.time_series_menu.activated.connect(self.plot_time_series)
+        return time_series_widget
+    
     def stat_LUT_slider_changed(self):
         self.stat_custom_button.blockSignals(True)
         self.stat_custom_button.setChecked(True)
@@ -425,19 +475,25 @@ class MainWidget(QMainWindow):
         return items
     
     def get_histogram_attrs(self):
+        self.menu_frame_attrs(self.histogram_menu)
+
+    def get_time_series_attrs(self):
+        self.menu_frame_attrs(self.time_series_menu)
+
+    def menu_frame_attrs(self, menu):
         if not self.file_loaded:
             return
-        current_attr=self.histogram_menu.currentText()
+        current_attr=menu.currentText()
         items=self.get_cell_frame_attrs()
         items=['Select Cell Attribute']+natsorted(items)
-        self.histogram_menu.blockSignals(True)
-        self.histogram_menu.clear()
-        self.histogram_menu.addItems(items)
-        self.histogram_menu.blockSignals(False)
-        current_index=self.histogram_menu.findText(current_attr)
+        menu.blockSignals(True)
+        menu.clear()
+        menu.addItems(items)
+        menu.blockSignals(False)
+        current_index=menu.findText(current_attr)
         if current_index==-1:
             current_index=0
-        self.histogram_menu.setCurrentIndex(current_index)
+        menu.setCurrentIndex(current_index)
 
     def get_overlay_attrs(self):
         if not self.file_loaded:
@@ -552,31 +608,6 @@ class MainWidget(QMainWindow):
 
     def clear_seg_stat(self):
         self.canvas.seg_stat_overlay.clear()
-
-    def get_particle_stat_tab(self):
-        particle_plot_widget=QWidget()
-        particle_plot_layout=QVBoxLayout(particle_plot_widget)
-        particle_stat_menu_layout=QHBoxLayout()
-        self.particle_stat_menu=CustomComboBox(self)
-        particle_stat_menu_layout.addWidget(self.particle_stat_menu)
-        particle_stat_menu_layout.setContentsMargins(40, 0, 0, 0) # indent the title/menu
-        self.particle_stat_menu.addItem('Select Cell Attribute')
-        self.particle_stat_plot=pg.PlotWidget(background='transparent')
-        self.particle_stat_plot.setLabel('left', 'Select Cell Attribute')
-        self.particle_stat_plot.setMinimumHeight(200)
-        self.particle_stat_plot.setLabel('bottom', 'Frame')
-        self.stat_plot_frame_marker=pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('w', width=2))
-        self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
-
-
-        particle_plot_layout.addLayout(particle_stat_menu_layout)
-        particle_plot_layout.addWidget(self.particle_stat_plot)
-
-        # connect particle measurements
-        self.particle_stat_menu.dropdownOpened.connect(self.get_particle_attrs)
-        self.particle_stat_menu.currentIndexChanged.connect(self.plot_particle_statistic)
-
-        return particle_plot_widget
 
     def get_left_toolbar(self):
         open_menu=QHBoxLayout()
@@ -1588,6 +1619,7 @@ class MainWidget(QMainWindow):
             if self.particle_stat_menu.currentText()==cell_attr:
                 self.plot_particle_statistic()
 
+
     def measure_volumes(self):
         if not self.file_loaded:
             return
@@ -1800,6 +1832,7 @@ class MainWidget(QMainWindow):
 
         # frame marker on stat plot
         self.stat_plot_frame_marker.setPos(self.frame_number)
+        self.time_series_frame_marker.setPos(self.frame_number)
         self.status_frame_number.setText(f'Frame: {frame_number}')
 
     def update_coordinate_label(self, x=None, y=None):
@@ -2105,14 +2138,6 @@ class MainWidget(QMainWindow):
                 frame.z_scale=z_size
         self.update_voxel_size_labels()
 
-        # update right toolbar if necessary
-        if 'scaled' in self.histogram_menu.currentText():
-            self.plot_histogram()
-        if 'scaled' in self.particle_stat_menu.currentText():
-            self.plot_particle_statistic()
-        if 'scaled' in self.seg_overlay_attr.currentText():
-            self.show_seg_overlay()
-
     def update_voxel_size_labels(self):
         ''' Update the labels next to the voxel size boxes with the current values. '''
         if hasattr(self.frame, 'scale'):
@@ -2264,6 +2289,39 @@ class MainWidget(QMainWindow):
                 return
             self.particle_stat_plot.plot(timepoints, values, pen=color, symbol='o', symbolPen='w', symbolBrush=color, symbolSize=7, width=4)
             self.particle_stat_plot.autoRange()
+
+    def plot_time_series(self):
+        if not self.file_loaded:
+            return
+        measurement=self.time_series_menu.currentText()
+        self.time_series_plot.clear()
+        self.time_series_plot.setLabel('left', measurement)
+        self.time_series_plot.addItem(self.stat_plot_frame_marker)
+
+        if measurement=='Select Cell Attribute':
+            return
+        # get the attribute values
+        quantiles=[]
+        frames=np.arange(len(self.stack.frames))
+        for frame in self.stack.frames:
+            frame_attrs=np.array(frame.get_cell_attrs(measurement, fill_value=np.nan))
+            frame_quantiles=np.nanquantile(frame_attrs, (0.25,0.5,0.75))
+            quantiles.append(frame_quantiles)
+        quantiles=np.array(quantiles)
+        
+        if np.all(np.isnan(quantiles)):
+            return
+        
+        median=quantiles[:,1]
+        bottom=median-quantiles[:,0]
+        top=quantiles[:,2]-median
+
+        median_pen=pg.mkPen((255,255,255,255), width=4)
+        quantile_pen=pg.mkPen((100,100,255,255), width=4)
+        error_bars = pg.ErrorBarItem(x=frames, y=median, top=top, bottom=bottom, pen=quantile_pen, beam=0.5)
+        self.time_series_plot.addItem(error_bars)
+        median_line=self.time_series_plot.plot(frames, median, pen=median_pen)
+        self.time_series_plot.autoRange()
 
     def FUCCI_click(self, event, current_cell_n):
         if current_cell_n>=0:
@@ -3004,6 +3062,7 @@ class MainWidget(QMainWindow):
         self.update_display()
         self.show_seg_overlay()
         self.plot_histogram()
+        self.plot_time_series()
 
     def get_RGB(self):
         if self.is_grayscale:

@@ -118,6 +118,8 @@ def normalize_RGB(color_img, dtype='float32', quantile=(0,1), bounds=None, **kwa
 
 def normalize_grayscale(image, dtype='float32', quantile=(0,1), bounds=None, mask_zeros=True):
     ''' normalize data by min and max or by some specified quantile '''
+    if np.all(image==0):
+        return image
     if bounds is None:
         if mask_zeros:
             masked=np.ma.masked_values(image, 0)

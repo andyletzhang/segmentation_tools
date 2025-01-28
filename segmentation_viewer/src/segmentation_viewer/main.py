@@ -3523,6 +3523,13 @@ class MainWidget(QMainWindow):
             self.is_zstack=False
             self.zstack_slider.setVisible(False)
 
+        if self.frame.img.ndim==2: # single channel
+            self.grayscale_mode()
+        elif self.frame.img.ndim==3: # RGB
+            self.RGB_mode()
+        else:
+            raise ValueError(f'{self.frame.name} has {self.frame.img.ndim} image dimensions, must be 2 (grayscale) or 3 (RGB).')
+        
         if len(self.stack.frames)>1:
             self.frame_slider.setVisible(True)
         else:
@@ -3531,17 +3538,8 @@ class MainWidget(QMainWindow):
         self.frame_slider.setRange(0, len(self.stack.frames)-1)
         self.change_current_frame(0, reset=True) # call frame update explicitly (in case the slider value was already at 0)
 
-        for frame in self.stack.frames:
+        for frame in self.stack.frames: # loaded segmentation files will always have outlines
             frame.has_outlines=True
-            
-        if self.frame.img.ndim==2: # single channel
-            self.grayscale_mode()
-
-        elif self.frame.img.ndim==3: # RGB
-            self.RGB_mode()
-
-        else:
-            raise ValueError(f'Image has {self.frame.img.ndim} dimensions, must be 2 (grayscale) or 3 (RGB).')
 
         self.canvas.img_plot.autoRange()
 

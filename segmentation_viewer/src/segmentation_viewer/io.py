@@ -14,37 +14,47 @@ def read_image_file(file_path, progress_bar=None, **progress_kwargs):
         progress_bar = lambda x, **kwargs: x
     if file_path.endswith('.nd2'):
         file=ND2File(file_path)
-        shape=read_nd2_shape(file) # (T, Z, C, Y, X)
+        shape=read_nd2_shape(file) # (T, P, Z, C, Y, X)
         placeholder=read_nd2(file) # Load the ND2 file
     else:
         file=TiffFile(file_path)
         shape, order=read_tif_shape(file)
         axes_map = {axis: i for i, axis in enumerate(reversed(order))}
-        shape=tuple(shape[axes_map[axis]] for axis in 'TZCYX')
+        shape=tuple(shape[axes_map[axis]] for axis in 'TPZCYX')
         placeholder=read_tif(file) # Load the TIFF file
 
     shape_dialog = ShapeDialog(shape) # Prompt user to select ranges to import for each dimension
     if shape_dialog.exec_() == QDialog.Accepted:
         try:
-            t_bounds, z_bounds, c_bounds=shape_dialog.get_selected_ranges()
+            out=shape_dialog.get_selected_ranges()
+            if out is None:
+                file.close()
+                return None
+            else:
+                t_bounds, p_bounds, z_bounds, c_bounds=out
         except ValueError as e:
             print(f"Error: {e}")
     else:
+        file.close()
         return None
     
-    sliced=placeholder[np.ix_(t_bounds, z_bounds)] # index the T and Z dimensions
-    img_shape=(shape[3], shape[4], len(c_bounds)) # output image shape (Y, X, C)
-
+    sliced=placeholder[np.ix_(t_bounds, p_bounds, z_bounds)] # index the P, T, and Z dimensions
+    img_shape=(shape[4], shape[5], len(c_bounds)) # output image shape (Y, X, C)
     # Assuming `sliced_array` is the array of functions
     result_array = np.empty((*sliced.shape, *img_shape), dtype=np.uint16)  # Initialize output array
 
     # Read the data from the file
-    for idx, func in progress_bar(np.ndenumerate(sliced), length=sliced.size, **progress_kwargs):
-        img=func()
+    for idx, get_img in progress_bar(np.ndenumerate(sliced), length=sliced.size, **progress_kwargs):
+        img=get_img()
         if img.ndim==2: # mono
             img=img[np.newaxis]
         result_array[idx] = img.transpose(1,2,0)[...,c_bounds]  # Call the function and store the result
     file.close()
+    # remove either P or T dimension
+    if result_array.shape[0]==1:
+        result_array=np.squeeze(result_array, axis=0)
+    elif result_array.shape[1]==1:
+        result_array=np.squeeze(result_array, axis=1)
     return result_array
 
 class ShapeDialog(QDialog):
@@ -61,7 +71,7 @@ class ShapeDialog(QDialog):
         # Form layout for dimension inputs
         form_layout = QFormLayout()
         self.line_edits = {}
-        dimensions = ['T', 'Z', 'C']
+        dimensions = ['P','T','Z','C']
         
         for i, dim in enumerate(dimensions):
             range_edit = QLineEdit()
@@ -112,13 +122,17 @@ class ShapeDialog(QDialog):
         ranges = {}
         try:
             for dim, line_edit in self.line_edits.items():
-                dim_idx = ['T', 'Z', 'C'].index(dim)
+                dim_idx = ['T', 'P', 'Z', 'C'].index(dim)
                 max_value = self.shape[dim_idx]
                 indices = self.parse_range(line_edit.text(), max_value)
                 ranges[dim] = indices
             
             # Convert to slice objects or lists based on whether the selection is contiguous
-            slices = [np.array(ranges[dim]) for dim in ['T', 'Z', 'C']]
+            slices = [np.array(ranges[dim]) for dim in ['T', 'P', 'Z', 'C']]
+            
+            if len(slices[0])>1 and len(slices[1])>1:
+                QMessageBox.warning(self, "Invalid Input", "Currently, either P or T dimension can be loaded, but not both.")
+                return None
             
             return tuple(slices)
         

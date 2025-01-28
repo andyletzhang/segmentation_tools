@@ -47,36 +47,26 @@ def read_tif_shape(tif_file):
         shape=(len(tif_file.pages),1,1,)+tif_file.pages[0].shape # assume simple time series
         dimension_order='XYCZT'
 
-    return tuple(shape), dimension_order
+    return (1,)+tuple(shape), dimension_order+'P'
 
 def read_tif(tif_file):
     shape, order=read_tif_shape(tif_file)
     axes_map = {axis: i for i, axis in enumerate(reversed(order))}
-    reshaped=tuple(shape[axes_map[axis]] for axis in 'TZC')
-    tif_pages=np.array(tif_file.pages).reshape(reshaped).transpose(axes_map['T'], axes_map['Z'], axes_map['C'])
-    placeholder=np.empty((reshaped[0], reshaped[1]), dtype=object)
+    reshaped=tuple(shape[axes_map[axis]] for axis in 'TPZC')
+    tif_pages=np.array(tif_file.pages).reshape(reshaped).transpose(axes_map['T'], axes_map['P'], axes_map['Z'], axes_map['C'])
+    placeholder=np.empty((reshaped[0], reshaped[1], reshaped[2]), dtype=object)
     for i in range(reshaped[0]):
         for j in range(reshaped[1]):
-            placeholder[i,j]=lambda i=i, j=j:np.array([a.asarray() for a in tif_pages[i,j]]) # lazy load
+            for k in range(reshaped[2]):
+                placeholder[i,j,k]=lambda i=i, j=j, k=k:np.array([a.asarray() for a in tif_pages[i,j,k]]) # lazy load
     return placeholder # images in T, Z, C order
 
 def read_nd2_shape(nd2_file):
     # Read metadata to get the shape (T, Z, C)
-    shape = []
-    is_v='P' in nd2_file.sizes and nd2_file.sizes['P'] > 1
-    is_t='T' in nd2_file.sizes and nd2_file.sizes['T'] > 1
-
-    multipoint_axis = ['P']
-    if is_v and is_t:
-        print('Warning: multipoint time-lapse data detected. Only the first time point will be loaded.')
-    elif is_t:
-        multipoint_axis=['T']
-
-    for axis in multipoint_axis+['Z', 'C']:
+    shape = [1,1,1,1]
+    for n, axis in enumerate(['T','P','Z','C']):
         if axis in nd2_file.sizes:
-            shape.append(nd2_file.sizes[axis])
-        else:
-            shape.append(1)  # Default to 1 if the axis is not in the ND2 file
+            shape[n]=nd2_file.sizes[axis]
 
     img_shape = nd2_file.shape[-2:]  # (Y, X)
     shape.extend(img_shape)  # Append (Y, X) to the shape
@@ -85,8 +75,8 @@ def read_nd2_shape(nd2_file):
 def read_nd2(nd2_file):
     # Open ND2 file with ND2Reader
     shape = read_nd2_shape(nd2_file)
-    placeholder_shape = (shape[0], shape[1])  # Only (T, Z, C)
-    n_images=shape[0]*shape[1]
+    placeholder_shape = (shape[0], shape[1], shape[2])  # Only (P, T, Z)
+    n_images=shape[0]*shape[1]*shape[2]  # Total number of images
 
     # Lazy load structure (T, Z, C)
     placeholder = np.array([lambda i=i: nd2_file.read_frame(i) for i in range(n_images)]).reshape(placeholder_shape)

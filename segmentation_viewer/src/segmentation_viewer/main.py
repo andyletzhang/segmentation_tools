@@ -2296,7 +2296,7 @@ class MainWidget(QMainWindow):
         measurement=self.time_series_menu.currentText()
         self.time_series_plot.clear()
         self.time_series_plot.setLabel('left', measurement)
-        self.time_series_plot.addItem(self.stat_plot_frame_marker)
+        self.time_series_plot.addItem(self.time_series_frame_marker)
 
         if measurement=='Select Cell Attribute':
             return
@@ -2316,8 +2316,8 @@ class MainWidget(QMainWindow):
         bottom=median-quantiles[:,0]
         top=quantiles[:,2]-median
 
-        median_pen=pg.mkPen((255,255,255,255), width=4)
-        quantile_pen=pg.mkPen((100,100,255,255), width=4)
+        median_pen=pg.mkPen((255,255,255,255))
+        quantile_pen=pg.mkPen((100,100,255,255))
         error_bars = pg.ErrorBarItem(x=frames, y=median, top=top, bottom=bottom, pen=quantile_pen, beam=0.5)
         self.time_series_plot.addItem(error_bars)
         median_line=self.time_series_plot.plot(frames, median, pen=median_pen)
@@ -3062,7 +3062,6 @@ class MainWidget(QMainWindow):
         self.update_display()
         self.show_seg_overlay()
         self.plot_histogram()
-        self.plot_time_series()
 
     def get_RGB(self):
         if self.is_grayscale:

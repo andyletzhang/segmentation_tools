@@ -20,10 +20,11 @@ import pyqtgraph as pg
 
 from segmentation_tools.segmented_comprehension import SegmentedStack, Cell
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
-from segmentation_viewer.canvas import PyQtGraphCanvas, CellMaskPolygons, CellSplitLines
-from segmentation_viewer.command_line import CommandLineWindow
-from segmentation_viewer.qt import CustomComboBox, FineScrubQRangeSlider, SubstackDialog
-from segmentation_viewer.io import ExportWizard
+from segmentation_tools.utils import cell_scalar_attrs
+from .canvas import PyQtGraphCanvas, CellMaskPolygons, CellSplitLines
+from .command_line import CommandLineWindow
+from .qt import CustomComboBox, FineScrubQRangeSlider, SubstackDialog
+from .io import ExportWizard
 
 from natsort import natsorted
 import importlib.resources

@@ -38,7 +38,6 @@ from tqdm import tqdm
 # TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
 
 # low priority
-# TODO: ctrl+shift+click to delete particle
 # TODO: when cell is clicked, have option to show its entire colormapped track
 # TODO: get_mitoses, visualize mitoses, edit mitoses
 # TODO: use fastremap to add cell highlights?
@@ -1514,7 +1513,7 @@ class MainWidget(QMainWindow):
             self.selected_particle_n=particle_n
             self.plot_particle_statistic()
 
-    def delete_particle(self):
+    def delete_particle(self, particle_n=None):
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
@@ -1522,7 +1521,8 @@ class MainWidget(QMainWindow):
             return
         
         else:
-            particle_n=self.selected_particle_n
+            if particle_n is None:
+                particle_n=self.selected_particle_n
             t=self.stack.tracked_centroids
             self.also_save_tracking.setChecked(True)
 
@@ -2390,9 +2390,15 @@ class MainWidget(QMainWindow):
                 elif self.drawing_cell_split:
                     self.cell_split.clearPoints()
                     self.drawing_cell_split=False
-
                 # cell selection actions
                 if  current_cell_n>=0:
+                    if (event.modifiers() & Qt.KeyboardModifier.ControlModifier) and (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+                        particle = self.particle_from_cell(current_cell_n, self.frame_number)
+                        if particle is not None:
+                            self.delete_particle(particle)
+                        self.select_cell(None)
+                        self.update_display()
+
                     if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
                         # ctrl click deletes cells
                         self.delete_cell_mask(current_cell_n)

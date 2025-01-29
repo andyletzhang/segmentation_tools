@@ -460,7 +460,7 @@ class MainWidget(QMainWindow):
     def cell_stat_attrs(self, cell):
         ''' Return all common attributes which are meaningful cell-level metrics '''
         ignored_attrs={'cycle_stage','n','frame'}
-        attrs=self.cell_scalar_attrs(cell)-ignored_attrs
+        attrs=cell_scalar_attrs(cell)-ignored_attrs
 
         return attrs
     
@@ -2961,7 +2961,7 @@ class MainWidget(QMainWindow):
         self.convert_red_green()
 
         cells=np.concatenate([frame.cells for frame in self.stack.frames])
-        attrs=self.cell_scalar_attrs(cells[0])
+        attrs=cell_scalar_attrs(cells[0])
         attrs=attrs-{'n','frame'} # drop columns already included in the dataframe
 
         for attr in attrs:

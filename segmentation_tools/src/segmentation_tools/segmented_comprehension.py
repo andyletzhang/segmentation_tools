@@ -157,7 +157,7 @@ class TimeStack(SegmentedStack):
         else: # get a search range by evaluating the velocity distribution.
             # This is a simplified copy of the get_velocities() method.
             v=t_corrected[['x','y','frame','particle']].groupby('particle').apply(np.diff, axis=0)
-            v_arr=np.concatenate(v)[:,:3]
+            v_arr=np.concatenate(v.values)[:,:3]
             velocities=np.linalg.norm(v_arr[:,:2], axis=1)/v_arr[:,2] # get magnitude of velocity normalized by time
 
             self.tracking_range=np.quantile(velocities, v_quantile) # let's assume the top (1-v_quantile) percent of velocities are spurious tracks or actually mitosis. We'll use this as a cutoff for the real tracking.
@@ -358,7 +358,7 @@ class TimeStack(SegmentedStack):
         
         # Calculate displacements
         v = self.tracked_centroids[['x','y','frame','particle']].groupby('particle').apply(np.diff, axis=0, append=np.nan)
-        velocities_df[['dx','dy','dt']] = np.concatenate(v)[:,:3]
+        velocities_df[['dx','dy','dt']] = np.concatenate(v.values)[:,:3]
         velocities_df[['dx','dy']] = velocities_df[['dx','dy']].div(velocities_df['dt'], axis=0)
         
         # Calculate velocity magnitude and direction

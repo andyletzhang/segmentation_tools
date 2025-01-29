@@ -51,15 +51,13 @@ def read_tif_shape(tif_file):
 
 def read_tif(tif_file):
     shape, order=read_tif_shape(tif_file)
-    axes_map = {axis: i for i, axis in enumerate(reversed(order))}
-    reshaped=tuple(shape[axes_map[axis]] for axis in 'TPZC')
-    tif_pages=np.array(tif_file.pages).reshape(reshaped).transpose(axes_map['T'], axes_map['P'], axes_map['Z'], axes_map['C'])
-    placeholder=np.empty((reshaped[0], reshaped[1], reshaped[2]), dtype=object)
-    for i in range(reshaped[0]):
-        for j in range(reshaped[1]):
-            for k in range(reshaped[2]):
-                placeholder[i,j,k]=lambda i=i, j=j, k=k:np.array([a.asarray() for a in tif_pages[i,j,k]]) # lazy load
-    return placeholder # images in T, Z, C order
+    pages_shape=(shape[::-1][2:]) # shape without the XY dimensions
+    axes_map = {axis: i-2 for i, axis in enumerate(order)}
+    tif_pages=np.array(tif_file.pages).reshape(pages_shape).transpose(axes_map['T'], axes_map['P'], axes_map['Z'], axes_map['C'])
+    placeholder=np.empty(tif_pages.shape[:3], dtype=object)
+    for i,j,k in np.ndindex(placeholder.shape):
+        placeholder[i,j,k]=lambda i=i, j=j, k=k:np.array([a.asarray() for a in tif_pages[i,j,k]]) # lazy load
+    return placeholder
 
 def read_nd2_shape(nd2_file):
     # Read metadata to get the shape (T, Z, C)

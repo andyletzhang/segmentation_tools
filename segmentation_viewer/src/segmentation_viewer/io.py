@@ -71,7 +71,7 @@ class ShapeDialog(QDialog):
         # Form layout for dimension inputs
         form_layout = QFormLayout()
         self.line_edits = {}
-        dimensions = ['P','T','Z','C']
+        dimensions = ['T','P','Z','C']
         
         for i, dim in enumerate(dimensions):
             range_edit = QLineEdit()

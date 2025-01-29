@@ -41,7 +41,7 @@ class SegmentedStack:
         '''
         self.progress_bar=progress_bar
         if len(from_frames)>0:
-            self.frames=from_frames
+            self.frames=np.array(from_frames)
             self.name=str(Path(self.frames[0].name).parent)+'/'
             for n, frame in enumerate(self.frames):
                 frame.frame_number=n

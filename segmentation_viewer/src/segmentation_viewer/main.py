@@ -32,6 +32,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
+# TODO: script execution, similar to command line
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
 # TODO: File -> export heights tif, import heights tif
@@ -434,28 +435,6 @@ class MainWidget(QMainWindow):
         
         self.show_seg_overlay()
 
-    def cell_scalar_attrs(self, cell):
-        ''' Return all common attributes which are scalar cell attributes '''
-        attrs=set(dir(cell))
-        ignored_attrs={'red','green','vertex_area','shape_parameter','sorted_vertices','vertex_perimeter'}
-        test_attrs=attrs-ignored_attrs
-        # Collect attributes to remove instead of modifying the set in place
-        to_remove = set()
-        for attr in test_attrs:
-            if attr.startswith('_'):
-                to_remove.add(attr)
-                continue
-            try:
-                val = getattr(cell, attr)
-            except AttributeError:
-                to_remove.add(attr)
-                continue
-            if not np.isscalar(val):
-                to_remove.add(attr)
-
-        # Remove collected attributes from test_attrs
-        test_attrs -= to_remove
-        return test_attrs
     
     def cell_stat_attrs(self, cell):
         ''' Return all common attributes which are meaningful cell-level metrics '''
@@ -473,7 +452,7 @@ class MainWidget(QMainWindow):
             items.extend(list(common_attrs))
 
         return items
-    
+
     def get_histogram_attrs(self):
         self.menu_frame_attrs(self.histogram_menu)
 
@@ -1513,7 +1492,7 @@ class MainWidget(QMainWindow):
             self.selected_particle_n=particle_n
             self.plot_particle_statistic()
 
-    def delete_particle(self, particle_n=None):
+    def delete_particle(self, event=None, particle_n=None):
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
@@ -2395,11 +2374,11 @@ class MainWidget(QMainWindow):
                     if (event.modifiers() & Qt.KeyboardModifier.ControlModifier) and (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
                         particle = self.particle_from_cell(current_cell_n, self.frame_number)
                         if particle is not None:
-                            self.delete_particle(particle)
+                            self.delete_particle(particle_n=particle)
                         self.select_cell(None)
                         self.update_display()
 
-                    if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                    elif event.modifiers() == Qt.KeyboardModifier.ControlModifier:
                         # ctrl click deletes cells
                         self.delete_cell_mask(current_cell_n)
                         self.select_cell(None) # deselect the cell

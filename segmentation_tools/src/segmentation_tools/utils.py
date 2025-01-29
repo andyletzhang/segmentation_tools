@@ -9,6 +9,28 @@ def picklesize(o):
     '''
     return len(pickle.dumps(o))/(1024**2)
 
+def cell_scalar_attrs(cell):
+    ''' Return all common attributes which are scalar cell attributes '''
+    attrs=set(dir(cell))
+    ignored_attrs={'red','green','vertex_area','shape_parameter','sorted_vertices','vertex_perimeter'}
+    test_attrs=attrs-ignored_attrs
+    # Collect attributes to remove instead of modifying the set in place
+    to_remove = set()
+    for attr in test_attrs:
+        if attr.startswith('_'):
+            to_remove.add(attr)
+            continue
+        try:
+            val = getattr(cell, attr)
+        except AttributeError:
+            to_remove.add(attr)
+            continue
+        if not np.isscalar(val):
+            to_remove.add(attr)
+
+    # Remove collected attributes from test_attrs
+    test_attrs -= to_remove
+    return test_attrs
 
 from math import ceil
 def circular_colony_tiles(input, output=None, use_colonies='all', x_spacing=290, y_spacing=410, padding=400, verbose=True):

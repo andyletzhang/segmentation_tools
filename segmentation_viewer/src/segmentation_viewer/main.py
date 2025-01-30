@@ -1475,7 +1475,7 @@ class MainWidget(QMainWindow):
                 self.delete_cell_mask(cell_n, frame)
 
             # reselect the particle
-            self.selected_particle_n=particle_n
+            self.select_cell(particle=particle_n)
             self.plot_particle_statistic()
 
     def delete_particle_tail(self):
@@ -1499,7 +1499,7 @@ class MainWidget(QMainWindow):
                 self.delete_cell_mask(cell_n, frame)
 
             # reselect the particle
-            self.selected_particle_n=particle_n
+            self.select_cell(particle=particle_n)
             self.plot_particle_statistic()
 
     def delete_particle(self, event=None, particle_n=None):
@@ -2338,7 +2338,12 @@ class MainWidget(QMainWindow):
 
         x, y = self.canvas.get_plot_coords(event.scenePos(), pixels=True)
         current_cell_n = self.get_cell(x, y)
-        
+        if hasattr(self.stack, 'tracked_centroids'):
+            current_particle_n = self.particle_from_cell(current_cell_n)
+            self.t2=self.stack.tracked_centroids.copy() ### to delete
+        else:
+            current_particle_n=None
+
         if self.FUCCI_mode: # cell cycle classification
             self.FUCCI_click(event, current_cell_n)
 
@@ -2378,7 +2383,10 @@ class MainWidget(QMainWindow):
                     elif event.modifiers() == Qt.KeyboardModifier.ControlModifier:
                         # ctrl click deletes cells
                         self.delete_cell_mask(current_cell_n)
-                        self.select_cell(None) # deselect the cell
+                        if current_particle_n is None:
+                            self.select_cell(None) # deselect the cell
+                        else:
+                            self.select_cell(particle=current_particle_n)
 
                     elif event.modifiers() == Qt.KeyboardModifier.AltModifier and self.selected_cell_n is not None:
                         self.merge_cell_masks(self.selected_cell_n, current_cell_n)

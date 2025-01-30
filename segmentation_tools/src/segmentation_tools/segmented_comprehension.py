@@ -96,7 +96,7 @@ class SegmentedStack:
         all_q=pd.concat(all_q).rename_axis('cell_number').reset_index()
         return all_q
     
-    # -------------Exporting Data-------------
+    # -------------I/O Image/Segmentation-------------
     def load_img(self, **kwargs):
         for frame in self.frames:
             frame.load_img(**kwargs)
@@ -116,6 +116,50 @@ class SegmentedStack:
         if hasattr(self, 'tracked_centroids'):
             self.tracked_centroids=self.tracked_centroids[self.tracked_centroids['frame'].isin(frame_numbers)]
             self.tracked_centroids['frame']=self.tracked_centroids['frame'].map({frame_number:n for n, frame_number in enumerate(frame_numbers)})
+    
+    # -------------I/O Tracking Data---------------
+    def load_tracking(self, tracking_path=None):
+        if tracking_path is None:
+            tracking_path=Path(self.name).with_name('tracking.csv')
+        if not Path(tracking_path).exists():
+            raise FileNotFoundError(f'No tracking data found at {tracking_path}.')
+        self.tracked_centroids=pd.read_csv(tracking_path, usecols=['cell_number', 'y', 'x', 'frame', 'particle'], dtype={'frame':int, 'particle':int, 'cell_number':int}, index_col=False)
+        self.fix_tracked_centroids()
+        self.__class__=TimeStack
+
+    def fix_tracked_centroids(self, t=None, inplace=True):
+        ''' make sure every cell is accounted for in the tracking data. '''
+        if t is None:
+            t=self.tracked_centroids
+        for frame in self.frames:
+            tracked_frame=t[t.frame==frame.frame_number]
+            tracked_cells=tracked_frame['cell_number']
+            frame_cells=frame.get_cell_attrs('n')
+
+            missing_tracks=set(frame_cells)-set(tracked_cells)
+            if len(missing_tracks)>0:
+                print(f'tracked_centroids is missing {len(missing_tracks)} cells in frame {frame.frame_number}: {missing_tracks}')
+                new_particle_numbers=np.arange(len(missing_tracks))+t['particle'].max()+1
+                new_particles=pd.DataFrame([[cell.n, cell.centroid[0], cell.centroid[1], frame.frame_number, particle_number] for cell, particle_number in zip(frame.cells[list(missing_tracks)], new_particle_numbers)], columns=['cell_number', 'y', 'x', 'frame', 'particle'])
+                t=pd.concat([t, new_particles])
+
+            extra_tracks=set(tracked_cells)-set(frame_cells)
+            if len(extra_tracks)>0:
+                print(f'tracked_centroids has {len(extra_tracks)} extra tracks in frame {frame.frame_number}: {extra_tracks}')
+                t.drop(tracked_frame[tracked_frame.cell_number.isin(extra_tracks)].index, inplace=True)
+        
+        t=t.sort_values(['frame', 'particle'])
+        t['particle']=t.groupby('particle').ngroup() # renumber particles contiguously
+
+        if inplace:
+            self.tracked_centroids=t
+        return t
+    
+    def save_tracking(self, file_path=None):
+        if file_path is None:
+            file_path=Path(self.name).with_name('tracking.csv')
+        self.tracked_centroids[['cell_number', 'y', 'x', 'frame', 'particle']].to_csv(file_path, index=False)
+    
 
     # -------------Magic-------------
     def __len__(self):

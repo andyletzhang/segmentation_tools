@@ -2820,7 +2820,7 @@ class MainWidget(QMainWindow):
             file_path=QFileDialog.getSaveFileName(self, 'Save tracking data as...', filter='*.csv')[0]
             if file_path=='':
                 return
-        self.stack.tracked_centroids[['cell_number', 'y', 'x', 'frame', 'particle']].to_csv(file_path, index=False)
+        self.stack.save_tracking(file_path)
         print(f'Saved tracking data to {file_path}')
     
     def load_tracking_pressed(self):
@@ -2830,16 +2830,11 @@ class MainWidget(QMainWindow):
         if file_path=='':
             return
         
-        self.stack.tracked_centroids=self.load_tracking_data(file_path)
-        self.stack.tracked_centroids=self.fix_tracked_centroids()
+        self.stack.load_tracking(file_path)
+        print(f'Loaded tracking data from {file_path}')
         self.statusBar().showMessage(f'Loaded tracking data from {file_path}', 2000)
         self.propagate_FUCCI_checkbox.setEnabled(True)
         self.recolor_tracks()
-
-    def load_tracking_data(self, file_path):
-        tracked_centroids=pd.read_csv(file_path, dtype={'frame':int, 'particle':int, 'cell_number':int}, index_col=False)
-        print(f'Loaded tracking data from {file_path}')
-        return tracked_centroids
 
     def save_segmentation(self):
         if not self.file_loaded:
@@ -3438,47 +3433,16 @@ class MainWidget(QMainWindow):
         files = [u.toLocalFile() for u in event.mimeData().urls()]
         self.open_stack(natsorted(files))
 
-    def fix_tracked_centroids(self, t=None, inplace=True):
-        ''' make sure every cell is accounted for in the tracking data. '''
-        if t is None:
-            t=self.stack.tracked_centroids
-        for frame in self.stack.frames:
-            tracked_frame=t[t.frame==frame.frame_number]
-            tracked_cells=tracked_frame['cell_number']
-            frame_cells=frame.get_cell_attrs('n')
-
-            missing_tracks=set(frame_cells)-set(tracked_cells)
-            if len(missing_tracks)>0:
-                print(f'tracked_centroids is missing {len(missing_tracks)} cells in frame {frame.frame_number}: {missing_tracks}')
-                new_particle_numbers=np.arange(len(missing_tracks))+t['particle'].max()+1
-                new_particles=pd.DataFrame([[cell.n, cell.centroid[0], cell.centroid[1], frame.frame_number, particle_number] for cell, particle_number in zip(frame.cells[list(missing_tracks)], new_particle_numbers)], columns=['cell_number', 'y', 'x', 'frame', 'particle'])
-                if 'color' in t.columns:
-                    new_particles['color']=self.canvas.random_color_ID(len(new_particles))
-                t=pd.concat([t, new_particles])
-
-            extra_tracks=set(tracked_cells)-set(frame_cells)
-            if len(extra_tracks)>0:
-                print(f'tracked_centroids has {len(extra_tracks)} extra tracks in frame {frame.frame_number}: {extra_tracks}')
-                t.drop(tracked_frame[tracked_frame.cell_number.isin(extra_tracks)].index, inplace=True)
-        
-        t=t.sort_values(['frame', 'particle'])
-        t['particle']=t.groupby('particle').ngroup() # renumber particles contiguously
-
-        if inplace:
-            self.stack.tracked_centroids=t
-        return t
 
     #--------------I/O----------------
     def open_stack(self, files):
-        self.stack, tracked_centroids=self.load_files(files)
+        self.stack=self.load_files(files)
         if not self.stack:
             return
         self.globals_dict['stack']=self.stack
         
         self.file_loaded=True
-        if tracked_centroids is not None:
-            self.stack.tracked_centroids=tracked_centroids
-            self.stack.tracked_centroids=self.fix_tracked_centroids()
+        if hasattr(self.stack, 'tracked_centroids'):
             self.propagate_FUCCI_checkbox.setEnabled(True)
             self.recolor_tracks()
         else:
@@ -3575,9 +3539,9 @@ class MainWidget(QMainWindow):
         if len(seg_files)>0: # segmented file paths
             stack=SegmentedStack(frame_paths=seg_files, load_img=True, progress_bar=self.progress_bar)
             if tracking_file is not None:
-                tracked_centroids=self.load_tracking_data(tracking_file)
+                stack.load_tracking(tracking_file)
             self.file_loaded = True
-            return stack, tracked_centroids
+            return stack
 
         elif len(img_files)>0: # image files
             from segmentation_viewer.io import read_image_file
@@ -3600,11 +3564,11 @@ class MainWidget(QMainWindow):
 
             stack=SegmentedStack(from_frames=frames)
             self.file_loaded = True
-            return stack, None
+            return stack
         
         else: # can't find any seg.npy or tiff files, ignore
             self.statusBar().showMessage(f'ERROR: File {files[0]} is not a seg.npy or tiff file, cannot be loaded.', 4000)
-            return False, None
+            return False
 
     def delete_frame(self, event=None, frame_number=None):
         if not self.file_loaded:

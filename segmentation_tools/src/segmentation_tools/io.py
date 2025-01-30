@@ -51,8 +51,8 @@ def read_tif_shape(tif_file):
 
 def read_tif(tif_file):
     shape, order=read_tif_shape(tif_file)
-    pages_shape=(shape[::-1][2:]) # shape without the XY dimensions
-    axes_map = {axis: i-2 for i, axis in enumerate(order)}
+    pages_shape=(shape[:-2]) # shape without the XY dimensions
+    axes_map = {axis: i for i, axis in enumerate(reversed(order))}
     tif_pages=np.array(tif_file.pages).reshape(pages_shape).transpose(axes_map['T'], axes_map['P'], axes_map['Z'], axes_map['C'])
     placeholder=np.empty(tif_pages.shape[:3], dtype=object)
     for i,j,k in np.ndindex(placeholder.shape):

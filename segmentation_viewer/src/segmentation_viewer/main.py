@@ -2900,8 +2900,7 @@ class MainWidget(QMainWindow):
 
         # get the data to export
         if hasattr(self.stack, 'tracked_centroids'):
-            if not hasattr(self.stack, 'velocities'):
-                self.stack.get_velocities()
+            self.stack.get_velocities()
             df=self.stack.velocities.sort_values(['frame','cell_number'])
             if 'color' in df.columns:
                 df.drop(columns='color', inplace=True) # don't save this cosmetic column

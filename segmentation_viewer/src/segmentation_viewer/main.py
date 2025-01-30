@@ -935,9 +935,8 @@ class MainWidget(QMainWindow):
 
             edge_cells-=1 # convert to 0-indexed
             if len(edge_cells)>0:
-                idx=frame.delete_cells(edge_cells)
-                self.remove_tracking_data(edge_cells, idx, frame_number=frame.frame_number)
-                
+                self.stack.delete_cells(edge_cells, frame_number=frame.frame_number)
+
                 #frame.masks[changed_masks_bool]=0
                 frame.outlines=utils.masks_to_outlines(frame.masks)
 
@@ -953,6 +952,9 @@ class MainWidget(QMainWindow):
                     self.highlight_track_ends()
                     self.update_display()
                     self.update_ROIs_label()
+
+        if hasattr(self.stack, 'tracked_centroids'):
+            self.also_save_tracking.setChecked(True)
     
     def update_cell_diameter(self, diameter):
         self.draw_cell_diameter(diameter)
@@ -2333,7 +2335,7 @@ class MainWidget(QMainWindow):
     def on_click(self, event):
         if not self.file_loaded:
             return
-        
+
         x, y = self.canvas.get_plot_coords(event.scenePos(), pixels=True)
         current_cell_n = self.get_cell(x, y)
         
@@ -2724,6 +2726,7 @@ class MainWidget(QMainWindow):
             del new_cell._centroid
         if hasattr(self.stack, 'tracked_centroids'):
             t=self.stack.tracked_centroids
+            # recompute merged cell centroid
             t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n1), ['x','y']]=new_cell.centroid.astype(t['x'].dtype)
             self.also_save_tracking.setChecked(True)
 
@@ -2731,9 +2734,7 @@ class MainWidget(QMainWindow):
         self.canvas.add_cell_highlight(cell_n1, alpha=self.canvas.masks_alpha, color=new_cell.color_ID, layer='mask')
 
         # purge cell 2
-        idx=self.frame.delete_cells([cell_n2])
-        self.remove_tracking_data([cell_n2], idx, frame_number=self.frame_number)
-
+        self.stack.delete_cells([cell_n2], frame_number=self.frame_number)
         print(f'Merged cell {cell_n2} into cell {cell_n1}')
 
         self.highlight_track_ends()
@@ -2776,36 +2777,19 @@ class MainWidget(QMainWindow):
             frame=self.frame
 
         if frame==self.frame: # remove the cell mask from the mask overlay
-            self.canvas.add_cell_highlight(cell_n, alpha=0.5, color='none', img_type='outlines', layer='mask')
+            self.canvas.add_cell_highlight(cell_n, color='none', layer='mask')
         
-        idx=frame.delete_cells([cell_n])
-        self.remove_tracking_data([cell_n], idx, frame_number=frame.frame_number)
+        self.stack.delete_cells([cell_n], frame_number=frame.frame_number)
+        if hasattr(self.stack, 'tracked_centroids'):
+            self.also_save_tracking.setChecked(True)
 
         if update_display:
             print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
             if frame==self.frame:
-                if self.selected_cell_n==cell_n:
-                    # deselect the removed cell if it was selected
-                    self.select_cell(None)
                 self.canvas.draw_outlines()
                 self.highlight_track_ends()
                 self.update_display()
                 self.update_ROIs_label()
-
-    def remove_tracking_data(self, cell_numbers, idx, frame_number=None):
-        ''' Remove cells from specified frame of the tracking data. Renumber the cell numbers in the frame to align with the new cell masks. '''
-        if not hasattr(self.stack, 'tracked_centroids'):
-            return
-        if frame_number is None:
-            frame_number=self.frame_number
-
-        t=self.stack.tracked_centroids
-        t.drop(t[(t.frame==frame_number)&np.isin(t.cell_number, cell_numbers)].index, inplace=True)
-        
-        # remap cell numbers in tracked_centroids
-        cell_remap=fastremap.component_map(idx, np.arange(len(idx)))
-        t.loc[t.frame==frame_number, 'cell_number']=t.loc[t.frame==frame_number, 'cell_number'].map(cell_remap).astype(t.cell_number.dtype)
-        self.also_save_tracking.setChecked(True)
         
     def save_tracking(self, event=None, file_path=None):
         if not self.file_loaded:

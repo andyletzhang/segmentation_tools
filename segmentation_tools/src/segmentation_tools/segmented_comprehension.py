@@ -160,6 +160,11 @@ class SegmentedStack:
             file_path=Path(self.name).with_name('tracking.csv')
         self.tracked_centroids[['cell_number', 'y', 'x', 'frame', 'particle']].to_csv(file_path, index=False)
     
+    # -------------Mask Operations-------------
+    def delete_cells(self, cell_numbers, frame_number):
+        frame=self.frames[frame_number]
+        idx=frame.delete_cells(cell_numbers)
+        return idx
 
     # -------------Magic-------------
     def __len__(self):
@@ -173,7 +178,7 @@ class TimeStack(SegmentedStack):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-     # -------------Particle Tracking-------------
+    # -------------Particle Tracking-------------
     def track_centroids(self, memory=3, v_quantile=0.97, filter_stubs=False, **kwargs):
         '''
         uses the trackpy package to track cell centroids.
@@ -217,6 +222,21 @@ class TimeStack(SegmentedStack):
         self.drift=pd.concat([pd.DataFrame({'frame':[0],'y':[0],'x':[0]}).set_index('frame'), self.drift]) # add a row for the first frame (no drift)
         return self.tracked_centroids
 
+    # -------------Mask Operations-------------
+    def delete_cells(self, cell_numbers, frame_number):
+        idx=super().delete_cells(cell_numbers, frame_number)
+        if hasattr(self, 'tracked_centroids'):
+            self.remove_tracking_data(cell_numbers, idx, frame_number)
+    
+    def remove_tracking_data(self, cell_numbers, idx, frame_number):
+        t=self.tracked_centroids
+        t.drop(t[(t.frame==frame_number)&np.isin(t.cell_number, cell_numbers)].index, inplace=True)
+        
+        # remap cell numbers in tracked_centroids
+        cell_remap=fastremap.component_map(idx, np.arange(len(idx)))
+        t.loc[t.frame==frame_number, 'cell_number']=t.loc[t.frame==frame_number, 'cell_number'].map(cell_remap).astype(t.cell_number.dtype)
+
+    # -------------Particle Operations-------------
     def merge_particle_tracks(self, first_ID, second_ID, frame):
         """
         Merge two particle tracks into a single track.
@@ -253,6 +273,7 @@ class TimeStack(SegmentedStack):
         merged=t.loc[(t.frame==f)&(t.cell_number==c)]['particle'].iloc[0]
         return merged, new_head, new_tail
 
+    # -------------Retrieve Tracking Data-------------
     def split_particle_track(self, particle_ID, split_frame):
         """
         Split a particle track into two separate tracks at a given frame.
@@ -420,6 +441,7 @@ class TimeStack(SegmentedStack):
             self.velocities.to_csv(self.name.replace('segmented','tracking')[:-1]+'.csv')
         return self.velocities
 
+    # -------------Cell Cycle-------------
     def propagate_FUCCI_labels(self):
         '''
         propagates FUCCI data forward in time by copying the last observed value.

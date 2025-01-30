@@ -679,6 +679,7 @@ class MainWidget(QMainWindow):
         self.save_button = QPushButton("Save", self)
         self.save_as_button = QPushButton("Save As", self)
         self.save_stack = QCheckBox("Save Stack", self)
+        self.save_stack.setChecked(True)
         self.also_save_tracking=QCheckBox("Save Tracking", self)
 
         save_menu.addWidget(self.save_button, 0, 0)
@@ -1883,6 +1884,7 @@ class MainWidget(QMainWindow):
         self.statusBar().showMessage(f'Tracked centroids for stack {self.stack.name}.', 2000)
         self.recolor_tracks()
         self.canvas.draw_masks()
+        self.propagate_FUCCI_checkbox.setEnabled(True)
 
     def recolor_tracks(self):
         # recolor cells so each particle has one color over time

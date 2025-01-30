@@ -165,6 +165,18 @@ class SegmentedStack:
         frame=self.frames[frame_number]
         idx=frame.delete_cells(cell_numbers)
         return idx
+    
+    def remove_edge_cells(self, frames=None):
+        if frames is None:
+            frames=self.frames
+        all_edge_cells=[]
+        for frame in frames:
+            edge_cells=frame.find_edge_cells()
+            all_edge_cells.append(edge_cells)
+            if len(edge_cells)>0:
+                self.delete_cells(edge_cells, frame.frame_number)
+                frame.outlines=cp_utils.masks_to_outlines(frame.masks)
+        return all_edge_cells
 
     # -------------Magic-------------
     def __len__(self):
@@ -835,7 +847,7 @@ class SegmentedImage:
         self.__class__=HeightMap
         self.zero_to_nan=kwargs.pop('zero_to_nan', True) # default to converting zeros to nans
 
-    # -------------Image Processing-------------    
+    # -------------I/O-------------    
     def load_img(self, normalize=False):
         self.img=np.load(self.name, allow_pickle=True).item()['img']
         if normalize:
@@ -874,6 +886,7 @@ class SegmentedImage:
         Path(export_path).parent.mkdir(parents=True, exist_ok=True) # make sure the directory exists
         np.save(export_path, export) # write segmentation file
     
+    # -------------Mask Operations-------------
     def renumber_cells(self):
         '''
         Renumbers cell masks, sorted by (y,x).
@@ -914,6 +927,24 @@ class SegmentedImage:
         self.masks=fastremap.remap(self.masks, remapping)
 
         return idx
+
+    def find_edge_cells(self, margin=1):
+        '''finds masks that are within some number of pixels from the edge of the image.'''
+        top=self.masks[:margin,:].flatten()
+        bottom=self.masks[-margin:,:].flatten()
+        left=self.masks[margin:-margin,:margin].flatten()
+        right=self.masks[margin:-margin,-margin:].flatten()
+
+        edge_cells=np.unique(np.concatenate([top, bottom, left, right]))
+        edge_cells=edge_cells[edge_cells!=0]-1
+
+        return edge_cells
+    
+    def remove_edge_cells(self, margin=1):
+        '''removes masks that are within some number of pixels from the edge of the image.'''
+        edge_cells=self.find_edge_cells(margin)
+        self.delete_cells(edge_cells)
+        return edge_cells
 
     # ------------FUCCI----------------        
     def get_red_green_intensities(self, percentile=90, blur_sigma=4):

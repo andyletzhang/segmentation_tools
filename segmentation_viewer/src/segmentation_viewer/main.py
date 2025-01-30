@@ -922,36 +922,25 @@ class MainWidget(QMainWindow):
             return
         if self.segment_on_stack.isChecked():
             frames=self.stack.frames
+            current_frame=self.frame_number
         else:
             frames=[self.frame]
+            current_frame=0
         
-        for frame in frames:
-            top=frame.masks[0]
-            bottom=frame.masks[-1]
-            left=frame.masks[1:-1,0]
-            right=frame.masks[1:-1,-1]
-            edge_cells=np.unique(np.concatenate([top, bottom, left, right]))
-            edge_cells=edge_cells[edge_cells!=0] # remove background
+        edge_cells=self.stack.remove_edge_cells(self.progress_bar(frames))
+        for deleted_cells, frame in zip(edge_cells, frames):
+            print(f'Removed {len(deleted_cells)} edge cells from frame {frame.frame_number}')
+            if hasattr(frame, 'stored_mask_overlay'):
+                del frame.stored_mask_overlay
 
-            edge_cells-=1 # convert to 0-indexed
-            if len(edge_cells)>0:
-                self.stack.delete_cells(edge_cells, frame_number=frame.frame_number)
+        if self.selected_cell_n in edge_cells[current_frame]:
+            # deselect the removed cell if it was selected
+            self.select_cell(None)
 
-                #frame.masks[changed_masks_bool]=0
-                frame.outlines=utils.masks_to_outlines(frame.masks)
-
-                print(f'Removed {len(edge_cells)} edge masks')
-                if hasattr(frame, 'stored_mask_overlay'):
-                    del frame.stored_mask_overlay
-                
-                if frame==self.frame:
-                    if self.selected_cell_n in edge_cells:
-                        # deselect the removed cell if it was selected
-                        self.select_cell(None)
-                    self.canvas.draw_outlines()
-                    self.highlight_track_ends()
-                    self.update_display()
-                    self.update_ROIs_label()
+        self.canvas.draw_outlines()
+        self.highlight_track_ends()
+        self.update_display()
+        self.update_ROIs_label()
 
         if hasattr(self.stack, 'tracked_centroids'):
             self.also_save_tracking.setChecked(True)

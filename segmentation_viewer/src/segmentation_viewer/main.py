@@ -3505,16 +3505,13 @@ class MainWidget(QMainWindow):
         #----figure out what's being loaded----
         if os.path.isdir(files[0]): # if a folder is selected, load all files in the folder
             seg_files=[]
-            tif_files=[]
-            nd2_files=[]
+            img_files=[]
 
             for f in natsorted(os.listdir(files[0])):
                 if f.endswith('seg.npy'):
                     seg_files.append(os.path.join(files[0], f))
-                elif f.lower().endswith('tif') or f.lower().endswith('tiff'):
-                    tif_files.append(os.path.join(files[0], f))
-                elif f.endswith('nd2'):
-                    nd2_files.append(os.path.join(files[0], f))
+                elif f.lower().endswith('tif') or f.lower().endswith('tiff') or f.lower().endswith('nd2'):
+                    img_files.append(os.path.join(files[0], f))
                 elif f.endswith('tracking.csv'):
                     tracking_file=os.path.join(files[0], f)
 

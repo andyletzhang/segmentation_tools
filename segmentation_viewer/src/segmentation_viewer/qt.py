@@ -13,10 +13,17 @@ def create_action(name, func, parent=None, shortcut=None):
 
 class CustomComboBox(QComboBox):
     '''Custom QComboBox that emits a signal when the dropdown is opened'''
-    dropdownOpened=pyqtSignal()
+    dropdownOpened=pyqtSignal(QComboBox)  # Signal emitted when the dropdown is opened
     def showPopup(self):
-        self.dropdownOpened.emit()
+        self.dropdownOpened.emit(self)
         super().showPopup()  # Call the original showPopup method
+
+    def changeToText(self, text):
+        '''Set the current text of the combobox without triggering the currentIndexChanged signal'''
+        # add item to the combobox if it doesn't exist
+        if self.findText(text)==-1:
+            self.addItem(text)
+        super().setCurrentText(text)
 
 class FineScrubQRangeSlider(QRangeSlider):
     def __init__(self, *args, **kwargs):

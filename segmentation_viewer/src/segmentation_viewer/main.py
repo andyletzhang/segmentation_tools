@@ -355,9 +355,8 @@ class MainWidget(QMainWindow):
         frame_histogram_layout.addLayout(histogram_menu_layout)
         frame_histogram_layout.addWidget(self.histogram)
 
-        self.histogram_menu.dropdownOpened.connect(self.get_histogram_attrs)
-        self.histogram_menu.activated.connect(self.new_histogram)
-        self.histogram_menu.currentIndexChanged.connect(self.new_histogram)
+        self.histogram_menu.dropdownOpened.connect(self.menu_frame_attrs)
+        self.histogram_menu.currentTextChanged.connect(self.new_histogram)
         return frame_histogram_widget
 
     def get_particle_stat_tab(self):
@@ -380,8 +379,8 @@ class MainWidget(QMainWindow):
         particle_plot_layout.addWidget(self.particle_stat_plot)
 
         # connect particle measurements
-        self.particle_stat_menu.dropdownOpened.connect(self.get_particle_attrs)
-        self.particle_stat_menu.currentIndexChanged.connect(self.plot_particle_statistic)
+        self.particle_stat_menu.dropdownOpened.connect(self.menu_frame_attrs)
+        self.particle_stat_menu.currentTextChanged.connect(self.plot_particle_statistic)
 
         return particle_plot_widget
     
@@ -405,8 +404,8 @@ class MainWidget(QMainWindow):
         time_series_layout.addWidget(self.time_series_plot)
 
         # connect time series measurements
-        self.time_series_menu.dropdownOpened.connect(self.get_time_series_attrs)
-        self.time_series_menu.activated.connect(self.plot_time_series)
+        self.time_series_menu.dropdownOpened.connect(self.menu_frame_attrs)
+        self.time_series_menu.currentTextChanged.connect(self.plot_time_series)
         return time_series_widget
     
     def stat_LUT_slider_changed(self):
@@ -452,12 +451,6 @@ class MainWidget(QMainWindow):
             items.extend(list(common_attrs))
 
         return items
-
-    def get_histogram_attrs(self):
-        self.menu_frame_attrs(self.histogram_menu)
-
-    def get_time_series_attrs(self):
-        self.menu_frame_attrs(self.time_series_menu)
 
     def menu_frame_attrs(self, menu):
         if not self.file_loaded:
@@ -1633,32 +1626,6 @@ class MainWidget(QMainWindow):
         frame.get_volumes()
         return frame.volumes
 
-    def new_histogram(self):
-        self.plot_histogram()
-        self.histogram.autoRange()
-
-    def plot_histogram(self):
-        self.histogram.clear()
-        hist_attr=self.histogram_menu.currentText()
-        self.histogram.setLabel('bottom', hist_attr)
-        if hist_attr=='Select Cell Attribute':
-            return
-        # get the attribute values
-        # TODO: check whether to operate on stack or frame
-        cell_attrs=np.array(self.frame.get_cell_attrs(hist_attr, fill_value=np.nan))
-        
-        if np.all(np.isnan(cell_attrs)):
-            return
-        
-        hist_data=np.array(cell_attrs)[~np.isnan(cell_attrs)]
-
-        iqr=np.percentile(hist_data, 75)-np.percentile(hist_data, 25)
-        bin_width=2*iqr/(len(hist_data)**(1/3))
-        bins=np.arange(np.min(hist_data), np.max(hist_data)+bin_width, bin_width)
-        
-        n, bins=np.histogram(hist_data, bins=bins, density=True)
-        self.histogram.plot(bins, n, stepMode=True, fillLevel=0, brush=(0, 0, 255, 150))
-
     def calibrate_coverslip_height(self):
         from segmentation_tools.heightmap import get_coverslip_z
         if not self.file_loaded:
@@ -2224,30 +2191,40 @@ class MainWidget(QMainWindow):
         self.particle_stat_plot.setLabel('left', '')
         self.particle_stat_plot.addItem(self.stat_plot_frame_marker)
 
-    def get_particle_attrs(self):
+    def new_histogram(self):
+        self.plot_histogram()
+        self.histogram.autoRange()
+
+    def plot_histogram(self):
         if not self.file_loaded:
             return
-        current_attr=self.particle_stat_menu.currentText()
-        items=[]
+        if not self.stat_tabs.currentIndex()==0:
+            return
+        self.histogram.clear()
+        hist_attr=self.histogram_menu.currentText()
+        self.histogram.setLabel('bottom', hist_attr)
+        if hist_attr=='Select Cell Attribute':
+            return
+        # get the attribute values
+        # TODO: check whether to operate on stack or frame
+        cell_attrs=np.array(self.frame.get_cell_attrs(hist_attr, fill_value=np.nan))
+        
+        if np.all(np.isnan(cell_attrs)):
+            return
+        
+        hist_data=np.array(cell_attrs)[~np.isnan(cell_attrs)]
 
-        if len(self.frame.cells)>0: # add any valid scalar cell attributes
-            common_attrs=self.cell_stat_attrs(self.frame.cells[0])
-            for cell in self.frame.cells[1:]:
-                common_attrs=common_attrs.intersection(set(dir(cell)))
-            items.extend(list(common_attrs))
-
-        items=['Select Cell Attribute']+sorted(items)
-        self.particle_stat_menu.blockSignals(True)
-        self.particle_stat_menu.clear()
-        self.particle_stat_menu.addItems(items)
-        self.particle_stat_menu.blockSignals(False)
-        current_index=self.particle_stat_menu.findText(current_attr)
-        if current_index==-1:
-            current_index=0
-        self.particle_stat_menu.setCurrentIndex(current_index)
+        iqr=np.percentile(hist_data, 75)-np.percentile(hist_data, 25)
+        bin_width=2*iqr/(len(hist_data)**(1/3))
+        bins=np.arange(np.min(hist_data), np.max(hist_data)+bin_width, bin_width)
+        
+        n, bins=np.histogram(hist_data, bins=bins, density=True)
+        self.histogram.plot(bins, n, stepMode=True, fillLevel=0, brush=(0, 0, 255, 150))
 
     def plot_particle_statistic(self):
         if not self.file_loaded or not hasattr(self.stack, 'tracked_centroids'):
+            return
+        if not self.stat_tabs.currentIndex()==1:
             return
         measurement=self.particle_stat_menu.currentText()
         
@@ -2272,6 +2249,8 @@ class MainWidget(QMainWindow):
 
     def plot_time_series(self):
         if not self.file_loaded:
+            return
+        if not self.stat_tabs.currentIndex()==2:
             return
         measurement=self.time_series_menu.currentText()
         self.time_series_plot.clear()

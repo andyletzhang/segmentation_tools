@@ -261,6 +261,7 @@ class MainWidget(QMainWindow):
         self.stat_tabs.addTab(self.get_histogram_tab(), "Histogram")
         self.stat_tabs.addTab(self.get_particle_stat_tab(), "Particle")
         self.stat_tabs.addTab(self.get_time_series_tab(), "Time Series")
+        self.last_stat_tab=0
 
         stat_overlay_widget=QWidget(objectName='bordered')
         stat_overlay_layout=QVBoxLayout(stat_overlay_widget)
@@ -322,6 +323,7 @@ class MainWidget(QMainWindow):
         right_scroll_area.setMinimumWidth(250)
 
         #----connections-----
+        self.stat_tabs.currentChanged.connect(self.stat_tab_switched)
         # cell selection
         self.selected_cell_prompt.textChanged.connect(self.cell_prompt_changed)
         self.selected_cell_prompt.returnPressed.connect(self.cell_prompt_changed)
@@ -337,6 +339,18 @@ class MainWidget(QMainWindow):
         self.stat_custom_button.toggled.connect(self.update_stat_LUT)
         return right_scroll_area
     
+    def stat_tab_switched(self, index):
+        if not self.file_loaded:
+            return
+
+        last_tab_combo=[self.histogram_menu, self.particle_stat_menu, self.time_series_menu][self.last_stat_tab]
+        current_tab_combo=[self.histogram_menu, self.particle_stat_menu, self.time_series_menu][index]
+        current_attr=last_tab_combo.currentText()
+
+        current_tab_combo.changeToText(current_attr)
+
+        self.last_stat_tab=index
+
     def get_histogram_tab(self):
         frame_histogram_widget=QWidget()
         frame_histogram_layout=QVBoxLayout(frame_histogram_widget)

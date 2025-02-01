@@ -22,7 +22,7 @@ class PyQtGraphCanvas(QWidget):
     def __init__(self, parent=None, cell_n_colors=10, cell_cmap='tab10'):
         from matplotlib import colormaps
         super().__init__(parent)
-        self.parent = parent
+        self.main_window = parent
         self.selected_cell_color='white'
         self.selected_cell_alpha=0.3
         self.outlines_color='white'
@@ -119,10 +119,10 @@ class PyQtGraphCanvas(QWidget):
 
     def wheelEvent(self, event):
         ''' Redirect wheel events to the main window. '''
-        self.parent.canvas_wheelEvent(event)
+        self.main_window.canvas_wheelEvent(event)
 
     def overlay_outlines(self):
-        self.img_outline_overlay.setVisible(self.parent.outlines_checkbox.isChecked())
+        self.img_outline_overlay.setVisible(self.main_window.outlines_visible)
 
     def draw_outlines(self, color=None, alpha=None):
         ''' Overlay the outlines of the masks on the image plot. '''
@@ -134,8 +134,8 @@ class PyQtGraphCanvas(QWidget):
         from matplotlib.colors import to_rgb
         color=[*to_rgb(color), alpha]
 
-        overlay=np.zeros((*self.parent.frame.masks.shape, 4))
-        overlay[self.parent.frame.outlines]=color
+        overlay=np.zeros((*self.main_window.frame.masks.shape, 4))
+        overlay[self.main_window.frame.outlines]=color
 
         overlay=self.image_transform(overlay)
         self.img_outline_overlay.setImage(overlay)
@@ -143,12 +143,12 @@ class PyQtGraphCanvas(QWidget):
 
     def overlay_masks(self):
         for l in self.mask_overlay:
-            l.setVisible(self.parent.masks_checkbox.isChecked())
+            l.setVisible(self.main_window.masks_visible)
 
-        if not hasattr(self.parent.frame, 'stored_mask_overlay'):
+        if not hasattr(self.main_window.frame, 'stored_mask_overlay'):
             self.draw_masks()
         else:
-            for l, overlay in zip(self.mask_overlay, self.parent.frame.stored_mask_overlay):
+            for l, overlay in zip(self.mask_overlay, self.main_window.frame.stored_mask_overlay):
                 l.setImage(overlay)
 
     def random_cell_color(self, n=1):
@@ -172,15 +172,15 @@ class PyQtGraphCanvas(QWidget):
             alpha=self.masks_alpha
         # get cell colors
         try:
-            cell_colors=self.parent.frame.get_cell_attrs('color_ID') # retrieve the stored colors for each cell
+            cell_colors=self.main_window.frame.get_cell_attrs('color_ID') # retrieve the stored colors for each cell
         except AttributeError:
             #from monolayer_tracking.networks import color_masks, greedy_color # generate pseudo-random colors
-            #random_colors=color_masks(self.parent.frame.masks)
-            cell_colors=self.random_cell_color(self.parent.frame.masks.max())
-            self.parent.frame.set_cell_attr('color_ID', cell_colors)
+            #random_colors=color_masks(self.main_window.frame.masks)
+            cell_colors=self.random_cell_color(self.main_window.frame.masks.max())
+            self.main_window.frame.set_cell_attr('color_ID', cell_colors)
 
         # highlight all cells with the specified colors
-        cell_indices=fastremap.unique(self.parent.frame.masks)[1:]-1
+        cell_indices=fastremap.unique(self.main_window.frame.masks)[1:]-1
         img_masks, seg_masks=self.highlight_cells(cell_indices, alpha=alpha, cell_colors=cell_colors, layer='mask')
 
         return img_masks, seg_masks
@@ -200,7 +200,7 @@ class PyQtGraphCanvas(QWidget):
         if color is None:
             color=self.selected_cell_color
             
-        masks=self.parent.frame.masks
+        masks=self.main_window.frame.masks
 
         layer=getattr(self, f'{layer}_overlay') # get the specified overlay layer: selection for highlighting, mask for colored masks
 
@@ -220,9 +220,9 @@ class PyQtGraphCanvas(QWidget):
         opaque_mask=mask_overlay.copy()
         opaque_mask[mask_overlay[...,-1]!=0, -1]=1
         if img_type=='outlines':
-            mask_overlay[self.parent.frame.outlines==0]=0
+            mask_overlay[self.main_window.frame.outlines==0]=0
         if seg_type=='outlines':
-            opaque_mask[self.parent.frame.outlines==0]=0
+            opaque_mask[self.main_window.frame.outlines==0]=0
 
         mask_overlay=self.image_transform(mask_overlay)
         opaque_mask=self.image_transform(opaque_mask)
@@ -232,14 +232,14 @@ class PyQtGraphCanvas(QWidget):
 
         # store mask overlays if layer is mask
         if layer==self.mask_overlay:
-            self.parent.frame.stored_mask_overlay=[mask_overlay, opaque_mask]
+            self.main_window.frame.stored_mask_overlay=[mask_overlay, opaque_mask]
 
         return mask_overlay, opaque_mask
 
     def add_cell_highlight(self, cell_index, frame=None, layer='selection', alpha=None, color=None, img_type='masks', seg_type='masks'):
         from matplotlib.colors import to_rgb
         if frame is None:
-            frame=self.parent.frame
+            frame=self.main_window.frame
 
         if alpha is None:
             alpha=self.selected_cell_alpha
@@ -249,7 +249,7 @@ class PyQtGraphCanvas(QWidget):
         # get the binarized mask for the specified cell
         cell_mask=self.image_transform(frame.masks == cell_index + 1)
 
-        if frame==self.parent.frame:
+        if frame==self.main_window.frame:
             drawing_layers=True
             layer_overlay=getattr(self, f'{layer}_overlay')
             for l in layer_overlay:
@@ -362,7 +362,7 @@ class PyQtGraphCanvas(QWidget):
         x,y=self.get_plot_coords(pos, pixels=False)
         self.update_cursor(x, y)
 
-        self.parent.mouse_moved(pos)
+        self.main_window.mouse_moved(pos)
 
     def update_cursor(self, x, y):
         """Update the segmentation plot cursor based on the image plot cursor."""
@@ -370,7 +370,7 @@ class PyQtGraphCanvas(QWidget):
         self.seg_hline.setPos(y)
         self.img_vline.setPos(x)
         self.img_hline.setPos(y)
-        self.parent.update_coordinate_label(int(x), int(y))
+        self.main_window.update_coordinate_label(int(x), int(y))
 
     @property
     def cursor_pixels(self):
@@ -436,7 +436,7 @@ class SegPlot(pg.PlotWidget):
     '''
     def __init__(self, parent=None, **kwargs):
         super().__init__(parent, **kwargs)
-        self.parent = parent
+        self.main_window = parent
         self.setMenuEnabled(False)
         self.getViewBox().invertY(True)
         self.setAspectLocked(True)
@@ -451,7 +451,7 @@ class SegPlot(pg.PlotWidget):
 
 class RGB_ImageItem():
     def __init__(self, plot:pg.PlotWidget, img_data=None, parent=None):
-        self.parent=parent
+        self.main_window=parent
         if img_data is None:
             img_data=np.zeros((512, 512, 3), dtype=np.uint8)
 
@@ -477,7 +477,7 @@ class RGB_ImageItem():
     @property
     def inverted(self):
         try:
-            return self.parent.parent.inverted_checkbox.isChecked()
+            return self.main_window.parent.inverted_checkbox.isChecked()
         except AttributeError:
             return False
     
@@ -563,7 +563,7 @@ class CellMaskPolygons():
     pair of CellMaskPolygon objects for image and segmentation plots
     '''
     def __init__(self, parent=None, *args, **kwargs):
-        self.parent=parent
+        self.main_window=parent
         self.img_poly=CellMaskPolygon(*args, **kwargs)
         self.seg_poly=CellMaskPolygon(*args, **kwargs)
 
@@ -640,7 +640,7 @@ class CellSplitLines():
     pair of CellSplitLine objects for image and segmentation plots
     '''
     def __init__(self, parent=None, *args, **kwargs):
-        self.parent=parent
+        self.main_window=parent
         self.img_line=CellSplitLine(*args, **kwargs)
         self.seg_line=CellSplitLine(*args, **kwargs)
 

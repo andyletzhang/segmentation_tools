@@ -605,7 +605,7 @@ class TimeStack(SegmentedStack):
     default_weights = (40.79220969,  8.12982495,  0.20812352,  2.54951311, 32.51929981)  # Default weights for mitosis scoring
     default_biases = (0.09863765322259088, 0.11520025039156312, 0.0001280071195560235, 0.00045755121816393185, 0.0015762096995626672)  # Default biases for mitosis scoring
 
-    def get_mitoses(self, persistence_threshold=0, distance_threshold=None, retrack=False, weights=None, biases=None, score_cutoff=1, **kwargs):
+    def get_mitoses(self, persistence_threshold=0, distance_threshold=1.5, retrack=False, weights=[1,1,1,1,1], biases=None, score_cutoff=1, **kwargs):
         """
         Detect potential mitotic events in the cell tracking data.
 
@@ -615,7 +615,7 @@ class TimeStack(SegmentedStack):
             retrack (bool, optional): If True, forces the function to retrack the data. Defaults to False.
             biases (array-like, optional): Biases used in mitosis scoring. Defaults set using manually labeled MDCK data.
             weights (array-like, optional): Weights used in mitosis scoring. Defaults set using manually labeled MDCK data.
-            score_cutoff (int, optional): Threshold for considering a detected mitosis event. Defaults to 1.
+            score_cutoff (int, optional): Threshold for considering a detected mitosis event. Higher is more forgiving. Defaults to 1.
             **kwargs: Additional keyword arguments to be passed to the tracking function.
 
         Returns:
@@ -623,37 +623,17 @@ class TimeStack(SegmentedStack):
         """
         from scipy.spatial.distance import cdist  # Import cdist function from scipy.spatial.distance
         
-        if not distance_threshold:
-            # Automatically set maximum search range by cell area statistics
-            distance_threshold = 1.5 * np.nanmean([np.sqrt(np.quantile(frame.cell_areas(scaled=False), 0.9)) for frame in self.frames]) 
+        distance_threshold = distance_threshold * np.nanmean([np.sqrt(np.quantile(frame.cell_areas(scaled=False), 0.9)) for frame in self.frames]) 
         
         # Default mitosis scoring parameters
-        if not weights:
-            weights = self.default_weights
+        weights=np.array(weights)*self.default_weights
         if not biases:
             biases = self.default_biases
         
         def mitosis_score(params, weights, biases):
             ''' Linear function for scoring mitoses '''
             return np.sum(np.square((np.array(params).T - biases)) * weights, axis=1)
-
-        #norm_means=np.array([0.19036615, 0.23384234, 0.16842723, 0.12717775, 0.18187521])
-        #norm_vars=np.array([0.00774153, 0.00920625, 0.08352297, 0.04564848, 0.12634787])
-        #linear_weights=np.array([-0.7349965,-0.8832049,-1.0309228,1.0420729,-0.806389])
-        #linear_bias=0.3782285
         
-        #def mitosis_score(X):
-        #    def normalize(X, mean, variance):
-        #        return (X-mean)/np.sqrt(variance)
-
-        #    def linear_model(X, weights, bias):
-        #        return np.dot([weights], X)+bias
-
-        #    def sigmoid(x):
-        #        return 1/(1+np.exp(-x))
-
-        #    return(sigmoid(linear_model(normalize(X, norm_means, norm_vars), linear_weights, linear_bias)).flatten())
-
         if retrack or not hasattr(self, 'tracked_centroids'):
             # If the data has never been tracked, or if retrack is specified
             trajectories = self.track_centroids(**kwargs)  # Run tracking again

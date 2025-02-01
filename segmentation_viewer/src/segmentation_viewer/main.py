@@ -2110,7 +2110,7 @@ class MainWidget(QMainWindow):
             rr, cc = draw.line(curve_coords[i][0], curve_coords[i][1],
                             curve_coords[i+1][0], curve_coords[i+1][1])
             # remove out-of-bounds coordinates
-            inbound_coords=(rr>=0)&(rr<curve_mask.shape[0])&(cc>=0)&(cc<curve_mask.shape[1])
+            inbound_coords=(cc>=0)&(cc<curve_mask.shape[0])&(rr>=0)&(rr<curve_mask.shape[1])
             rr, cc=rr[inbound_coords], cc[inbound_coords]
             curve_mask[cc, rr] = True
         

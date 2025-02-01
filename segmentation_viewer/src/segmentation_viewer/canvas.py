@@ -382,6 +382,10 @@ class PyQtGraphCanvas(QWidget):
         ''' Get the exact cursor position. '''
         return self.get_plot_coords(pixels=False)
     
+    @property
+    def is_inverted(self):
+        return self.main_window.is_inverted
+    
     def update_display(self, img_data=None, seg_data=None, RGB_checks=None):
         if img_data is None:
             img_data=self.img_data
@@ -451,7 +455,7 @@ class SegPlot(pg.PlotWidget):
 
 class RGB_ImageItem():
     def __init__(self, plot:pg.PlotWidget, img_data=None, parent=None):
-        self.main_window=parent
+        self.canvas=parent
         if img_data is None:
             img_data=np.zeros((512, 512, 3), dtype=np.uint8)
 
@@ -473,13 +477,6 @@ class RGB_ImageItem():
         plot.addItem(self.img_item)
         self.show_grayscale=False
         self.toggle_grayscale()
-
-    @property
-    def inverted(self):
-        try:
-            return self.main_window.parent.inverted_checkbox.isChecked()
-        except AttributeError:
-            return False
     
     def image(self):
         ''' Get the rendered image from the specified plot. '''
@@ -495,7 +492,7 @@ class RGB_ImageItem():
         composite_array = np.array(ptr).reshape((height, width, 4))  # Format_RGB32 includes alpha
         rgb_array = composite_array[..., :3][..., ::-1]
 
-        if self.inverted:
+        if self.canvas.is_inverted:
             rgb_array=inverted_contrast(rgb_array)
         return rgb_array
     
@@ -563,7 +560,7 @@ class CellMaskPolygons():
     pair of CellMaskPolygon objects for image and segmentation plots
     '''
     def __init__(self, parent=None, *args, **kwargs):
-        self.main_window=parent
+        self.canvas=parent
         self.img_poly=CellMaskPolygon(*args, **kwargs)
         self.seg_poly=CellMaskPolygon(*args, **kwargs)
 
@@ -640,7 +637,7 @@ class CellSplitLines():
     pair of CellSplitLine objects for image and segmentation plots
     '''
     def __init__(self, parent=None, *args, **kwargs):
-        self.main_window=parent
+        self.canvas=parent
         self.img_line=CellSplitLine(*args, **kwargs)
         self.seg_line=CellSplitLine(*args, **kwargs)
 

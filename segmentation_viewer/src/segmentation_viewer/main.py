@@ -21,6 +21,7 @@ import pyqtgraph as pg
 from segmentation_tools.segmented_comprehension import SegmentedStack, Cell
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
 from segmentation_tools.utils import cell_scalar_attrs
+from .ui import LeftToolbar, labeled_LUT_slider
 from .canvas import PyQtGraphCanvas, CellMaskPolygons, CellSplitLines
 from .command_line import CommandLineWindow
 from .qt import CustomComboBox, FineScrubQRangeSlider, SubstackDialog
@@ -73,7 +74,6 @@ class MainWidget(QMainWindow):
         self.setWindowIcon(QIcon(str(icon_path)))
         self.resize(1280, 720)
         self.file_loaded = False # passive mode
-        self.is_grayscale = False
         self.drawing_cell_roi = False
         self.drawing_cell_split = False
         self.spacer = (0,10) # default spacer size (width, height)
@@ -82,52 +82,6 @@ class MainWidget(QMainWindow):
         self.font_metrics=QFontMetrics(QLabel().font()) # metrics for the default font
         self.digit_width=self.font_metrics.horizontalAdvance('0') # text length scale
         self.cancel_iter=False # flag to cancel progress bar iteration
-
-        # Menu bar
-        from segmentation_viewer.qt import create_action
-        self.menu_bar = self.menuBar()
-        
-        # FILE
-        self.file_menu = self.menu_bar.addMenu("File")
-        self.file_menu.addAction(create_action("Open File(s)", self.open_files, self, 'Ctrl+O'))
-        self.file_menu.addAction(create_action("Open Folder", self.open_folder_dialog, self, 'Ctrl+Shift+O'))
-        self.file_menu.addAction(create_action("Save", self.save_segmentation, self, 'Ctrl+S'))
-        self.file_menu.addAction(create_action("Save As", self.save_as_segmentation, self, 'Ctrl+Shift+S'))
-        self.file_menu.addAction(create_action("Export CSV...", self.export_csv, self, 'Ctrl+Shift+E'))
-        self.file_menu.addAction(create_action("Import Image(s)", self.import_images, self))
-        self.file_menu.addAction(create_action("Exit", self.close, self, 'Ctrl+Q'))
-        #self.file_menu.addAction(create_action("Import Masks...", self.import_masks, self))
-
-        # EDIT
-        self.edit_menu = self.menu_bar.addMenu("Edit")
-        #self.edit_menu.addAction(create_action("Undo", self.undo, self, 'Ctrl+Z'))
-        #self.edit_menu.addAction(create_action("Redo", self.redo, self, 'Ctrl+Shift+Z'))
-        self.edit_menu.addAction(create_action("Clear Masks", self.clear_masks, self))
-        self.edit_menu.addAction(create_action("Generate Outlines", self.generate_outlines_list, self))
-        self.edit_menu.addAction(create_action("Mend Gaps", self.mend_gaps, self))
-        self.edit_menu.addAction(create_action("Remove Edge Masks", self.remove_edge_masks, self))
-
-        # VIEW
-        self.view_menu = self.menu_bar.addMenu("View")
-        self.view_menu.addAction(create_action("Reset View", self.reset_view, self))
-        self.view_menu.addAction(create_action("Show Grayscale", self.toggle_grayscale, self))
-        self.view_menu.addAction(create_action("Invert Contrast", self.toggle_inverted, self, 'I'))
-        self.view_menu.addAction(create_action("Overlay Settings...", self.open_overlay_settings, self))
-        #self.view_menu.addAction(create_action("Segmentation Plot", self.toggle_segmentation_plot, self))
-
-        # IMAGE
-        self.image_menu = self.menu_bar.addMenu("Image")
-        self.image_menu.addAction(create_action("Reorder Channels", self.reorder_channels, self))
-        #self.image_menu.addAction(create_action("Set Voxel Size", self.voxel_size_prompt, self))
-
-        # STACK
-        self.stack_menu = self.menu_bar.addMenu("Stack")
-        self.stack_menu.addAction(create_action("Delete frame", self.delete_frame, self))
-        self.stack_menu.addAction(create_action("Make substack...", self.make_substack, self))
-
-        # HELP
-        self.help_menu = self.menu_bar.addMenu("Help")
-        self.help_menu.addAction(create_action("Pull updates", self.update_packages, self))
 
         # Status bar
         self.status_cell=QLabel("Selected Cell: None", self)
@@ -165,20 +119,21 @@ class MainWidget(QMainWindow):
         canvas_HBoxLayout = QHBoxLayout()
         canvas_HBoxLayout.setSpacing(0)
         canvas_HBoxLayout.setContentsMargins(0, 0, 0, 0)
+        
         self.canvas = PyQtGraphCanvas(parent=self)
         self.globals_dict['canvas']=self.canvas
+        self.right_toolbar=self.get_right_toolbar()
+        self.left_toolbar=LeftToolbar(self)
 
-        self.cell_roi = CellMaskPolygons()
+        self.cell_roi = CellMaskPolygons(parent=self.canvas)
         self.cell_roi.last_handle_pos = None
         self.canvas.img_plot.addItem(self.cell_roi.img_poly)
         self.canvas.seg_plot.addItem(self.cell_roi.seg_poly)
 
-        self.cell_split = CellSplitLines()
+        self.cell_split = CellSplitLines(parent=self.canvas)
         self.canvas.img_plot.addItem(self.cell_split.img_line)
         self.canvas.seg_plot.addItem(self.cell_split.seg_line)
         
-        self.right_toolbar=self.get_right_toolbar()
-        self.left_toolbar=self.get_left_toolbar()
 
         canvas_HBoxLayout.addWidget(self.canvas)
         canvas_HBoxLayout.addWidget(self.zstack_slider)
@@ -193,12 +148,12 @@ class MainWidget(QMainWindow):
 
         self.default_visual_settings=self.visual_settings
         self.default_visual_settings['LUTs']=None
-        self.saved_visual_settings=[self.default_visual_settings for _ in range(4)]
-        self.current_tab=0
+        self.left_toolbar.saved_visual_settings=[self.default_visual_settings for _ in range(4)]
         self.FUCCI_mode=False
 
         self.load_config()
         self.apply_overlay_settings()
+        self._get_menu_bar()
 
         #----------------Connections----------------
         self.frame_slider.valueChanged.connect(self.change_current_frame)
@@ -208,6 +163,54 @@ class MainWidget(QMainWindow):
         self.canvas.img_plot.scene().sigMouseClicked.connect(self.on_click)
         self.canvas.seg_plot.scene().sigMouseClicked.connect(self.on_click)
     
+    def _get_menu_bar(self):
+        
+        # Menu bar
+        from segmentation_viewer.qt import create_action
+        self.menu_bar = self.menuBar()
+        
+        # FILE
+        self.file_menu = self.menu_bar.addMenu("File")
+        self.file_menu.addAction(create_action("Open File(s)", self.open_files, self, 'Ctrl+O'))
+        self.file_menu.addAction(create_action("Open Folder", self.open_folder_dialog, self, 'Ctrl+Shift+O'))
+        self.file_menu.addAction(create_action("Save", self.save_segmentation, self, 'Ctrl+S'))
+        self.file_menu.addAction(create_action("Save As", self.save_as_segmentation, self, 'Ctrl+Shift+S'))
+        self.file_menu.addAction(create_action("Export CSV...", self.export_csv, self, 'Ctrl+Shift+E'))
+        self.file_menu.addAction(create_action("Import Image(s)", self.import_images, self))
+        self.file_menu.addAction(create_action("Exit", self.close, self, 'Ctrl+Q'))
+        #self.file_menu.addAction(create_action("Import Masks...", self.import_masks, self))
+
+        # EDIT
+        self.edit_menu = self.menu_bar.addMenu("Edit")
+        #self.edit_menu.addAction(create_action("Undo", self.undo, self, 'Ctrl+Z'))
+        #self.edit_menu.addAction(create_action("Redo", self.redo, self, 'Ctrl+Shift+Z'))
+        self.edit_menu.addAction(create_action("Clear Masks", self.clear_masks, self))
+        self.edit_menu.addAction(create_action("Generate Outlines", self.generate_outlines_list, self))
+        self.edit_menu.addAction(create_action("Mend Gaps", self.mend_gaps, self))
+        self.edit_menu.addAction(create_action("Remove Edge Masks", self.remove_edge_masks, self))
+
+        # VIEW
+        self.view_menu = self.menu_bar.addMenu("View")
+        self.view_menu.addAction(create_action("Reset View", self.reset_view, self))
+        self.view_menu.addAction(create_action("Show Grayscale", self.left_toolbar.toggle_grayscale, self))
+        self.view_menu.addAction(create_action("Invert Contrast", self.left_toolbar.toggle_inverted, self, 'I'))
+        self.view_menu.addAction(create_action("Overlay Settings...", self.open_overlay_settings, self))
+        #self.view_menu.addAction(create_action("Segmentation Plot", self.toggle_segmentation_plot, self))
+
+        # IMAGE
+        self.image_menu = self.menu_bar.addMenu("Image")
+        self.image_menu.addAction(create_action("Reorder Channels", self.reorder_channels, self))
+        #self.image_menu.addAction(create_action("Set Voxel Size", self.voxel_size_prompt, self))
+
+        # STACK
+        self.stack_menu = self.menu_bar.addMenu("Stack")
+        self.stack_menu.addAction(create_action("Delete frame", self.delete_frame, self))
+        self.stack_menu.addAction(create_action("Make substack...", self.make_substack, self))
+
+        # HELP
+        self.help_menu = self.menu_bar.addMenu("Help")
+        self.help_menu.addAction(create_action("Pull updates", self.update_packages, self))
+
     def load_config(self):
         from platformdirs import user_config_dir
         config_path=Path(user_config_dir('segmentation_viewer')).joinpath('config.yaml')
@@ -229,13 +232,13 @@ class MainWidget(QMainWindow):
     def set_config(self, config):
         self.canvas.dark_overlay_settings=config['overlay_settings']
         self.canvas.light_overlay_settings=config['inverted_overlay_settings']
-        self.inverted_checkbox.setChecked(config['inverted'])
+        self.left_toolbar.inverted_checkbox.setChecked(config['inverted'])
 
     def dump_config(self, config_path=None):
         import yaml
         from platformdirs import user_config_dir
         config_path=Path(user_config_dir('segmentation_viewer')).joinpath('config.yaml')
-        inverted=self.inverted_checkbox.isChecked()
+        inverted=self.left_toolbar.inverted_checkbox.isChecked()
 
         current_overlay_settings={attr:getattr(self.canvas, attr) for attr in ['selected_cell_color',
                                                                        'selected_cell_alpha',
@@ -255,6 +258,40 @@ class MainWidget(QMainWindow):
         with open(config_path, 'w') as f:
             yaml.dump(config, f)
         return config
+    
+    def open_overlay_settings(self):
+        from segmentation_viewer.qt import OverlaySettingsDialog
+        self.overlay_dialog = OverlaySettingsDialog(parent=self.canvas)
+        self.overlay_dialog.settings_applied.connect(self.apply_overlay_settings)
+        if self.overlay_dialog.exec() == QDialog.DialogCode.Accepted:
+            self.apply_overlay_settings(self.overlay_dialog.get_settings())
+
+    def apply_overlay_settings(self, settings=None):
+        inverted=self.left_toolbar.inverted_checkbox.isChecked()
+        if settings is None:
+            if inverted:
+                settings=self.canvas.light_overlay_settings
+            else:
+                settings=self.canvas.dark_overlay_settings
+        else:
+            if inverted:
+                self.canvas.light_overlay_settings=settings
+            else:
+                self.canvas.dark_overlay_settings=settings
+
+        redraw_masks=self.canvas.masks_alpha!=settings['masks_alpha']
+        
+        for attr, setting in settings.items():
+            setattr(self.canvas, attr, setting)
+        
+        if self.file_loaded:
+            if redraw_masks:
+                for frame in self.stack.frames:
+                    if hasattr(frame, 'stored_mask_overlay'):
+                        del frame.stored_mask_overlay
+
+            self.imshow()
+            self.select_cell(cell=self.selected_cell_n)
 
     def get_right_toolbar(self):
         self.stat_tabs=QTabWidget()
@@ -286,7 +323,7 @@ class MainWidget(QMainWindow):
         normalize_layout.addWidget(self.stat_custom_button)
         self.stat_frame_button.setChecked(True)
         self.stat_LUT_type='frame'
-        slider_layout, self.stat_LUT_slider, self.stat_range_labels=self.labeled_LUT_slider(default_range=(0, 255))
+        slider_layout, self.stat_LUT_slider, self.stat_range_labels=labeled_LUT_slider(default_range=(0, 255), parent=stat_overlay_widget)
 
         cell_ID_widget=QWidget(objectName='bordered')
         self.cell_ID_layout=QFormLayout(cell_ID_widget)
@@ -448,6 +485,16 @@ class MainWidget(QMainWindow):
         
         self.show_seg_overlay()
 
+    def invert_toggled(self):
+        self.apply_overlay_settings()
+        self.canvas.img.refresh()
+    
+    @property
+    def is_inverted(self):
+        if hasattr(self, 'left_toolbar'):
+            return self.left_toolbar.inverted_checkbox.isChecked()
+        else:
+            return False
     
     def cell_stat_attrs(self, cell):
         ''' Return all common attributes which are meaningful cell-level metrics '''
@@ -556,8 +603,7 @@ class MainWidget(QMainWindow):
                 
                 if not hasattr(self.frame, 'z_scale'):
                     print(f'No z scale found for {self.frame.name}, defaulting to 1.')
-                    self.z_size.setText('1.0')
-                    self.update_voxel_size()
+                    self.left_toolbar.z_size=1.0
 
                 self.overlay_seg_stat(self.frame.scaled_heights)
             else:
@@ -595,266 +641,43 @@ class MainWidget(QMainWindow):
     def clear_seg_stat(self):
         self.canvas.seg_stat_overlay.clear()
 
-    def get_left_toolbar(self):
-        open_menu=QHBoxLayout()
-        open_menu.setSpacing(5)
-
-        # RGB
-        self.RGB_checkbox_layout = QVBoxLayout()
-        self.add_RGB_checkboxes(self.RGB_checkbox_layout)
-        self.inverted_checkbox=QCheckBox("Invert [I]", self)
-        self.inverted_checkbox.setChecked(False)
-
-        # Segmentation Overlay
-        segmentation_overlay_widget = QWidget()
-        segmentation_overlay_layout = QHBoxLayout(segmentation_overlay_widget)
-        self.masks_checkbox = QCheckBox("Masks [X]", self)
-        self.outlines_checkbox = QCheckBox("Outlines [Z]", self)
-        segmentation_overlay_layout.addWidget(self.masks_checkbox)
-        segmentation_overlay_layout.addWidget(self.outlines_checkbox)
-
-        # Normalize
-        self.normalize_label = QLabel("Normalize by:", self)
-        self.normalize_widget=QWidget()
-        self.normalize_layout=QHBoxLayout(self.normalize_widget)
-        self.normalize_layout.setContentsMargins(0, 0, 0, 0)
-        self.normalize_frame_button=QRadioButton("Frame", self)
-        self.normalize_stack_button=QRadioButton("Stack", self)
-        self.normalize_custom_button=QRadioButton("LUT", self)
-        self.normalize_layout.addWidget(self.normalize_frame_button)
-        self.normalize_layout.addWidget(self.normalize_stack_button)
-        self.normalize_layout.addWidget(self.normalize_custom_button)
-        self.normalize_type='frame'
-
-        # LUTs
-        self.slider_layout=QVBoxLayout()
-        self.add_RGB_sliders(self.slider_layout)
-        
-        LUT_widget=QWidget(objectName='bordered')
-        LUT_layout=QVBoxLayout(LUT_widget)
-        LUT_layout.setSpacing(0)
-        LUT_layout.addLayout(self.RGB_checkbox_layout)
-        LUT_layout.addSpacerItem(self.vertical_spacer(0.5))
-        LUT_layout.addWidget(self.inverted_checkbox)
-        LUT_layout.addItem(self.vertical_spacer())
-        LUT_layout.addWidget(self.normalize_label)
-        LUT_layout.addWidget(self.normalize_widget)
-        LUT_layout.addLayout(self.slider_layout)
-        LUT_layout.addWidget(segmentation_overlay_widget)
-
-        # Voxel size
-        self.voxel_size_widget=QWidget(objectName='bordered')
-        self.voxel_size_VLayout=QVBoxLayout(self.voxel_size_widget)
-        self.voxel_size_HLayout=QHBoxLayout()
-        voxel_size_label=QLabel("Voxel Size (μm):", self)
-        xy_size_label=QLabel("XY:", self)
-        z_size_label=QLabel("Z:", self)
-        self.xy_size=QLineEdit(self, placeholderText='None')
-        self.xy_size.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
-        self.z_size=QLineEdit(self, placeholderText='None')
-        self.z_size.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
-
-        self.voxel_size_HLayout.addWidget(xy_size_label)
-        self.voxel_size_HLayout.addWidget(self.xy_size)
-        self.voxel_size_HLayout.addWidget(z_size_label)
-        self.voxel_size_HLayout.addWidget(self.z_size)
-
-        self.voxel_size_VLayout.addWidget(voxel_size_label)
-        self.voxel_size_VLayout.addLayout(self.voxel_size_HLayout)
-
-        # Tabbed Menu
-        self.tabbed_menu_widget = QTabWidget()
-        self.tabbed_menu_widget.addTab(self.get_segmentation_tab(), "Segmentation")
-        self.tabbed_menu_widget.addTab(self.get_FUCCI_tab(), "FUCCI")
-        self.tabbed_menu_widget.addTab(self.get_tracking_tab(), "Tracking")
-        self.tabbed_menu_widget.addTab(self.get_volumes_tab(), 'Volumes')
-
-        # Command Line Interface
-        self.command_line_button=QPushButton("Open Command Line", self)
-
-        # Save Menu
-        save_widget=QWidget(objectName='bordered')
-        save_menu=QGridLayout(save_widget)
-        save_menu.setVerticalSpacing(5)
-        self.save_button = QPushButton("Save", self)
-        self.save_as_button = QPushButton("Save As", self)
-        self.save_stack = QCheckBox("Save Stack", self)
-        self.save_stack.setChecked(True)
-        self.also_save_tracking=QCheckBox("Save Tracking", self)
-
-        save_menu.addWidget(self.save_button, 0, 0)
-        save_menu.addWidget(self.save_as_button, 0, 1)
-        save_menu.addWidget(self.save_stack, 1, 0)
-        save_menu.addWidget(self.also_save_tracking, 1, 1)
-        
-        left_toolbar = QWidget()
-        left_toolbar_layout = QVBoxLayout(left_toolbar)
-
-        left_scroll_area=QScrollArea()
-        left_scroll_area.setWidgetResizable(True)
-        left_scroll_area.setWidget(left_toolbar)
-        left_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff) # disable horizontal scroll bar
-        left_scroll_area.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred) # restore horizontal size policy
-        left_toolbar_layout.setSpacing(10)
-        left_toolbar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        left_toolbar_layout.addLayout(open_menu)
-        left_toolbar_layout.addWidget(LUT_widget)
-        left_toolbar_layout.addWidget(self.voxel_size_widget)
-        left_toolbar_layout.addWidget(self.tabbed_menu_widget)
-        left_toolbar_layout.addWidget(self.command_line_button)
-        left_toolbar_layout.addWidget(save_widget)
-        
-        # normalize
-        self.inverted_checkbox.stateChanged.connect(self.invert_toggled)
-        self.normalize_frame_button.toggled.connect(self.update_normalize_frame)
-        self.normalize_stack_button.toggled.connect(self.update_normalize_frame)
-        self.normalize_custom_button.toggled.connect(self.update_normalize_frame)
-        # segmentation overlay
-        self.masks_checkbox.stateChanged.connect(self.canvas.overlay_masks)
-        self.outlines_checkbox.stateChanged.connect(self.canvas.overlay_outlines)
-        # command line
-        self.command_line_button.clicked.connect(self.open_command_line)
-        # voxel size
-        self.xy_size.editingFinished.connect(self.update_voxel_size)
-        self.z_size.editingFinished.connect(self.update_voxel_size)
-        # save
-        self.save_button.clicked.connect(self.save_segmentation)
-        self.save_as_button.clicked.connect(self.save_as_segmentation)
-
-        # switch tabs
-        self.tabbed_menu_widget.currentChanged.connect(self.tab_switched)
-
-        return left_scroll_area
-    
     def tab_switched(self, index):
         if not self.file_loaded:
-            self.current_tab=index
             return
-        
-        # save visual settings for the previous tab
-        self.saved_visual_settings[self.current_tab]=self.visual_settings
-
-        # load visual settings for the new tab
-        self.current_tab=index
-        self.visual_settings=self.saved_visual_settings[index]
-
         self.highlight_track_ends()
         self.FUCCI_overlay()
 
     @property
     def visual_settings(self):
-        # retrieve the current visual settings
-        out={'RGB': self.get_RGB(),
-             'normalize_type': self.normalize_type,
-             'masks': self.masks_checkbox.isChecked(),
-             'outlines': self.outlines_checkbox.isChecked(),
-             'LUTs': self.LUT_slider_values
-             }
-        return out
+        return self.left_toolbar._visual_settings
     
     @visual_settings.setter
     def visual_settings(self, settings):
-        if settings['RGB'] is not None: # RGB
-            self.set_RGB(settings['RGB'])
-        self.normalize_type=settings['normalize_type']
-        self.masks_checkbox.setChecked(settings['masks'])
-        self.outlines_checkbox.setChecked(settings['outlines'])
-        if settings['normalize_type']=='lut' and settings['LUTs'] is not None: # LUT
-            self.LUT_slider_values=settings['LUTs']
-
-    def get_segmentation_tab(self):
-        segmentation_tab=QWidget()
-        segmentation_layout=QVBoxLayout(segmentation_tab)
-        segmentation_layout.setSpacing(5)
-        segmentation_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        
-        segment_frame_widget=QWidget(objectName='bordered')
-        segment_frame_layout=QVBoxLayout(segment_frame_widget)
-        self.cell_diameter=QLineEdit(self, placeholderText='Auto')
-        self.cell_diameter.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
-        self.cell_diameter.setFixedWidth(60)
-        self.cell_diameter_calibrate=QPushButton("Calibrate", self)
-        self.cell_diameter_calibrate.setFixedWidth(70)
-        self.cell_diameter_layout=QHBoxLayout()
-        self.cell_diameter_layout.setSpacing(5)
-        self.cell_diameter_layout.addWidget(QLabel("Cell Diameter:", self))
-        self.cell_diameter_layout.addWidget(self.cell_diameter)
-        self.cell_diameter_layout.addWidget(self.cell_diameter_calibrate)
-
-        # channel selection
-        self.segmentation_channels_widget=QWidget()
-        self.segmentation_channels_widget.setContentsMargins(0, 0, 0, 0)
-        self.segmentation_channels_layout=QVBoxLayout(self.segmentation_channels_widget)
-        self.add_channel_layout(self.segmentation_channels_layout)
-
-        segmentation_button_layout=QHBoxLayout()
-        self.segment_frame_button=QPushButton("Segment Frame", self)
-        self.segment_stack_button=QPushButton("Segment Stack", self)
-        segmentation_button_layout.addWidget(self.segment_frame_button)
-        segmentation_button_layout.addWidget(self.segment_stack_button)
-
-        # segmentation utilities
-        segmentation_utils_widget=QWidget(objectName='bordered')
-        segmentation_utils_layout=QVBoxLayout(segmentation_utils_widget)
-        operate_on_label=QLabel("Operate on:", self)
-        operate_on_layout=QHBoxLayout()
-        self.segment_on_frame=QRadioButton("Frame", self)
-        self.segment_on_stack=QRadioButton("Stack", self)
-        self.segment_on_frame.setChecked(True)
-        mend_remove_layout=QHBoxLayout()
-        self.mend_gaps_button=QPushButton("Mend Gaps", self)
-        self.remove_edge_masks_button=QPushButton("Remove Edge Masks", self)
-        mend_remove_layout.addWidget(self.mend_gaps_button)
-        mend_remove_layout.addWidget(self.remove_edge_masks_button)
-        self.ROIs_label=QLabel("0 ROIs", self)
-        gap_size_layout=QHBoxLayout()
-        gap_size_label=QLabel("Gap Size:", self)
-        self.gap_size=QLineEdit(self, placeholderText='Auto')
-        self.gap_size.setValidator(QIntValidator(bottom=0)) # non-negative integers only
-        gap_size_layout.addWidget(gap_size_label)
-        gap_size_layout.addWidget(self.gap_size)
-        generate_remove_layout=QHBoxLayout()
-        generate_outlines_button=QPushButton("Generate Outlines", self)
-        clear_masks_button=QPushButton("Clear Masks", self)
-        generate_remove_layout.addWidget(generate_outlines_button)
-        generate_remove_layout.addWidget(clear_masks_button)
-        operate_on_layout.addWidget(self.segment_on_frame)
-        operate_on_layout.addWidget(self.segment_on_stack)
-        segmentation_button_layout.addWidget(self.mend_gaps_button)
-        segmentation_button_layout.addWidget(self.remove_edge_masks_button)
-
-        segment_frame_layout.addLayout(self.cell_diameter_layout)
-        segment_frame_layout.addWidget(self.segmentation_channels_widget)
-        segment_frame_layout.addSpacerItem(self.vertical_spacer())
-        segment_frame_layout.addWidget(self.ROIs_label)
-        segment_frame_layout.addLayout(segmentation_button_layout)
-
-        segmentation_utils_layout.addWidget(operate_on_label)
-        segmentation_utils_layout.addLayout(operate_on_layout)
-        segmentation_utils_layout.addLayout(mend_remove_layout)
-        segmentation_utils_layout.addLayout(gap_size_layout)
-        segmentation_utils_layout.addLayout(generate_remove_layout)
-
-        segmentation_layout.addWidget(segment_frame_widget)
-        segmentation_layout.addWidget(segmentation_utils_widget)
-
-        self.mend_gaps_button.clicked.connect(self.mend_gaps)
-        self.remove_edge_masks_button.clicked.connect(self.remove_edge_masks)
-        self.cell_diameter.textChanged.connect(self.update_cell_diameter)
-        self.cell_diameter_calibrate.clicked.connect(self.calibrate_diameter_pressed)
-        self.segment_frame_button.clicked.connect(self.segment_frame_pressed)
-        self.segment_stack_button.clicked.connect(self.segment_stack_pressed)
-        generate_outlines_button.clicked.connect(self.generate_outlines_list)
-        clear_masks_button.clicked.connect(self.clear_masks)
-        self.circle_mask=None
-
-        return segmentation_tab
+        self.left_toolbar._visual_settings=settings
     
+    @property
+    def masks_visible(self):
+        return self.left_toolbar.masks_checkbox.isChecked()
+    
+    @masks_visible.setter
+    def masks_visible(self, is_visible):
+        self.left_toolbar.masks_checkbox.setChecked(is_visible)
+        self.canvas.overlay_masks()
+
+    @property
+    def outlines_visible(self):
+        return self.left_toolbar.outlines_checkbox.isChecked()
+    
+    @outlines_visible.setter
+    def outlines_visible(self, is_visible):
+        self.left_toolbar.outlines_checkbox.setChecked(is_visible)
+        self.canvas.overlay_outlines()
+
     def update_ROIs_label(self):
         if not self.file_loaded:
             return
         
-        self.ROIs_label.setText(f'{self.frame.n_cells} ROIs')
+        self.left_toolbar.ROIs_label.setText(f'{self.frame.n_cells} ROIs')
 
     def cell_prompt_changed(self, cell_n):
         if not self.file_loaded:
@@ -943,7 +766,7 @@ class MainWidget(QMainWindow):
         self.update_ROIs_label()
 
         if hasattr(self.stack, 'tracked_centroids'):
-            self.also_save_tracking.setChecked(True)
+            self.left_toolbar.also_save_tracking.setChecked(True)
     
     def update_cell_diameter(self, diameter):
         self.draw_cell_diameter(diameter)
@@ -963,7 +786,7 @@ class MainWidget(QMainWindow):
         self.canvas.img_plot.addItem(self.circle_mask)
 
     def calibrate_diameter_pressed(self):
-        channels=[self.membrane_channel.currentIndex(), self.nuclear_channel.currentIndex()]
+        channels=self.left_toolbar.segmentation_channels
         diam=self.calibrate_cell_diameter(self.frame.img, channels)
 
         print(f'Computed cell diameter {diam:.2f} with channels {channels}')
@@ -1003,7 +826,7 @@ class MainWidget(QMainWindow):
 
         # update the display
         self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
-        self.masks_checkbox.setChecked(True)
+        self.masks_visible=True
         self.canvas.draw_masks()
         self.update_display()
         self.FUCCI_overlay()
@@ -1020,7 +843,7 @@ class MainWidget(QMainWindow):
 
         # update the display
         self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
-        self.masks_checkbox.setChecked(True)
+        self.masks_visible=True
         self.canvas.draw_masks()
         self.update_display()
         self.FUCCI_overlay()
@@ -1031,7 +854,7 @@ class MainWidget(QMainWindow):
             diameter=None
         else:
             diameter=float(diameter)
-        channels=[self.membrane_channel.currentIndex(), self.nuclear_channel.currentIndex()]
+        channels=self.left_toolbar.segmentation_channels
 
         if not hasattr(self, 'cellpose_model'):
             from cellpose import models
@@ -1076,7 +899,7 @@ class MainWidget(QMainWindow):
             if hasattr(self.stack, 'tracked_centroids'):
                 t=self.stack.tracked_centroids
                 self.stack.tracked_centroids=t[t.frame!=frame.frame_number]
-                self.also_save_tracking.setChecked(True)
+                self.left_toolbar.also_save_tracking.setChecked(True)
 
         self.update_display()
 
@@ -1133,94 +956,6 @@ class MainWidget(QMainWindow):
         if hasattr(frame, 'stored_mask_overlay'):
             del frame.stored_mask_overlay
 
-    def get_FUCCI_tab(self):
-        FUCCI_tab = QWidget()
-        FUCCI_tab_layout = QVBoxLayout(FUCCI_tab)
-        FUCCI_tab_layout.setSpacing(10)
-        FUCCI_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        get_intensities_button=QPushButton("Get Cell Red/Green Intensities", self)
-        get_tracked_FUCCI_button=QPushButton("FUCCI from tracks", self)
-        measure_FUCCI_widget=QWidget(objectName='bordered')
-        measure_FUCCI_layout=QVBoxLayout(measure_FUCCI_widget)
-
-        red_threshold_layout=QHBoxLayout()
-        red_threshold_label=QLabel("Red Threshold:", self)
-        self.red_threshold=QLineEdit(self, placeholderText='Auto')
-        self.red_threshold.setFixedWidth(60)
-        self.red_threshold.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
-        red_threshold_layout.addWidget(red_threshold_label)
-        red_threshold_layout.addWidget(self.red_threshold)
-
-        green_threshold_layout=QHBoxLayout()
-        green_threshold_label=QLabel("Green Threshold:", self)
-        self.green_threshold=QLineEdit(self, placeholderText='Auto')
-        self.green_threshold.setFixedWidth(60)
-        self.green_threshold.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
-        green_threshold_layout.addWidget(green_threshold_label)
-        green_threshold_layout.addWidget(self.green_threshold)
-
-        percent_threshold_layout=QHBoxLayout()
-        percent_threshold_label=QLabel("Minimum N/C Ratio:", self)
-        self.percent_threshold=QLineEdit(self, placeholderText='0.15')
-        self.percent_threshold.setFixedWidth(60)
-        self.percent_threshold.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
-        percent_threshold_layout.addWidget(percent_threshold_label)
-        percent_threshold_layout.addWidget(self.percent_threshold)
-
-        FUCCI_button_layout=QHBoxLayout()
-        FUCCI_button_layout.setSpacing(5)
-        FUCCI_frame_button=QPushButton("Measure Frame", self)
-        FUCCI_stack_button=QPushButton("Measure Stack", self)
-        FUCCI_button_layout.addWidget(FUCCI_frame_button)
-        FUCCI_button_layout.addWidget(FUCCI_stack_button)
-
-        annotate_FUCCI_widget=QWidget(objectName='bordered')
-        annotate_FUCCI_layout=QVBoxLayout(annotate_FUCCI_widget)
-        FUCCI_overlay_layout=QHBoxLayout()
-        overlay_label = QLabel("FUCCI overlay: ", self)
-        self.FUCCI_dropdown = QComboBox(self)
-        self.FUCCI_dropdown.addItems(["None", "Green", "Red", "All"])
-        FUCCI_overlay_layout.addWidget(overlay_label)
-        FUCCI_overlay_layout.addWidget(self.FUCCI_dropdown)
-        self.FUCCI_checkbox = QCheckBox("Show FUCCI Channel", self)
-        # clear FUCCI, propagate FUCCI
-        self.propagate_FUCCI_checkbox=QCheckBox("Propagate FUCCI", self)
-        self.propagate_FUCCI_checkbox.setEnabled(False)
-        clear_frame_button=QPushButton("Clear Frame", self)
-        clear_stack_button=QPushButton("Clear Stack", self)
-        clear_FUCCI_layout=QHBoxLayout()
-        clear_FUCCI_layout.addWidget(clear_frame_button)
-        clear_FUCCI_layout.addWidget(clear_stack_button)
-
-        measure_FUCCI_layout.addLayout(red_threshold_layout)
-        measure_FUCCI_layout.addLayout(green_threshold_layout)
-        measure_FUCCI_layout.addLayout(percent_threshold_layout)
-        measure_FUCCI_layout.addSpacerItem(self.vertical_spacer())
-        measure_FUCCI_layout.addLayout(FUCCI_button_layout)
-
-        annotate_FUCCI_layout.addLayout(FUCCI_overlay_layout)
-        annotate_FUCCI_layout.addWidget(self.FUCCI_checkbox)
-        annotate_FUCCI_layout.addSpacerItem(self.vertical_spacer())
-        annotate_FUCCI_layout.addWidget(self.propagate_FUCCI_checkbox)
-        annotate_FUCCI_layout.addLayout(clear_FUCCI_layout)
-
-        FUCCI_tab_layout.addWidget(get_intensities_button)
-        FUCCI_tab_layout.addWidget(get_tracked_FUCCI_button)
-        FUCCI_tab_layout.addWidget(measure_FUCCI_widget)
-        FUCCI_tab_layout.addWidget(annotate_FUCCI_widget)
-
-        get_intensities_button.clicked.connect(self.cell_red_green_intensities)
-        get_tracked_FUCCI_button.clicked.connect(self.get_tracked_FUCCI)
-        self.FUCCI_dropdown.currentIndexChanged.connect(self.FUCCI_overlay_changed)
-        self.FUCCI_checkbox.stateChanged.connect(self.update_display)
-        FUCCI_frame_button.clicked.connect(self.measure_FUCCI_frame)
-        FUCCI_stack_button.clicked.connect(self.measure_FUCCI_stack)
-        self.propagate_FUCCI_checkbox.stateChanged.connect(self.propagate_FUCCI_toggled)
-        clear_frame_button.clicked.connect(self.clear_FUCCI_frame_pressed)
-        clear_stack_button.clicked.connect(self.clear_FUCCI_stack_pressed)
-
-        return FUCCI_tab
     
     def get_tracked_FUCCI(self):
         if not self.file_loaded:
@@ -1287,28 +1022,9 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         self.measure_FUCCI(self.stack.frames)
-
-    def get_FUCCI_thresholds(self):
-        red_threshold=self.red_threshold.text()
-        green_threshold=self.green_threshold.text()
-        percent_threshold=self.percent_threshold.text()
-
-        if red_threshold=='':
-            red_threshold=None
-        else:
-            red_threshold=float(red_threshold)
-        if green_threshold=='':
-            green_threshold=None
-        else:
-            green_threshold=float(green_threshold)
-        if percent_threshold=='':
-            percent_threshold=0.15
-        else:
-            percent_threshold=float(percent_threshold)
-        return red_threshold, green_threshold, percent_threshold
     
     def measure_FUCCI(self, frames):
-        red_threshold, green_threshold, percent_threshold=self.get_FUCCI_thresholds()
+        red_threshold, green_threshold, percent_threshold=self.left_toolbar.red_threshold, self.left_toolbar.green_threshold, self.left_toolbar.percent_threshold
         for frame in self.progress_bar(frames, desc='Measuring FUCCI'):
             if self.is_zstack:
                 img=frame.zstack[self.zstack_number]
@@ -1322,126 +1038,10 @@ class MainWidget(QMainWindow):
         
         red_threshold=self.frame.red_fluor_threshold
         green_threshold=self.frame.green_fluor_threshold
-        self.red_threshold.setText(f'{red_threshold:.2f}')
-        self.green_threshold.setText(f'{green_threshold:.2f}')
-        self.FUCCI_dropdown.setCurrentIndex(3)
+        self.red_threshold=red_threshold
+        self.green_threshold=green_threshold
+        self.FUCCI_dropdown=3
         self.FUCCI_overlay()
-
-    def get_volumes_tab(self):
-        self.volumes_tab=QWidget()
-        volumes_layout=QVBoxLayout(self.volumes_tab)
-        volumes_layout.setSpacing(10)
-        volumes_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        operate_on_label=QLabel("Operate on:", self)
-        operate_on_layout=QHBoxLayout()
-        self.volumes_on_frame=QRadioButton("Frame", self)
-        self.volumes_on_stack=QRadioButton("Stack", self)
-        operate_on_layout.addWidget(self.volumes_on_frame)
-        operate_on_layout.addWidget(self.volumes_on_stack)
-        self.volumes_on_frame.setChecked(True)
-        self.get_heights_layout=QHBoxLayout()
-        self.get_heights_button=QPushButton("Measure Heights", self)
-        self.volume_button=QPushButton("Measure Volumes", self)
-        self.get_heights_layout.addWidget(self.get_heights_button)
-        self.get_heights_layout.addWidget(self.volume_button)
-        peak_prominence_label=QLabel("Peak Prominence (0 to 1):", self)
-        self.peak_prominence=QLineEdit(self, text='0.01', placeholderText='0.01')
-        self.peak_prominence.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
-        self.peak_prominence.setFixedWidth(60)
-        self.peak_prominence_layout=QHBoxLayout()
-        self.peak_prominence_layout.addWidget(peak_prominence_label)
-        self.peak_prominence_layout.addWidget(self.peak_prominence)
-        self.get_coverslip_height_layout=QHBoxLayout()
-        coverslip_height_label=QLabel("Coverslip Height (μm):", self)
-        self.coverslip_height=QLineEdit(self, placeholderText='Auto')
-        self.coverslip_height.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
-        self.coverslip_height.setFixedWidth(60)
-        self.get_coverslip_height=QPushButton("Calibrate", self)
-        self.get_coverslip_height_layout.addWidget(coverslip_height_label)
-        self.get_coverslip_height_layout.addWidget(self.coverslip_height)
-        self.get_coverslip_height_layout.addWidget(self.get_coverslip_height)
-        self.get_spherical_volumes=QPushButton("Compute Spherical Volumes", self)
-
-        self.volume_button.clicked.connect(self.measure_volumes)
-        self.get_heights_button.clicked.connect(self.measure_heights)
-        self.get_coverslip_height.clicked.connect(self.calibrate_coverslip_height)
-        self.get_spherical_volumes.clicked.connect(self.compute_spherical_volumes)
-
-        volumes_layout.addWidget(operate_on_label)
-        volumes_layout.addLayout(operate_on_layout)
-        volumes_layout.addLayout(self.get_heights_layout)
-        volumes_layout.addLayout(self.peak_prominence_layout)
-        volumes_layout.addLayout(self.get_coverslip_height_layout)
-        volumes_layout.addWidget(self.get_spherical_volumes)
-
-        return self.volumes_tab
-    
-    def get_tracking_tab(self):
-        tracking_tab = QWidget()
-        tracking_tab_layout = QVBoxLayout(tracking_tab)
-        tracking_tab_layout.setSpacing(10)
-        tracking_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        self.tracking_range_layout=QFormLayout()
-        range_label = QLabel('Search Range:  ', self)
-        memory_label = QLabel('Memory:  ', self)
-        self.memory_range = QLineEdit(self, placeholderText='0')
-        self.tracking_range = QLineEdit(self, placeholderText='Auto')
-        self.tracking_range.setValidator(QDoubleValidator(bottom=0)) # non-negative floats only
-        self.memory_range.setValidator(QIntValidator(bottom=0)) # non-negative integers only
-        self.tracking_range_layout.addRow(range_label, self.tracking_range)
-        self.tracking_range_layout.addRow(memory_label, self.memory_range)
-
-        self.track_centroids_button = QPushButton("Track Centroids", self)
-
-        io_menu=QHBoxLayout()
-        self.save_tracking_button=QPushButton("Save Tracking", self)
-        self.load_tracking_button=QPushButton("Load Tracking", self)
-        io_menu.addWidget(self.save_tracking_button)
-        io_menu.addWidget(self.load_tracking_button)
-
-        self.highlight_track_ends_checkbox=QCheckBox("Highlight Track Ends", self)
-        split_particle_button=QPushButton("Split Particle", self)
-        delete_particle_label=QLabel("Delete Particle:", self)
-        delete_particle_layout=QHBoxLayout()
-        delete_head=QPushButton("Head", self)
-        delete_tail=QPushButton("Tail", self)
-        delete_all=QPushButton("All", self)
-        delete_particle_layout.addWidget(delete_head)
-        delete_particle_layout.addWidget(delete_tail)
-        delete_particle_layout.addWidget(delete_all)
-        clear_tracking_button=QPushButton("Clear Tracking", self)
-
-        track_centroids_widget=QWidget(objectName='bordered')
-        track_centroids_layout=QVBoxLayout(track_centroids_widget)
-        edit_tracking_widget=QWidget(objectName='bordered')
-        edit_tracking_layout=QVBoxLayout(edit_tracking_widget)
-        track_centroids_layout.addLayout(self.tracking_range_layout)
-        track_centroids_layout.addWidget(self.track_centroids_button)
-        edit_tracking_layout.addWidget(self.highlight_track_ends_checkbox)
-        edit_tracking_layout.addWidget(split_particle_button)
-        edit_tracking_layout.addWidget(delete_particle_label)
-        edit_tracking_layout.addLayout(delete_particle_layout)
-        edit_tracking_layout.addWidget(clear_tracking_button)
-        edit_tracking_layout.addSpacerItem(self.vertical_spacer())
-        edit_tracking_layout.addLayout(io_menu)
-        
-        tracking_tab_layout.addWidget(track_centroids_widget)
-        tracking_tab_layout.addWidget(edit_tracking_widget)
-
-        self.track_centroids_button.clicked.connect(self.track_centroids)
-        self.tracking_range.returnPressed.connect(self.track_centroids)
-        split_particle_button.clicked.connect(self.split_particle_tracks)
-        clear_tracking_button.clicked.connect(self.clear_tracking)
-        self.save_tracking_button.clicked.connect(self.save_tracking)
-        self.load_tracking_button.clicked.connect(self.load_tracking_pressed)
-        self.highlight_track_ends_checkbox.stateChanged.connect(self.highlight_track_ends)
-        delete_head.clicked.connect(self.delete_particle_head)
-        delete_tail.clicked.connect(self.delete_particle_tail)
-        delete_all.clicked.connect(self.delete_particle)
-
-        return tracking_tab
 
     def delete_particle_head(self):
         if not self.file_loaded:
@@ -1456,7 +1056,7 @@ class MainWidget(QMainWindow):
             t=self.stack.tracked_centroids
 
             head_cell_numbers, head_frame_numbers=np.array(t[(t.particle==particle_n)&(t.frame<=current_frame_n)][['cell_number', 'frame']]).T
-            self.also_save_tracking.setChecked(True)
+            self.left_toolbar.also_save_tracking.setChecked(True)
             for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
                 frame=self.stack.frames[frame_n]
                 if hasattr(frame, 'stored_mask_overlay'):
@@ -1480,7 +1080,7 @@ class MainWidget(QMainWindow):
             t=self.stack.tracked_centroids
 
             head_cell_numbers, head_frame_numbers=np.array(t[(t.particle==particle_n)&(t.frame>=current_frame_n)][['cell_number', 'frame']]).T
-            self.also_save_tracking.setChecked(True)
+            self.left_toolbar.also_save_tracking.setChecked(True)
             for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
                 frame=self.stack.frames[frame_n]
                 if hasattr(frame, 'stored_mask_overlay'):
@@ -1502,7 +1102,7 @@ class MainWidget(QMainWindow):
             if particle_n is None:
                 particle_n=self.selected_particle_n
             t=self.stack.tracked_centroids
-            self.also_save_tracking.setChecked(True)
+            self.left_toolbar.also_save_tracking.setChecked(True)
 
             head_cell_numbers, head_frame_numbers=np.array(t[t.particle==particle_n][['cell_number', 'frame']]).T
             for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
@@ -1534,11 +1134,11 @@ class MainWidget(QMainWindow):
         self.canvas.draw_masks()
 
     def highlight_track_ends(self):
-        if not self.file_loaded or self.tabbed_menu_widget.currentIndex()!=2:
+        if not self.file_loaded or self.left_toolbar.tabbed_widget.currentIndex()!=2:
             self.canvas.clear_tracking_overlay()
             return
         
-        if self.highlight_track_ends_checkbox.isChecked() and hasattr(self.stack, 'tracked_centroids'):
+        if self.left_toolbar.highlight_track_ends_checkbox.isChecked() and hasattr(self.stack, 'tracked_centroids'):
             # get the start and end points of each track
             t=self.stack.tracked_centroids
             track_ends=t.groupby('particle').agg({'frame': ['first', 'last']})
@@ -1622,12 +1222,10 @@ class MainWidget(QMainWindow):
         
         if not hasattr(frame, 'z_scale'):
             print(f'No z-scale available for {frame.name}. Defaulting to 1.')
-            self.z_size.setText('1.0')
-            self.update_voxel_size()
+            self.left_toolbar.z_size=1.0
         if not hasattr(frame, 'scale'):
             print(f'No scale available for {frame.name}. Defaulting to 0.1625.')
-            self.xy_size.setText('0.1625')
-            self.update_voxel_size()
+            self.left_toolbar.xy_size=0.1625
             frame.scale=0.1625 # 40x objective with 0.325 µm/pixel camera
         frame.get_volumes()
         return frame.volumes
@@ -1654,14 +1252,13 @@ class MainWidget(QMainWindow):
         
         if not hasattr(self.frame, 'z_scale'):
             print(f'No z-scale available for {self.frame.name}. Defaulting to 1.')
-            self.z_size.setText('1.0')
-            self.update_voxel_size()
+            self.left_toolbar.z_size=1.0
         scale=self.frame.z_scale
 
         coverslip_height=get_coverslip_z(z_profile, scale=scale, precision=0.01)
         for frame in frames:
             frame.coverslip_height=coverslip_height
-        self.coverslip_height.setText(f'{coverslip_height:.2f}')
+        self.left_toolbar.coverslip_height.setText(f'{coverslip_height:.2f}')
 
     def measure_heights(self):
         if not self.file_loaded:
@@ -1672,16 +1269,16 @@ class MainWidget(QMainWindow):
         else:
             frames=[self.frame]
         
-        peak_prominence=self.peak_prominence.text()
+        peak_prominence=self.left_toolbar.peak_prominence.text()
         if peak_prominence=='':
             peak_prominence=0.01
         else:
             peak_prominence=float(peak_prominence)
 
-        coverslip_height=self.coverslip_height.text()
+        coverslip_height=self.left_toolbar.coverslip_height.text()
         if coverslip_height=='':
             self.calibrate_coverslip_height()
-            coverslip_height=self.coverslip_height.text()
+            coverslip_height=self.left_toolbar.coverslip_height.text()
         coverslip_height=float(coverslip_height)
         
         for frame in self.progress_bar(frames):
@@ -1697,7 +1294,7 @@ class MainWidget(QMainWindow):
                 frame.coverslip_height=coverslip_height
                 self.show_seg_overlay()
 
-        self.volume_button.setEnabled(True)
+        self.left_toolbar.volume_button.setEnabled(True)
 
     def compute_spherical_volumes(self):
         if not self.file_loaded:
@@ -1734,23 +1331,23 @@ class MainWidget(QMainWindow):
             self.is_zstack=False
 
         if self.is_zstack or hasattr(self.frame, 'heights'):
-            self.volume_button.setEnabled(True)
+            self.left_toolbar.volume_button.setEnabled(True)
             if not self.is_zstack: # enable/disable z-stack specific options
-                self.get_heights_button.setEnabled(False)
-                self.peak_prominence.setEnabled(False)
+                self.left_toolbar.get_heights_button.setEnabled(False)
+                self.left_toolbar.peak_prominence.setEnabled(False)
             else:
-                self.get_heights_button.setEnabled(True)
-                self.peak_prominence.setEnabled(True)
+                self.left_toolbar.get_heights_button.setEnabled(True)
+                self.left_toolbar.peak_prominence.setEnabled(True)
 
             if hasattr(self.frame, 'coverslip_height'):
-                self.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
+                self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
             else:
-                self.coverslip_height.setText('')
+                self.left_toolbar.coverslip_height.setText('')
         else:
-            self.get_heights_button.setEnabled(False)
-            self.peak_prominence.setEnabled(False)
-            self.volume_button.setEnabled(False)
-            self.coverslip_height.setText('')
+            self.left_toolbar.get_heights_button.setEnabled(False)
+            self.left_toolbar.peak_prominence.setEnabled(False)
+            self.left_toolbar.volume_button.setEnabled(False)
+            self.left_toolbar.coverslip_height.setText('')
 
         self.imshow()
 
@@ -1769,24 +1366,32 @@ class MainWidget(QMainWindow):
             self.get_red_green()
         
         if hasattr(self.frame, 'red_fluor_threshold'):
-            self.red_threshold.setText(f'{self.frame.red_fluor_threshold:.2f}')
-            self.green_threshold.setText(f'{self.frame.green_fluor_threshold:.2f}')
+            self.left_toolbar.red_threshold=self.frame.red_fluor_threshold
+            self.left_toolbar.green_threshold=self.frame.green_fluor_threshold
         else:
-            self.red_threshold.setText('')
-            self.green_threshold.setText('')
+            self.left_toolbar.red_threshold=None
+            self.left_toolbar.green_threshold=None
         
         self.update_voxel_size_labels()
 
         if hasattr(self.frame, 'cell_diameter'):
             self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
 
-        if self.FUCCI_dropdown.currentIndex() != 0:
+        if self.FUCCI_dropdown != 0:
             self.FUCCI_overlay()
 
         # frame marker on stat plot
         self.stat_plot_frame_marker.setPos(self.frame_number)
         self.time_series_frame_marker.setPos(self.frame_number)
         self.status_frame_number.setText(f'Frame: {frame_number}')
+
+    @property
+    def FUCCI_dropdown(self):
+        return self.left_toolbar.FUCCI_dropdown.currentIndex()
+    
+    @FUCCI_dropdown.setter
+    def FUCCI_dropdown(self, index):
+        self.left_toolbar.FUCCI_dropdown.setCurrentIndex(index)
 
     def update_coordinate_label(self, x=None, y=None):
         ''' Update the status bar with the current cursor coordinates. '''
@@ -1818,7 +1423,7 @@ class MainWidget(QMainWindow):
         if self.is_grayscale:
             return [img[y, x]]
 
-        hidden_channels=np.where(~np.array(self.get_RGB()))[0]
+        hidden_channels=np.where(~np.array(self.left_toolbar.RGB_visible))[0]
         pixel_value=list(img[y, x])
         for channel in hidden_channels:
             pixel_value[channel]=None
@@ -1875,7 +1480,7 @@ class MainWidget(QMainWindow):
         self.statusBar().showMessage(f'Tracked centroids for stack {self.stack.name}.', 2000)
         self.recolor_tracks()
         self.canvas.draw_masks()
-        self.propagate_FUCCI_checkbox.setEnabled(True)
+        self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(True)
 
     def recolor_tracks(self):
         # recolor cells so each particle has one color over time
@@ -1889,14 +1494,6 @@ class MainWidget(QMainWindow):
         for frame in self.stack.frames:
             tracked_frame=t[t.frame==frame.frame_number].sort_values('cell_number')
             frame.set_cell_attrs('color_ID', self.canvas.cell_cmap(tracked_frame['color']))
-
-    def LUT_slider_changed(self, event):
-        ''' Update the LUTs when the sliders are moved. '''
-        if not self.file_loaded:
-            self.update_LUT_labels()
-            return
-        self.normalize_custom_button.setChecked(True)
-        self.set_LUTs()
 
     def particle_from_cell(self, cell_number, frame_number=None):
         if not hasattr(self.stack, 'tracked_centroids'):
@@ -1944,7 +1541,7 @@ class MainWidget(QMainWindow):
         
         print(f'Split particle {self.selected_particle_n} at frame {self.frame_number}')
         
-        self.also_save_tracking.setChecked(True)
+        self.left_toolbar.also_save_tracking.setChecked(True)
         self.plot_particle_statistic()
         self.highlight_track_ends()
 
@@ -1958,7 +1555,7 @@ class MainWidget(QMainWindow):
                     return
                 merged_color=first_particle_cell.color_ID
                 merged, new_head, new_tail=self.stack.merge_particle_tracks(first_particle, second_particle, self.frame_number)
-                self.also_save_tracking.setChecked(True)
+                self.left_toolbar.also_save_tracking.setChecked(True)
                 if new_head is not None:
                     new_head_color=self.canvas.random_cell_color()
                     for cell in self.stack.get_particle(new_head):
@@ -1989,14 +1586,8 @@ class MainWidget(QMainWindow):
             
     def set_LUTs(self):
         ''' Set the LUTs for the image display based on the current slider values. '''
-        self.canvas.img.setLevels(self.LUT_slider_values)
-        self.update_LUT_labels()
-
-    def update_LUT_labels(self):
-        ''' Update the labels next to the LUT sliders with the current values. '''
-        for slider, labels in zip(self.LUT_range_sliders, self.LUT_range_labels):
-            labels[0].setText(str(slider.value()[0]))
-            labels[1].setText(str(slider.value()[1]))
+        self.canvas.img.setLevels(self.left_toolbar.LUT_slider_values)
+        self.left_toolbar.update_LUT_labels()
         
     def update_display(self):
         """Redraw the image data with whatever new settings have been applied from the toolbar."""
@@ -2005,25 +1596,9 @@ class MainWidget(QMainWindow):
         self.show_seg_overlay()
         img_data=self.frame.img
         seg_data=self.canvas.image_transform(self.frame.outlines)
-        self.canvas.update_display(img_data=img_data, seg_data=seg_data, RGB_checks=self.get_RGB())
+        self.canvas.update_display(img_data=img_data, seg_data=seg_data, RGB_checks=self.left_toolbar.RGB_visible)
         self.normalize()
     
-    @property
-    def normalize_type(self):
-        ''' Get the state of the normalize buttons. Returns the selected button as a string. '''
-        button_status=[self.normalize_frame_button.isChecked(), self.normalize_stack_button.isChecked(), self.normalize_custom_button.isChecked()]
-        button_names=np.array(['frame', 'stack', 'lut'])
-        return button_names[button_status][0]
-    
-    @normalize_type.setter
-    def normalize_type(self, value):
-        ''' Set the state of the normalize buttons based on the input string. '''
-        button_names=np.array(['frame', 'stack', 'lut'])
-        button_status=button_names==value
-        self.normalize_frame_button.setChecked(button_status[0])
-        self.normalize_stack_button.setChecked(button_status[1])
-        self.normalize_custom_button.setChecked(button_status[2])
-
     def auto_range_sliders(self):
         if self.is_grayscale:
             n_colors=1
@@ -2040,66 +1615,29 @@ class MainWidget(QMainWindow):
             all_imgs=all_imgs[::len(all_imgs)//int(1e6)]
         stack_range=np.array([np.min(all_imgs, axis=0), np.max(all_imgs, axis=0)]).T
         self.stack.min_max=stack_range
-        self.set_LUT_slider_ranges(stack_range)
+        self.left_toolbar.set_LUT_slider_ranges(stack_range)
 
-    @property
-    def LUT_slider_values(self):
-        ''' Get the current values of the LUT sliders. '''
-        slider_values=[slider.value() for slider in self.LUT_range_sliders]
-        
-        return slider_values
-    
-    @LUT_slider_values.setter
-    def LUT_slider_values(self, bounds):
-        for slider, bound in zip(self.LUT_range_sliders, bounds):
-            if bound[0]==bound[1]: # prevent division by zero
-                bound=(0,1)
-            slider.blockSignals(True)
-            slider.setValue(tuple(bound))
-            slider.blockSignals(False)
-        self.set_LUTs()
-
-    def set_LUT_slider_ranges(self, ranges):
-        for slider, slider_range in zip(self.LUT_range_sliders, ranges):
-            slider.blockSignals(True)
-            slider.setRange(*slider_range)
-            slider.blockSignals(False)
-    
     def update_voxel_size(self):
-        ''' Update the voxel size when the user changes the text in the voxel size box. '''
         if not self.file_loaded:
             return
-        xy_size=self.xy_size.text()
-        z_size=self.z_size.text()
-
-        if xy_size=='':
-            xy_size=None
-        else:
-            xy_size=float(xy_size)
-        if z_size=='':
-            z_size=None
-        else:
-            z_size=float(z_size)
-
-        self.set_voxel_size(xy_size, z_size)
-
-    def set_voxel_size(self, xy_size=None, z_size=None):
-        if xy_size is not None:
+        xy=self.left_toolbar.xy_size
+        z=self.left_toolbar.z_size
+        
+        if xy is not None:
             for frame in self.stack.frames:
-                frame.scale=xy_size
-        if z_size is not None:
+                frame.scale=xy
+        if z is not None:
             for frame in self.stack.frames:
-                frame.z_scale=z_size
-        self.update_voxel_size_labels()
+                frame.z_scale=z
 
     def update_voxel_size_labels(self):
         ''' Update the labels next to the voxel size boxes with the current values. '''
         if hasattr(self.frame, 'scale'):
             xy_size=self.frame.scale
-            self.xy_size.setText(str(xy_size))
+            self.left_toolbar.xy_size=xy_size
         if hasattr(self.frame, 'z_scale'):
             z_size=self.frame.z_scale
-            self.z_size.setText(str(z_size))
+            self.left_toolbar.z_size=z_size
 
     def update_normalize_frame(self):
         if not self.file_loaded:
@@ -2112,7 +1650,7 @@ class MainWidget(QMainWindow):
         else:
             colors=3
         
-        if self.normalize_type=='frame': # normalize the frame
+        if self.left_toolbar.normalize_type=='frame': # normalize the frame
             if self.is_zstack:
                 if hasattr(self.frame, 'bounds'):
                     bounds=self.frame.bounds[self.zstack_number]
@@ -2128,7 +1666,7 @@ class MainWidget(QMainWindow):
                     bounds=np.quantile(self.canvas.img_data.reshape(-1,colors), (0.01, 0.99), axis=0).T
                     self.frame.bounds=bounds
 
-        elif self.normalize_type=='stack': # normalize the stack
+        elif self.left_toolbar.normalize_type=='stack': # normalize the stack
             if hasattr(self.stack, 'bounds'):
                 bounds=self.stack.bounds
             else:
@@ -2143,9 +1681,9 @@ class MainWidget(QMainWindow):
                 self.stack.bounds=bounds
         
         else: # custom: use the slider values
-            bounds=np.array([slider.value() for slider in self.LUT_range_sliders])
+            bounds=np.array([slider.value() for slider in self.left_toolbar.LUT_range_sliders])
         
-        self.LUT_slider_values=bounds
+        self.left_toolbar.LUT_slider_values=bounds
 
         return bounds
     
@@ -2412,7 +1950,7 @@ class MainWidget(QMainWindow):
                 cell.green=True
                 cell.red=True
         
-        if self.propagate_FUCCI_checkbox.isChecked():
+        if self.left_toolbar.propagate_FUCCI_checkbox.isChecked():
             if hasattr(self.stack, 'tracked_centroids'):
                 particle=self.stack.get_particle(cell)
                 for cell_timepoint in particle:
@@ -2421,12 +1959,12 @@ class MainWidget(QMainWindow):
                         cell_timepoint.red=cell.red
 
         if self.FUCCI_mode:
-            overlay_color=self.FUCCI_dropdown.currentText().lower()
-            if overlay_color=='all':
+            overlay_color=self.FUCCI_dropdown
+            if overlay_color==3:
                 color=['none','g','r','orange'][2*cell.red+cell.green]
-            elif overlay_color=='green':
+            elif overlay_color==1:
                 color=['none', 'g'][cell.green]
-            elif overlay_color=='red':
+            elif overlay_color==2:
                 color=['none', 'r'][cell.red]
             else:
                 color='none'
@@ -2511,7 +2049,19 @@ class MainWidget(QMainWindow):
         colors=np.array(self.canvas.cell_cmap(random_colors))[...,:3]
 
         return colors
-        
+    
+    @property
+    def is_grayscale(self):
+        return self.left_toolbar.is_grayscale
+    
+    @is_grayscale.setter
+    def is_grayscale(self, value):
+        if value:
+            self.left_toolbar.grayscale_mode()
+        else:
+            self.left_toolbar.RGB_mode()
+
+    #--------------Segmentation functions----------------
     def add_cell_mask(self, enclosed_pixels):
         new_mask_n=self.frame.n_cells # new cell number
         cell_mask=np.zeros_like(self.frame.masks, dtype=bool)
@@ -2540,7 +2090,7 @@ class MainWidget(QMainWindow):
             new_particle=pd.DataFrame([[new_mask_n, centroid[0], centroid[1], self.frame_number, new_particle_ID, cell_color_n]], columns=t.columns, index=[t.index.max()+1]) # TODO: handle situations where tracked_centroids has more or fewer columns
             self.stack.tracked_centroids=pd.concat([t, new_particle])
             self.stack.tracked_centroids=self.stack.tracked_centroids.sort_values(['frame', 'particle'])
-            self.also_save_tracking.setChecked(True)
+            self.left_toolbar.also_save_tracking.setChecked(True)
 
         self.canvas.draw_outlines()
         self.highlight_track_ends()
@@ -2726,7 +2276,7 @@ class MainWidget(QMainWindow):
             t=self.stack.tracked_centroids
             # recompute merged cell centroid
             t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n1), ['x','y']]=new_cell.centroid.astype(t['x'].dtype)
-            self.also_save_tracking.setChecked(True)
+            self.left_toolbar.also_save_tracking.setChecked(True)
 
         # add new cell mask to the overlay
         self.canvas.add_cell_highlight(cell_n1, alpha=self.canvas.masks_alpha, color=new_cell.color_ID, layer='mask')
@@ -2779,7 +2329,7 @@ class MainWidget(QMainWindow):
         
         self.stack.delete_cells([cell_n], frame_number=frame.frame_number)
         if hasattr(self.stack, 'tracked_centroids'):
-            self.also_save_tracking.setChecked(True)
+            self.left_toolbar.also_save_tracking.setChecked(True)
 
         if update_display:
             print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
@@ -2815,17 +2365,17 @@ class MainWidget(QMainWindow):
         self.stack.load_tracking(file_path)
         print(f'Loaded tracking data from {file_path}')
         self.statusBar().showMessage(f'Loaded tracking data from {file_path}', 2000)
-        self.propagate_FUCCI_checkbox.setEnabled(True)
+        self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(True)
         self.recolor_tracks()
 
     def save_segmentation(self):
         if not self.file_loaded:
             return
 
-        if self.also_save_tracking.isChecked():
+        if self.left_toolbar.also_save_tracking.isChecked():
             self.save_tracking(file_path=self.stack.name+'tracking.csv')
 
-        if self.save_stack.isChecked():
+        if self.left_toolbar.save_stack.isChecked():
             frames_to_save=self.stack.frames
 
         else:
@@ -2839,7 +2389,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
 
-        if self.save_stack.isChecked():
+        if self.left_toolbar.save_stack.isChecked():
             folder_path=QFileDialog.getExistingDirectory(self, 'Save stack to folder...')
             if folder_path=='':
                 return
@@ -2855,7 +2405,7 @@ class MainWidget(QMainWindow):
                 file_path=file_path+'_seg.npy'
             self.save_frame(self.frame, file_path)
         
-        if self.also_save_tracking.isChecked():
+        if self.left_toolbar.also_save_tracking.isChecked():
             self.save_tracking(file_path=folder_path+'/tracking.csv')
 
 
@@ -2950,33 +2500,34 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         
-        self.tabbed_menu_widget.blockSignals(True) # manually switch tabs (without triggering tab switch event)
-        self.tabbed_menu_widget.setCurrentIndex(1) # switch to the FUCCI tab
+        self.left_toolbar.tabbed_widget.blockSignals(True) # manually switch tabs (without triggering tab switch event)
+        self.left_toolbar.tabbed_widget.setCurrentIndex(1) # switch to the FUCCI tab
         self.current_tab=1
-        self.tabbed_menu_widget.blockSignals(False)
-        overlay_color=self.FUCCI_dropdown.currentText().lower()
+        self.left_toolbar.tabbed_widget.blockSignals(False)
+        overlay_color=self.FUCCI_dropdown
         
         # set RGB mode
-        if overlay_color == 'none':
-            self.set_RGB(True)
+        if overlay_color == 0:
+            self.left_toolbar.RGB_visible=True
         else:
-            if overlay_color == 'all':
-                self.set_RGB([True, True, False])
-            elif overlay_color == 'red':
-                self.set_RGB([True, False, False])
-            elif overlay_color == 'green':
-                self.set_RGB([False, True, False])
+            if overlay_color == 3:
+                self.left_toolbar.RGB_visible=[True, True, False]
+            elif overlay_color == 2:
+                self.left_toolbar.RGB_visible=[True, False, False]
+            elif overlay_color == 1:
+                self.left_toolbar.RGB_visible=[False, True, False]
             
             # set overlay mode
-            self.outlines_checkbox.setChecked(True)
-            self.masks_checkbox.setChecked(False)
+            self.outlines_visible=True
+            self.masks_visible=False
         
         self.FUCCI_overlay()
 
     def FUCCI_overlay(self, event=None):
         """Handle cell cycle overlay options."""
-        overlay_color=self.FUCCI_dropdown.currentText().lower()
-        if self.tabbed_menu_widget.currentIndex()!=1 or overlay_color=='none':
+        FUCCI_index=self.FUCCI_dropdown
+        overlay_color=['none', 'g', 'r', 'orange'][FUCCI_index]
+        if self.left_toolbar.tabbed_widget.currentIndex()!=1 or FUCCI_index==0:
             self.canvas.clear_FUCCI_overlay() # clear FUCCI overlay during basic selection
             self.FUCCI_mode=False
             return
@@ -2987,7 +2538,7 @@ class MainWidget(QMainWindow):
             self.canvas.clear_selection_overlay() # clear basic selection during FUCCI labeling
             if len(self.frame.cells)==0:
                 return
-            if overlay_color == 'all':
+            if FUCCI_index == 3:
                 colors=np.array(['g','r','orange'])
                 green, red=np.array(self.frame.get_cell_attrs(['green', 'red'])).T
                 colored_cells=np.where(red | green)[0] # cells that are either red or green
@@ -3003,11 +2554,11 @@ class MainWidget(QMainWindow):
         self.drawing_cell_roi=False
         self.drawing_cell_split=False
         self.select_cell(None)
-        self.FUCCI_dropdown.setCurrentIndex(0) # clear overlay
+        self.FUCCI_dropdown=0 # clear overlay
         self.seg_overlay_attr.setCurrentIndex(0) # clear attribute overlay
-        self.set_RGB(True)
+        self.left_toolbar.RGB_visible=True
         if not self.is_grayscale:
-            self.show_grayscale_checkbox.setChecked(False)
+            self.left_toolbar.show_grayscale_checkbox.setChecked(False)
         self.canvas.clear_selection_overlay() # remove any overlays (highlighting, outlines)
         self.canvas.img_plot.autoRange()
 
@@ -3019,28 +2570,14 @@ class MainWidget(QMainWindow):
         self.update_display()
         self.show_seg_overlay()
         self.plot_histogram()
-
-    def get_RGB(self):
-        if self.is_grayscale:
-            return None
-        else:
-            return [checkbox.isChecked() for checkbox in self.RGB_checkboxes]
-
-    def set_RGB(self, RGB):
-        if isinstance(RGB, bool):
-            RGB=[RGB]*3
-        elif len(RGB)!=3:
-            raise ValueError('RGB must be a bool or boolean array of length 3.')
-        for checkbox, state in zip(self.RGB_checkboxes, RGB):
-            checkbox.setChecked(state)
     
     def keyPressEvent(self, event):
         """Handle key press events (e.g., arrow keys for frame navigation)."""
         if event.key() == Qt.Key.Key_Tab:
             # switch between tabs
             if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-                current_tab=self.tabbed_menu_widget.currentIndex()
-                self.tabbed_menu_widget.setCurrentIndex((current_tab+1)%self.tabbed_menu_widget.count())
+                current_tab=self.left_toolbar.tabbed_widget.currentIndex()
+                self.left_toolbar.tabbed_widget.setCurrentIndex((current_tab+1)%self.left_toolbar.tabbed_widget.count())
         
         if not self.file_loaded:
             return
@@ -3050,49 +2587,49 @@ class MainWidget(QMainWindow):
             if not self.is_grayscale:
                 # FUCCI labeling modes
                 if event.key() == Qt.Key.Key_R:
-                    if self.FUCCI_dropdown.currentIndex() == 2 and self.FUCCI_mode:
-                        self.FUCCI_dropdown.setCurrentIndex(0)
-                        self.set_RGB(True)
+                    if self.FUCCI_dropdown == 2 and self.FUCCI_mode:
+                        self.FUCCI_dropdown=0
+                        self.left_toolbar.RGB_visible=True
                     else:
-                        self.tabbed_menu_widget.setCurrentIndex(1)
-                        self.FUCCI_dropdown.setCurrentIndex(2)
-                        self.set_RGB([True, False, False])
+                        self.left_toolbar.tabbed_widget.setCurrentIndex(1)
+                        self.FUCCI_dropdown=2
+                        self.left_toolbar.RGB_visible=[True, False, False]
                     return
                 
                 elif event.key() == Qt.Key.Key_G:
-                    if self.FUCCI_dropdown.currentIndex() == 1 and self.FUCCI_mode:
-                        self.FUCCI_dropdown.setCurrentIndex(0)
-                        self.set_RGB(True)
+                    if self.FUCCI_dropdown == 1 and self.FUCCI_mode:
+                        self.FUCCI_dropdown=0
+                        self.left_toolbar.RGB_visible=True
                     else:
-                        self.tabbed_menu_widget.setCurrentIndex(1)
-                        self.FUCCI_dropdown.setCurrentIndex(1)
-                        self.set_RGB([False, True, False])
+                        self.left_toolbar.tabbed_widget.setCurrentIndex(1)
+                        self.FUCCI_dropdown=1
+                        self.left_toolbar.RGB_visible=[False, True, False]
                     return
                 
                 elif event.key() == Qt.Key.Key_A:
-                    if self.FUCCI_dropdown.currentIndex() == 3 and self.FUCCI_mode:
-                        self.FUCCI_dropdown.setCurrentIndex(0)
-                        self.set_RGB(True)
+                    if self.FUCCI_dropdown == 3 and self.FUCCI_mode:
+                        self.FUCCI_dropdown=0
+                        self.left_toolbar.RGB_visible=True
                     else:
-                        self.tabbed_menu_widget.setCurrentIndex(1)
-                        self.FUCCI_dropdown.setCurrentIndex(3)
-                        self.set_RGB([True, True, False])
+                        self.left_toolbar.tabbed_widget.setCurrentIndex(1)
+                        self.FUCCI_dropdown=3
+                        self.left_toolbar.RGB_visible=[True, True, False]
                     return
 
         # r-g-b toggles
         if not self.is_grayscale:
             if event.key() == Qt.Key.Key_R:
-                self.RGB_checkboxes[0].toggle()
+                self.left_toolbar.RGB_checkboxes[0].toggle()
             elif event.key() == Qt.Key.Key_G:
-                self.RGB_checkboxes[1].toggle()
+                self.left_toolbar.RGB_checkboxes[1].toggle()
             elif event.key() == Qt.Key.Key_B:
-                self.RGB_checkboxes[2].toggle()
+                self.left_toolbar.RGB_checkboxes[2].toggle()
 
         # segmentation overlay
         if event.key() == Qt.Key.Key_X:
-            self.masks_checkbox.toggle()
+            self.masks_visible=not self.masks_visible
         elif event.key() == Qt.Key.Key_Z:
-            self.outlines_checkbox.toggle()
+            self.outlines_visible=not self.outlines_visible
         elif event.key() == Qt.Key.Key_Delete:
             if self.selected_cell_n is not None:
                 self.delete_cell_mask(self.selected_cell_n)
@@ -3131,59 +2668,16 @@ class MainWidget(QMainWindow):
 
     def reset_view(self):
         ''' Reset the view to the original image data. '''
-        self.FUCCI_dropdown.setCurrentIndex(0)
-        self.set_RGB(True)
+        self.FUCCI_dropdown=0
+        self.left_toolbar.RGB_visible=True
         self.canvas.img_plot.autoRange()
         if not self.is_grayscale:
-            self.show_grayscale_checkbox.setChecked(False)
+            self.left_toolbar.show_grayscale_checkbox.setChecked(False)
 
-    def clear_layout(self, layout):
-        while layout.count():
-            item = layout.takeAt(0)
-            
-            # If it's a widget, delete it
-            if item.widget():
-                item.widget().deleteLater()
-            # If it's a layout, clear and delete it recursively
-            elif item.layout():
-                self.clear_layout(item.layout())
-                item.layout().deleteLater()
-            # If it's a spacer, just remove it (no need to delete)
-            else:
-                del item
-
-    def clear_LUT_sliders(self):
-        self.clear_layout(self.slider_layout)
-        for slider in self.LUT_range_sliders:
-            slider.deleteLater()
-        self.LUT_range_sliders.clear()
-
-    def clear_RGB_checkboxes(self):
-        self.clear_layout(self.RGB_checkbox_layout)
-        for checkbox in self.RGB_checkboxes:
-            checkbox.deleteLater()
-        self.RGB_checkboxes.clear()
-
-    def add_RGB_checkboxes(self, layout):
-        color_channels_layout = QHBoxLayout()
-        color_channels_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        color_channels_layout.setSpacing(25)
-        self.RGB_checkboxes = [QCheckBox(s, self) for s in ['R', 'G', 'B']]
-        for checkbox in self.RGB_checkboxes:
-            checkbox.setChecked(True)
-            color_channels_layout.addWidget(checkbox)
-        
-        self.show_grayscale_checkbox=QCheckBox("Grayscale", self)
-        self.show_grayscale_checkbox.setChecked(False)
-
-        layout.addSpacerItem(self.vertical_spacer())
-        layout.addLayout(color_channels_layout)
-        layout.addSpacerItem(self.vertical_spacer())
-        layout.addWidget(self.show_grayscale_checkbox)
-        
-        for checkbox in self.RGB_checkboxes:
-            checkbox.stateChanged.connect(self.update_display)
-        self.show_grayscale_checkbox.stateChanged.connect(self.show_grayscale_toggled)
+    def show_grayscale_toggled(self, event=None):
+        if event==None:
+            event=self.left_toolbar.show_grayscale_checkbox.isChecked()
+        self.canvas.img.set_grayscale(event!=0)
 
     def reorder_channels(self):
         if not self.file_loaded:
@@ -3217,192 +2711,6 @@ class MainWidget(QMainWindow):
                 # Show an error message if the input is invalid
                 QMessageBox.critical(self, 'Invalid Input', str(e))
 
-    def toggle_grayscale(self):
-        self.show_grayscale_checkbox.toggle()
-
-    def show_grayscale_toggled(self):
-        self.canvas.img.set_grayscale(self.show_grayscale_checkbox.isChecked())
-
-    def toggle_inverted(self):
-        self.inverted_checkbox.toggle()
-
-    def invert_toggled(self):
-        self.apply_overlay_settings()
-        self.canvas.img.refresh()
-
-    def open_overlay_settings(self):
-        from segmentation_viewer.qt import OverlaySettingsDialog
-        self.overlay_dialog = OverlaySettingsDialog(parent=self.canvas)
-        self.overlay_dialog.settings_applied.connect(self.apply_overlay_settings)
-        if self.overlay_dialog.exec() == QDialog.DialogCode.Accepted:
-            self.apply_overlay_settings(self.overlay_dialog.get_settings())
-
-    def apply_overlay_settings(self, settings=None):
-        inverted=self.inverted_checkbox.isChecked()
-        if settings is None:
-            if inverted:
-                settings=self.canvas.light_overlay_settings
-            else:
-                settings=self.canvas.dark_overlay_settings
-        else:
-            if inverted:
-                self.canvas.light_overlay_settings=settings
-            else:
-                self.canvas.dark_overlay_settings=settings
-
-        redraw_masks=self.canvas.masks_alpha!=settings['masks_alpha']
-        
-        for attr, setting in settings.items():
-            setattr(self.canvas, attr, setting)
-        
-        if self.file_loaded:
-            if redraw_masks:
-                for frame in self.stack.frames:
-                    if hasattr(frame, 'stored_mask_overlay'):
-                        del frame.stored_mask_overlay
-
-            self.imshow()
-            self.select_cell(cell=self.selected_cell_n)
-
-    def clear_channel_layout(self):
-        self.clear_layout(self.segmentation_channels_layout)
-    
-    def add_channel_layout(self, channel_layout):
-        self.membrane_channel=QComboBox(self)
-        self.membrane_channel_label=QLabel("Membrane Channel:", self)
-        self.membrane_channel.addItems(["Gray", "Red", "Green", "Blue"])
-        self.membrane_channel.setCurrentIndex(3)
-        self.membrane_channel.setFixedWidth(70)
-        self.nuclear_channel=QComboBox(self)
-        self.nuclear_channel_label=QLabel("Nuclear Channel:", self)
-        self.nuclear_channel.addItems(["None", "Red", "Green", "Blue", "FUCCI"])
-        self.nuclear_channel.setFixedWidth(70)
-
-        membrane_tab_layout=QHBoxLayout()
-        membrane_tab_layout.setSpacing(10)
-        membrane_tab_layout.addWidget(self.membrane_channel_label)
-        membrane_tab_layout.addWidget(self.membrane_channel)
-        nuclear_layout=QHBoxLayout()
-        nuclear_layout.setSpacing(5)
-        nuclear_layout.addWidget(self.nuclear_channel_label)
-        nuclear_layout.addWidget(self.nuclear_channel)
-
-        channel_layout.addLayout(membrane_tab_layout)
-        channel_layout.addLayout(nuclear_layout)
-
-        return channel_layout
-
-    def grayscale_mode(self):
-        ''' Hide RGB GUI elements when a grayscale image is loaded. '''
-        self.is_grayscale=True
-        self.clear_LUT_sliders()
-        self.clear_RGB_checkboxes()
-        self.add_grayscale_sliders(self.slider_layout)
-        self.segmentation_channels_widget.hide()
-        self.membrane_channel.setCurrentIndex(0)
-        self.nuclear_channel.setCurrentIndex(0)
-
-    def RGB_mode(self):
-        ''' Show RGB GUI elements when an RGB image is loaded. '''
-        self.is_grayscale=False
-        self.clear_LUT_sliders()
-        self.clear_RGB_checkboxes()
-        self.add_RGB_checkboxes(self.RGB_checkbox_layout)
-        self.add_RGB_sliders(self.slider_layout)
-        self.segmentation_channels_widget.show()
-        self.show_grayscale_checkbox.setChecked(False)
-        self.show_grayscale_toggled()
-
-    def labeled_LUT_slider(self, slider_name=None, default_range=(0, 65535)):
-        labels_and_slider=QHBoxLayout()
-        labels_and_slider.setSpacing(2)
-        if slider_name is not None:
-            slider_label=QLabel(slider_name)
-            labels_and_slider.addWidget(slider_label)
-        
-        slider=FineScrubQRangeSlider(orientation=Qt.Orientation.Horizontal, parent=self)
-        slider.setRange(*default_range)
-        slider.setValue(default_range)
-
-        range_labels=[QLineEdit(str(val)) for val in slider.value()]
-        for label in range_labels:
-            label.setFixedWidth(self.digit_width*6)
-            label.setAlignment(Qt.AlignTop)
-            label.setValidator(QIntValidator(*default_range))
-            label.setStyleSheet("""
-                QLineEdit {
-                    border: none;
-                    background: transparent;
-                    padding: 0;
-                }
-            """)
-        range_labels[0].setAlignment(Qt.AlignRight)
-
-        # Connect QLineEdit changes to update the slider value
-        def update_min_slider_from_edit():
-            min_val=int(range_labels[0].text())
-            max_val=int(range_labels[1].text())
-
-            if min_val<slider.minimum():
-                slider.setMinimum(min_val)
-            elif min_val>max_val:
-                min_val=max_val
-                range_labels[0].setText(str(min_val))
-            slider.setValue((min_val, max_val))
-        
-        def update_max_slider_from_edit():
-            min_val=int(range_labels[0].text())
-            max_val=int(range_labels[1].text())
-
-            if max_val>slider.maximum():
-                slider.setMaximum(max_val)
-            elif max_val<min_val:
-                max_val=min_val
-                range_labels[1].setText(str(max_val))
-            slider.setValue((min_val, max_val))
-
-        range_labels[0].editingFinished.connect(update_min_slider_from_edit)
-        range_labels[1].editingFinished.connect(update_max_slider_from_edit)
-
-        # Connect slider value changes to update the QLineEdit text
-        def update_edits_from_slider():
-            min_val, max_val = slider.value()
-            range_labels[0].setText(str(min_val))
-            range_labels[1].setText(str(max_val))
-
-        slider.valueChanged.connect(update_edits_from_slider)
-
-        labels_and_slider.addWidget(range_labels[0])
-        labels_and_slider.addSpacerItem(QSpacerItem(10, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed))
-        labels_and_slider.addWidget(slider)
-        labels_and_slider.addSpacerItem(QSpacerItem(10, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed))
-        labels_and_slider.addWidget(range_labels[1])
-
-        return labels_and_slider, slider, range_labels
-
-    def add_RGB_sliders(self, layout):
-        self.LUT_range_sliders=[]
-        self.LUT_range_labels=[]
-        
-        for label in ['R ', 'G ', 'B ']:
-            slider_layout, slider, range_labels=self.labeled_LUT_slider(label)
-            layout.addLayout(slider_layout)
-            self.LUT_range_sliders.append(slider)
-            self.LUT_range_labels.append(range_labels)
-
-            slider.valueChanged.connect(self.LUT_slider_changed)
-
-    def add_grayscale_sliders(self, layout):
-        self.LUT_range_sliders=[]
-        self.LUT_range_labels=[]
-        
-        slider_layout, slider, range_labels=self.labeled_LUT_slider()
-        layout.addLayout(slider_layout)
-        self.LUT_range_sliders.append(slider)
-        self.LUT_range_labels.append(range_labels)
-
-        slider.valueChanged.connect(self.LUT_slider_changed)
-
     # Drag and drop event
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -3424,11 +2732,11 @@ class MainWidget(QMainWindow):
         
         self.file_loaded=True
         if hasattr(self.stack, 'tracked_centroids'):
-            self.propagate_FUCCI_checkbox.setEnabled(True)
+            self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(True)
             self.recolor_tracks()
         else:
-            self.propagate_FUCCI_checkbox.setChecked(False)
-            self.propagate_FUCCI_checkbox.setEnabled(False)
+            self.left_toolbar.propagate_FUCCI_checkbox.setChecked(False)
+            self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(False)
 
         if len(self.stack.frames)==1:
             out_message=f'Loaded frame {self.stack.frames[0].name}.'
@@ -3449,9 +2757,9 @@ class MainWidget(QMainWindow):
             self.zstack_slider.setVisible(False)
 
         if self.frame.img.ndim==2: # single channel
-            self.grayscale_mode()
+            self.left_toolbar.grayscale_mode()
         elif self.frame.img.ndim==3: # RGB
-            self.RGB_mode()
+            self.left_toolbar.RGB_mode()
         else:
             raise ValueError(f'{self.frame.name} has {self.frame.img.ndim} image dimensions, must be 2 (grayscale) or 3 (RGB).')
         
@@ -3469,7 +2777,7 @@ class MainWidget(QMainWindow):
         self.canvas.img_plot.autoRange()
 
         # reset visual settings
-        self.saved_visual_settings=[self.default_visual_settings for _ in range(4)]
+        self.left_toolbar.saved_visual_settings=[self.default_visual_settings for _ in range(4)]
         self.auto_range_sliders()
         self.normalize()
         
@@ -3488,7 +2796,6 @@ class MainWidget(QMainWindow):
         Load a stack of images. 
         If a tracking.csv is found, the tracking data is returned as well
         '''
-        tracked_centroids=None
         tracking_file=None
 
         #----figure out what's being loaded----
@@ -3599,11 +2906,11 @@ class MainWidget(QMainWindow):
         for img, frame in zip(imgs, self.stack.frames):
             if img.shape[-1]==1: # single channel
                 img=img[..., 0] # drop the last dimension
-                self.grayscale_mode()
+                self.left_toolbar.grayscale_mode()
             else: # RGB
                 if img.shape[-1]==2: # pad to 3 color channels
                     img=np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
-                self.RGB_mode()
+                self.left_toolbar.RGB_mode()
 
             frame.img=img[0]
             if len(img)>1: # z-stack

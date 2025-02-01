@@ -2475,12 +2475,13 @@ class MainWidget(QMainWindow):
         
     def get_cell(self, x, y):
         ''' Get the cell number at a given pixel coordinate. '''
-        if x < 0 or y < 0 or x >= self.canvas.img_data.shape[1] or y >= self.canvas.img_data.shape[0]:
+        if x < 0 or y < 0 or x >= self.canvas.img_data.shape[0] or y >= self.canvas.img_data.shape[1]:
             return -1 # out of bounds
         cell_n=self.frame.masks[x, y]
         if cell_n==0:
             return -1
-        return cell_n-1
+        else:
+            return cell_n-1
     
     def split_cell(self):
         self.drawing_cell_split=False

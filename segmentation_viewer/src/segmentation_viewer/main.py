@@ -82,6 +82,7 @@ class MainWidget(QMainWindow):
         self.font_metrics=QFontMetrics(QLabel().font()) # metrics for the default font
         self.digit_width=self.font_metrics.horizontalAdvance('0') # text length scale
         self.cancel_iter=False # flag to cancel progress bar iteration
+        self.circle_mask=None
 
         # Status bar
         self.status_cell=QLabel("Selected Cell: None", self)
@@ -709,12 +710,12 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         from segmentation_tools.preprocessing import mend_gaps
-        if self.segment_on_stack.isChecked():
+        if self.left_toolbar.segment_on_stack.isChecked():
             frames=self.stack.frames
         else:
             frames=[self.frame]
         
-        gap_size=self.gap_size.text()
+        gap_size=self.left_toolbar.gap_size.text()
         for frame in self.progress_bar(frames):
             if gap_size=='':
                 gap_size=frame.mean_cell_area(scaled=False)/2 # default to half the mean cell area
@@ -743,7 +744,7 @@ class MainWidget(QMainWindow):
     def remove_edge_masks(self):
         if not self.file_loaded:
             return
-        if self.segment_on_stack.isChecked():
+        if self.left_toolbar.segment_on_stack.isChecked():
             frames=self.stack.frames
             current_frame=self.frame_number
         else:
@@ -790,7 +791,7 @@ class MainWidget(QMainWindow):
         diam=self.calibrate_cell_diameter(self.frame.img, channels)
 
         print(f'Computed cell diameter {diam:.2f} with channels {channels}')
-        self.cell_diameter.setText(f'{diam:.2f}')
+        self.left_toolbar.cell_diameter.setText(f'{diam:.2f}')
 
     def calibrate_cell_diameter(self, img, channels):
         if not self.file_loaded:
@@ -825,7 +826,7 @@ class MainWidget(QMainWindow):
         self.segment([self.frame])
 
         # update the display
-        self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
+        self.left_toolbar.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
         self.masks_visible=True
         self.canvas.draw_masks()
         self.update_display()
@@ -842,14 +843,14 @@ class MainWidget(QMainWindow):
         self.segment(self.stack.frames)
 
         # update the display
-        self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
+        self.left_toolbar.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
         self.masks_visible=True
         self.canvas.draw_masks()
         self.update_display()
         self.FUCCI_overlay()
 
     def segment(self, frames):
-        diameter=self.cell_diameter.text()
+        diameter=self.left_toolbar.cell_diameter.text()
         if diameter=='':
             diameter=None
         else:
@@ -888,7 +889,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         
-        if self.segment_on_stack.isChecked():
+        if self.left_toolbar.segment_on_stack.isChecked():
             frames=self.stack.frames
         else:
             frames=[self.frame]
@@ -1202,7 +1203,7 @@ class MainWidget(QMainWindow):
     def measure_volumes(self):
         if not self.file_loaded:
             return
-        if self.volumes_on_stack.isChecked():
+        if self.left_toolbar.volumes_on_stack.isChecked():
             frames=self.stack.frames
         else:
             frames=[self.frame]
@@ -1234,7 +1235,7 @@ class MainWidget(QMainWindow):
         from segmentation_tools.heightmap import get_coverslip_z
         if not self.file_loaded:
             return
-        if self.volumes_on_stack.isChecked():
+        if self.left_toolbar.volumes_on_stack.isChecked():
             frames=self.stack.frames
             if not all(hasattr(frame, 'zstack') for frame in frames):
                 raise ValueError('No z-stacks available to calibrate coverslip height.')
@@ -1264,7 +1265,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         from segmentation_tools.heightmap import get_heights
-        if self.volumes_on_stack.isChecked():
+        if self.left_toolbar.volumes_on_stack.isChecked():
             frames=self.stack.frames
         else:
             frames=[self.frame]
@@ -1300,7 +1301,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         
-        if self.volumes_on_stack.isChecked():
+        if self.left_toolbar.volumes_on_stack.isChecked():
             frames=self.stack.frames
         else:
             frames=[self.frame]
@@ -1375,7 +1376,7 @@ class MainWidget(QMainWindow):
         self.update_voxel_size_labels()
 
         if hasattr(self.frame, 'cell_diameter'):
-            self.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
+            self.left_toolbar.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
 
         if self.FUCCI_dropdown != 0:
             self.FUCCI_overlay()
@@ -1452,8 +1453,8 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
 
-        tracking_range=self.tracking_range.text()
-        memory=self.memory_range.text()
+        tracking_range=self.left_toolbar.tracking_range.text()
+        memory=self.left_toolbar.memory_range.text()
         if memory=='':
             memory=0
 
@@ -2307,7 +2308,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
 
-        if self.segment_on_stack.isChecked():
+        if self.left_toolbar.segment_on_stack.isChecked():
             frames=self.stack.frames
         else:
             frames=[self.frame]

@@ -557,8 +557,6 @@ class MainWidget(QMainWindow):
             self.stat_LUT_slider.setRange(0, 255)
             self.stat_LUT_slider.setValue((0, 255))
             self.stat_LUT_slider.blockSignals(False)
-            self.clear_seg_stat()
-            return
         
         else:
             if plot_attr=='heights':
@@ -586,7 +584,7 @@ class MainWidget(QMainWindow):
             if self.stat_LUT_type=='custom': # change the LUT range to match the new data
                 self.stat_frame_button.setChecked(True)
 
-            self.show_seg_overlay()
+        self.show_seg_overlay()
 
     def show_seg_overlay(self, event=None):
         if not self.file_loaded:
@@ -645,7 +643,9 @@ class MainWidget(QMainWindow):
     def tab_switched(self, index):
         if not self.file_loaded:
             return
-        self.highlight_track_ends()
+        if self.circle_mask is not None:
+            self.circle_mask.setVisible(index==0)
+        self.update_tracking_overlay()
         self.FUCCI_overlay()
 
     @property

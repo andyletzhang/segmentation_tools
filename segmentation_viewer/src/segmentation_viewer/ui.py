@@ -362,7 +362,6 @@ class LeftToolbar(QScrollArea):
         self.segment_stack_button.clicked.connect(self.main_window.segment_stack_pressed)
         generate_outlines_button.clicked.connect(self.main_window.generate_outlines_list)
         clear_masks_button.clicked.connect(self.main_window.clear_masks)
-        self.circle_mask=None
 
         return segmentation_tab
     

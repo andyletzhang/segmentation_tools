@@ -8,7 +8,7 @@ from pathlib import Path
 
 import fastremap
 import cellpose.utils as cp_utils
-from segmentation_tools import preprocessing
+from . import preprocessing
 
 '''
     Stacks are collections of time lapse images on a single stage.
@@ -867,6 +867,27 @@ class SegmentedImage:
         np.save(export_path, export) # write segmentation file
     
     # -------------Mask Operations-------------
+    def mend_gaps(self, gap_size=None):
+        if gap_size is None:
+            gap_size=self.mean_cell_area(scaled=False)/2
+
+        new_masks, mended=preprocessing.mend_gaps(self.masks, gap_size)
+
+        if mended:
+            changed_cells=np.unique(new_masks[new_masks!=self.masks])
+            changed_masks=np.zeros_like(self.masks, dtype=int)
+            changed_masks_bool=np.isin(new_masks, changed_cells)
+            changed_masks[changed_masks_bool]=new_masks[changed_masks_bool]
+            if self.has_outlines:
+                outlines_list=cp_utils.outlines_list(changed_masks)
+                for cell, o in zip(self.cells[changed_cells], outlines_list):
+                    cell.outline=o
+                    cell.get_centroid()
+
+            self.masks=new_masks
+            self.outlines=self.masks_to_outlines(self.masks)
+        return mended
+
     def renumber_cells(self):
         '''
         Renumbers cell masks, sorted by (y,x).

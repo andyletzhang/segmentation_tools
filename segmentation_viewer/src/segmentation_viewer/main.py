@@ -31,7 +31,6 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
-# TODO: mend_gaps etc to SegmentedStack methods
 # TODO: script execution, similar to command line
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
@@ -719,26 +718,12 @@ class MainWidget(QMainWindow):
         gap_size=self.left_toolbar.gap_size.text()
         for frame in self.progress_bar(frames):
             if gap_size=='':
-                gap_size=frame.mean_cell_area(scaled=False)/2 # default to half the mean cell area
+                gap_size=None
             else:
                 gap_size=int(gap_size)
-            new_masks, mended=mend_gaps(frame.masks, gap_size)
-
-            if mended:
-                changed_cells=np.unique(new_masks[new_masks!=frame.masks])
-                changed_masks=np.zeros_like(frame.masks, dtype=int)
-                changed_masks_bool=np.isin(new_masks, changed_cells)
-                changed_masks[changed_masks_bool]=new_masks[changed_masks_bool]
-                if frame.has_outlines:
-                    outlines_list=utils.outlines_list(changed_masks)
-                    for cell, o in zip(frame.cells[changed_cells], outlines_list):
-                        cell.outline=o
-                        cell.get_centroid()
-
-                frame.masks=new_masks
-                frame.outlines=utils.masks_to_outlines(frame.masks)
-                if hasattr(frame, 'stored_mask_overlay'):
-                    del frame.stored_mask_overlay
+            mended=frame.mend_gaps(gap_size)
+            if mended and hasattr(frame, 'stored_mask_overlay'):
+                del frame.stored_mask_overlay
         
         self.update_display()
 

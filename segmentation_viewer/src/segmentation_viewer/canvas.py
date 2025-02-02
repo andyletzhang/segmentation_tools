@@ -473,7 +473,7 @@ class RGB_ImageItem():
 
         self.setLookupTable('RGB')
 
-        self.img_item=pg.ImageItem(self.image())
+        self.img_item=pg.ImageItem(self.image(), levels=(0, 255))
         plot.addItem(self.img_item)
         self.show_grayscale=False
         self.toggle_grayscale()
@@ -498,7 +498,7 @@ class RGB_ImageItem():
     
     def refresh(self):
         ''' Refresh the image item. '''
-        self.img_item.setImage(self.image())
+        self.img_item.setImage(self.image(), autoLevels=False)
 
     def setImage(self, img_data):
         self.img_data=img_data

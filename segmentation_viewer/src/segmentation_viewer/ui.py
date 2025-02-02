@@ -224,9 +224,6 @@ class LeftToolbar(QScrollArea):
 
     def LUT_slider_changed(self, event):
         ''' Update the LUTs when the sliders are moved. '''
-        if not self.file_loaded:
-            self.update_LUT_labels()
-            return
         self.normalize_custom_button.setChecked(True)
         self.main_window.set_LUTs()
 
@@ -247,9 +244,6 @@ class LeftToolbar(QScrollArea):
 
         slider.valueChanged.connect(self.LUT_slider_changed)
 
-    def LUT_slider_changed(self):
-        self.update_display()
-
     def update_display(self):
         self.main_window.update_display()
 
@@ -258,9 +252,6 @@ class LeftToolbar(QScrollArea):
 
     def toggle_inverted(self):
         self.inverted_checkbox.toggle()
-
-    def clear_channel_layout(self):
-        clear_layout(self.segmentation_channels_layout)
     
     def add_channel_layout(self, channel_layout):
         self.membrane_channel=QComboBox(self)

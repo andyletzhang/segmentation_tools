@@ -8,14 +8,12 @@ from scipy import ndimage
 from skimage import draw
 
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QLabel, QComboBox, QPushButton, QRadioButton, QInputDialog, QMessageBox,
-    QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QSpacerItem, QSizePolicy, QFileDialog, QDialog,
+    QApplication, QMainWindow, QWidget, QLabel, QRadioButton, QInputDialog, QMessageBox,
+    QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy, QFileDialog, QDialog,
     QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter, QProgressBar, QScrollArea,
-    QTableWidgetItem, QTableWidget
 )
-from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QIntValidator, QDoubleValidator, QIcon, QFontMetrics, QMouseEvent
-from superqt import QRangeSlider
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIntValidator, QIcon, QFontMetrics
 import pyqtgraph as pg
 
 from segmentation_tools.segmented_comprehension import SegmentedStack, Cell
@@ -24,7 +22,7 @@ from segmentation_tools.utils import cell_scalar_attrs
 from .ui import LeftToolbar, labeled_LUT_slider
 from .canvas import PyQtGraphCanvas, CellMaskPolygons, CellSplitLines
 from .command_line import CommandLineWindow
-from .qt import CustomComboBox, FineScrubQRangeSlider, SubstackDialog
+from .qt import CustomComboBox, SubstackDialog
 from .io import ExportWizard
 
 from natsort import natsorted
@@ -77,7 +75,7 @@ class MainWidget(QMainWindow):
         self.drawing_cell_roi = False
         self.drawing_cell_split = False
         self.spacer = (0,10) # default spacer size (width, height)
-        self.globals_dict = {'main': self, 'np': np}
+        self.globals_dict = {'main': self, 'np': np, 'pd':pd}
         self.locals_dict = {}
         self.font_metrics=QFontMetrics(QLabel().font()) # metrics for the default font
         self.digit_width=self.font_metrics.horizontalAdvance('0') # text length scale
@@ -120,7 +118,7 @@ class MainWidget(QMainWindow):
         canvas_HBoxLayout = QHBoxLayout()
         canvas_HBoxLayout.setSpacing(0)
         canvas_HBoxLayout.setContentsMargins(0, 0, 0, 0)
-        
+
         self.canvas = PyQtGraphCanvas(parent=self)
         self.globals_dict['canvas']=self.canvas
         self.right_toolbar=self.get_right_toolbar()

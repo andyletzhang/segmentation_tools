@@ -201,6 +201,8 @@ class MainWidget(QMainWindow):
         # IMAGE
         self.image_menu = self.menu_bar.addMenu("Image")
         self.image_menu.addAction(create_action("Reorder Channels", self.reorder_channels, self))
+        self.image_menu.addAction(create_action("Rotate Clockwise", self.rotate_clockwise, self))
+        self.image_menu.addAction(create_action("Rotate Counterclockwise", self.rotate_counterclockwise, self))
         #self.image_menu.addAction(create_action("Set Voxel Size", self.voxel_size_prompt, self))
 
         # STACK
@@ -992,13 +994,6 @@ class MainWidget(QMainWindow):
         for frame in frames:
             frame.set_cell_attrs(['red', 'green'], np.array([[False, False] for _ in range(frame.n_cells)]).T)
         self.FUCCI_overlay()
-
-    def vertical_spacer(self, spacing=None, hSizePolicy=QSizePolicy.Policy.Fixed, vSizePolicy=QSizePolicy.Policy.Fixed):
-        if spacing is None:
-            spacing=self.spacer
-        elif np.isscalar(spacing):
-            spacing=(np.array(self.spacer)*spacing).astype(int)
-        return QSpacerItem(*spacing, hSizePolicy, vSizePolicy)
     
     def measure_FUCCI_frame(self):
         if not self.file_loaded:
@@ -1124,7 +1119,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         distance_threshold, score_cutoff, weights=self.left_toolbar.mitosis_params
-        self.stack.get_mitoses(distance_threshold=distance_threshold, score_cutoff=score_cutoff, weights=weights)
+        self.stack.get_mitoses(distance_threshold=distance_threshold, score_cutoff=score_cutoff, weights=weights, progress=self.progress_bar)
 
     def update_tracking_overlay(self):
         sender = self.sender()
@@ -2753,6 +2748,23 @@ class MainWidget(QMainWindow):
             except ValueError as e:
                 # Show an error message if the input is invalid
                 QMessageBox.critical(self, 'Invalid Input', str(e))
+
+    def clear_stored_overlays(self):
+        for frame in self.stack.frames:
+            if hasattr(frame, 'stored_mask_overlay'):
+                del frame.stored_mask_overlay
+                
+    def rotate_clockwise(self):
+        self.stack.rot90(k=1, progress=self.progress_bar)
+        self.clear_stored_overlays()
+        self.update_display()
+        self.canvas.img_plot.autoRange()
+
+    def rotate_counterclockwise(self):
+        self.stack.rot90(k=3, progress=self.progress_bar)
+        self.clear_stored_overlays()
+        self.update_display()
+        self.canvas.img_plot.autoRange()
 
     # Drag and drop event
     def dragEnterEvent(self, event):

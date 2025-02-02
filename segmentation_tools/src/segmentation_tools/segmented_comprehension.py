@@ -161,6 +161,10 @@ class SegmentedStack:
         self.tracked_centroids[['cell_number', 'y', 'x', 'frame', 'particle']].to_csv(file_path, index=False)
     
     # -------------Mask Operations-------------
+    def rot90(self, k=1, progress=lambda x: x):
+        for frame in progress(self.frames):
+            frame.rot90(k)
+
     def delete_cells(self, cell_numbers, frame_number):
         frame=self.frames[frame_number]
         idx=frame.delete_cells(cell_numbers)
@@ -235,6 +239,18 @@ class TimeStack(SegmentedStack):
         return self.tracked_centroids
 
     # -------------Mask Operations-------------
+    def rot90(self, k=1, **kwargs):
+        from .utils import rotate_points
+        shape=self.frames[0].resolution
+        super().rot90(k, **kwargs)
+        for attr in ['tracked_centroids', 'drift', 'velocities']:
+            if hasattr(self, attr):
+                values=getattr(self, attr)
+                values[['y','x']]=rotate_points(values[['y','x']].values, shape, k)
+        if hasattr(self, 'mitoses'):
+            for mitosis in self.mitoses:
+                mitosis[['y','x']]=rotate_points(mitosis[['y','x']].values, shape, k)
+        
     def delete_cells(self, cell_numbers, frame_number):
         idx=super().delete_cells(cell_numbers, frame_number)
         if hasattr(self, 'tracked_centroids'):
@@ -605,7 +621,7 @@ class TimeStack(SegmentedStack):
     default_weights = (40.79220969,  8.12982495,  0.20812352,  2.54951311, 32.51929981)  # Default weights for mitosis scoring
     default_biases = (0.09863765322259088, 0.11520025039156312, 0.0001280071195560235, 0.00045755121816393185, 0.0015762096995626672)  # Default biases for mitosis scoring
 
-    def get_mitoses(self, persistence_threshold=0, distance_threshold=1.5, retrack=False, weights=[1,1,1,1,1], biases=None, score_cutoff=1, **kwargs):
+    def get_mitoses(self, persistence_threshold=0, distance_threshold=1.5, retrack=False, weights=[1,1,1,1,1], biases=None, score_cutoff=1, progress=lambda x: x, **kwargs):
         """
         Detect potential mitotic events in the cell tracking data.
 
@@ -652,7 +668,7 @@ class TimeStack(SegmentedStack):
         
         # Look for mitoses out of potential candidates
         mitoses = []
-        for frame_number in frames_of_interest:
+        for frame_number in progress(frames_of_interest):
             # Get relevant particle IDs for this frame
             birth_IDs = birth_frames[birth_frames == frame_number].index.values
             death_IDs = death_frames[death_frames == frame_number - 1].index.values
@@ -867,6 +883,25 @@ class SegmentedImage:
         np.save(export_path, export) # write segmentation file
     
     # -------------Mask Operations-------------
+    def rot90(self, k=1):
+        from .utils import rotate_points
+
+        ''' rotates the image 90 degrees k times.'''
+        self.masks=np.rot90(self.masks, k)
+        self.outlines=np.rot90(self.outlines, k)
+        for attr in ['img', 'heights']:
+            if hasattr(self, attr):
+                attr_array=getattr(self, attr)
+                setattr(self, attr, np.rot90(attr_array, k))
+
+        for cell in self.cells:
+            if hasattr(cell, 'outline'):
+                cell.outline=rotate_points(cell.outline, self.resolution[::-1], k)
+                cell.get_centroid()
+        
+        if k%2==1:
+            self.resolution=self.resolution[::-1]
+
     def mend_gaps(self, gap_size=None):
         if gap_size is None:
             gap_size=self.mean_cell_area(scaled=False)/2

@@ -32,6 +32,20 @@ def cell_scalar_attrs(cell):
     test_attrs -= to_remove
     return test_attrs
 
+def rotate_points(points:np.ndarray, shape, k=1):
+    M, N = shape  # Original shape (rows, cols)
+    
+    if k % 4 == 1:  # 90° counterclockwise
+        points=[(y, M - 1 - x) for x, y in points]
+    elif k % 4 == 2:  # 180° counterclockwise
+        points=[(M - 1 - x, N - 1 - y) for x, y in points]
+    elif k % 4 == 3:  # 270° counterclockwise
+        points=[(N - 1 - y, x) for x, y in points]
+    else:
+        pass
+
+    return np.array(points)
+
 from math import ceil
 def circular_colony_tiles(input, output=None, use_colonies='all', x_spacing=290, y_spacing=410, padding=400, verbose=True):
     """

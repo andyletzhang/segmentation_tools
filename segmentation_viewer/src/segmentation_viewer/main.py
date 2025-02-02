@@ -31,6 +31,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
+# TODO: mend_gaps etc to SegmentedStack methods
 # TODO: script execution, similar to command line
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
@@ -762,7 +763,7 @@ class MainWidget(QMainWindow):
             self.select_cell(None)
 
         self.canvas.draw_outlines()
-        self.highlight_track_ends()
+        self.update_tracking_overlay()
         self.update_display()
         self.update_ROIs_label()
 
@@ -1134,12 +1135,68 @@ class MainWidget(QMainWindow):
             
         self.canvas.draw_masks()
 
-    def highlight_track_ends(self):
+    def get_mitoses(self):
+        if not self.file_loaded:
+            return
+        distance_threshold, score_cutoff, weights=self.left_toolbar.mitosis_params
+        self.stack.get_mitoses(distance_threshold=distance_threshold, score_cutoff=score_cutoff, weights=weights)
+
+    def update_tracking_overlay(self):
+        sender = self.sender()
+        
+        if sender == self.left_toolbar.highlight_track_ends_button and sender.isChecked():
+            self.left_toolbar.highlight_mitoses_button.setChecked(False)
+        elif sender == self.left_toolbar.highlight_mitoses_button and sender.isChecked():
+            self.left_toolbar.highlight_track_ends_button.setChecked(False)
+
         if not self.file_loaded or self.left_toolbar.tabbed_widget.currentIndex()!=2:
             self.canvas.clear_tracking_overlay()
             return
+        else:
+            if self.left_toolbar.highlight_track_ends_button.isChecked():
+                self.highlight_track_ends()
+            elif self.left_toolbar.highlight_mitoses_button.isChecked():
+                self.highlight_mitoses()
+            return
+
+    def highlight_mitoses(self):
+        if hasattr(self.stack, 'tracked_centroids'):
+            if not hasattr(self.stack, 'mitoses'):
+                print('No mitoses found. Finding mitoses...')
+                self.get_mitoses()
+
+            # get all mitoses within n frames of the current frame
+            tail_length=5
+
+            current_frame=self.frame_number
+            relevant_mitoses=[m for m in self.stack.mitoses if abs(m.index.get_level_values(1)[0]-current_frame)<=tail_length]
+            
+            self.canvas.clear_tracking_overlay()
+            if len(relevant_mitoses)==0:
+                return
+            
+            for m in relevant_mitoses:
+                particles=m.index.get_level_values(0)
+                mitosis_frame=m.index.get_level_values(1)[0]
+                mother, daughter1, daughter2=(self.cell_from_particle(p) for p in particles)
+                if mother is not None:
+                    alpha=1-(mitosis_frame-current_frame+1)/(tail_length+1)
+                    self.canvas.add_cell_highlight(mother, color='red', alpha=alpha, layer='tracking', img_type='outlines', seg_alpha=True)
+                else:
+                    if daughter1 is not None:
+                        alpha=1-(current_frame-mitosis_frame+1)/(tail_length+1)
+                        self.canvas.add_cell_highlight(daughter1, color='lime', alpha=alpha, img_type='outlines', layer='tracking', seg_alpha=True)
+                    if daughter2 is not None:
+                        alpha=1-(current_frame-mitosis_frame+1)/(tail_length+1)
+                        self.canvas.add_cell_highlight(daughter2, color='lime', alpha=alpha, img_type='outlines', layer='tracking', seg_alpha=True)
+            return
         
-        if self.left_toolbar.highlight_track_ends_checkbox.isChecked() and hasattr(self.stack, 'tracked_centroids'):
+        else:
+            self.statusBar().showMessage('No tracked centroids found.', 2000)
+            return
+        
+    def highlight_track_ends(self):        
+        if hasattr(self.stack, 'tracked_centroids'):
             # get the start and end points of each track
             t=self.stack.tracked_centroids
             track_ends=t.groupby('particle').agg({'frame': ['first', 'last']})
@@ -1544,7 +1601,7 @@ class MainWidget(QMainWindow):
         
         self.left_toolbar.also_save_tracking.setChecked(True)
         self.plot_particle_statistic()
-        self.highlight_track_ends()
+        self.update_tracking_overlay()
 
     def merge_particle_tracks(self, first_particle, second_particle):
         if hasattr(self.stack, 'tracked_centroids'):
@@ -1577,7 +1634,7 @@ class MainWidget(QMainWindow):
 
                 print(f'Merged particles {first_particle} and {second_particle} at frame {self.frame_number}')
                 self.plot_particle_statistic()
-                self.highlight_track_ends()
+                self.update_tracking_overlay()
                 current_cell=self.cell_from_particle(merged)
                 self.canvas.add_cell_highlight(current_cell, color=merged_color, alpha=self.canvas.masks_alpha, layer='mask')
 
@@ -2094,7 +2151,7 @@ class MainWidget(QMainWindow):
             self.left_toolbar.also_save_tracking.setChecked(True)
 
         self.canvas.draw_outlines()
-        self.highlight_track_ends()
+        self.update_tracking_overlay()
         self.canvas.add_cell_highlight(new_mask_n, alpha=self.canvas.masks_alpha, color=cell_color, layer='mask')
 
         self.update_ROIs_label()
@@ -2286,7 +2343,7 @@ class MainWidget(QMainWindow):
         self.stack.delete_cells([cell_n2], frame_number=self.frame_number)
         print(f'Merged cell {cell_n2} into cell {cell_n1}')
 
-        self.highlight_track_ends()
+        self.update_tracking_overlay()
         self.canvas.draw_outlines()
         self.select_cell(cell=selected_cell_n)
         self.update_ROIs_label()
@@ -2336,7 +2393,7 @@ class MainWidget(QMainWindow):
             print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
             if frame==self.frame:
                 self.canvas.draw_outlines()
-                self.highlight_track_ends()
+                self.update_tracking_overlay()
                 self.update_display()
                 self.update_ROIs_label()
         
@@ -2566,7 +2623,7 @@ class MainWidget(QMainWindow):
     def imshow(self):
         ''' Render any changes to the image data (new file, new frame, new z slice). '''
         self.canvas.draw_outlines()
-        self.highlight_track_ends()
+        self.update_tracking_overlay()
         self.update_ROIs_label()
         self.update_display()
         self.show_seg_overlay()

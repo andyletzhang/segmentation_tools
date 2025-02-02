@@ -487,7 +487,7 @@ class LeftToolbar(QScrollArea):
     def percent_threshold(self):
         percent_threshold_text=self.percent_threshold_input.text()
         if percent_threshold_text=='':
-            return None
+            return 0.15
         else:
             return float(percent_threshold_text)
     @percent_threshold.setter
@@ -549,9 +549,10 @@ class LeftToolbar(QScrollArea):
         return self.volumes_tab
     
     def get_tracking_tab(self):
+        from .qt import CollapsibleWidget, bordered
         tracking_tab = QWidget()
         tracking_tab_layout = QVBoxLayout(tracking_tab)
-        tracking_tab_layout.setSpacing(10)
+        tracking_tab_layout.setSpacing(5)
         tracking_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.tracking_range_layout=QFormLayout()
@@ -572,7 +573,12 @@ class LeftToolbar(QScrollArea):
         io_menu.addWidget(self.save_tracking_button)
         io_menu.addWidget(self.load_tracking_button)
 
-        self.highlight_track_ends_checkbox=QCheckBox("Highlight Track Ends", self)
+        highlight_tracking_layout=QHBoxLayout()
+        self.highlight_track_ends_button=QCheckBox("Highlight Track Ends", self)
+        self.highlight_mitoses_button=QCheckBox("Highlight Mitoses", self)
+        highlight_tracking_layout.addWidget(self.highlight_track_ends_button)
+        highlight_tracking_layout.addWidget(self.highlight_mitoses_button)
+
         split_particle_button=QPushButton("Split Particle", self)
         delete_particle_label=QLabel("Delete Particle:", self)
         delete_particle_layout=QHBoxLayout()
@@ -583,23 +589,36 @@ class LeftToolbar(QScrollArea):
         delete_particle_layout.addWidget(delete_tail)
         delete_particle_layout.addWidget(delete_all)
         clear_tracking_button=QPushButton("Clear Tracking", self)
-
-        track_centroids_widget=QWidget(objectName='bordered')
-        track_centroids_layout=QVBoxLayout(track_centroids_widget)
-        edit_tracking_widget=QWidget(objectName='bordered')
-        edit_tracking_layout=QVBoxLayout(edit_tracking_widget)
-        track_centroids_layout.addLayout(self.tracking_range_layout)
-        track_centroids_layout.addWidget(self.track_centroids_button)
-        edit_tracking_layout.addWidget(self.highlight_track_ends_checkbox)
-        edit_tracking_layout.addWidget(split_particle_button)
-        edit_tracking_layout.addWidget(delete_particle_label)
-        edit_tracking_layout.addLayout(delete_particle_layout)
-        edit_tracking_layout.addWidget(clear_tracking_button)
-        edit_tracking_layout.addSpacerItem(create_vertical_spacer())
-        edit_tracking_layout.addLayout(io_menu)
         
-        tracking_tab_layout.addWidget(track_centroids_widget)
-        tracking_tab_layout.addWidget(edit_tracking_widget)
+        get_mitoses_button=QPushButton("Get Mitoses", self)
+        get_mitoses_button.clicked.connect(self.main_window.get_mitoses)
+
+        self.mitosis_inputs=[QLineEdit(self, placeholderText=text) for text in ['1.5', '1', '1', '1', '1', '1', '1']]
+        self.mitoses_config_menu=QFormLayout()
+        for label, line in zip(['Distance Threshold:', 'Score Cutoff:', 'Mother Circularity:', 'Daughter Circularity:', 'Centroid Asymmetry:', 'Centroid Angle:', 'CoM Displacement:'], self.mitosis_inputs):
+            self.mitoses_config_menu.addRow(QLabel(label), line)
+
+        track_centroids_widget=CollapsibleWidget(header_text='Track Centroids', parent=self.tabbed_widget)
+        tracking_border=bordered(track_centroids_widget)
+
+        mitoses_widget=CollapsibleWidget(header_text='Mitoses', parent=self.tabbed_widget)
+        mitoses_border=bordered(mitoses_widget)
+
+        track_centroids_widget.core_layout.addWidget(self.track_centroids_button)
+        track_centroids_widget.core_layout.addLayout(io_menu)
+        track_centroids_widget.addLayout(self.tracking_range_layout)
+        track_centroids_widget.addWidget(split_particle_button)
+        track_centroids_widget.addWidget(delete_particle_label)
+        track_centroids_widget.addLayout(delete_particle_layout)
+        track_centroids_widget.addWidget(clear_tracking_button)
+        
+        mitoses_widget.core_layout.addWidget(get_mitoses_button)
+        mitoses_widget.addLayout(self.mitoses_config_menu)
+        mitoses_widget.hide_content()
+        
+        tracking_tab_layout.addLayout(highlight_tracking_layout)
+        tracking_tab_layout.addWidget(tracking_border)
+        tracking_tab_layout.addWidget(mitoses_border)
 
         self.track_centroids_button.clicked.connect(self.main_window.track_centroids)
         self.tracking_range.returnPressed.connect(self.main_window.track_centroids)
@@ -607,7 +626,8 @@ class LeftToolbar(QScrollArea):
         clear_tracking_button.clicked.connect(self.main_window.clear_tracking)
         self.save_tracking_button.clicked.connect(self.main_window.save_tracking)
         self.load_tracking_button.clicked.connect(self.main_window.load_tracking_pressed)
-        self.highlight_track_ends_checkbox.stateChanged.connect(self.main_window.highlight_track_ends)
+        self.highlight_track_ends_button.stateChanged.connect(self.main_window.update_tracking_overlay)
+        self.highlight_mitoses_button.stateChanged.connect(self.main_window.update_tracking_overlay)
         delete_head.clicked.connect(self.main_window.delete_particle_head)
         delete_tail.clicked.connect(self.main_window.delete_particle_tail)
         delete_all.clicked.connect(self.main_window.delete_particle)
@@ -777,6 +797,18 @@ class LeftToolbar(QScrollArea):
     def segmentation_channels(self):
         return self.membrane_channel.currentIndex(), self.nuclear_channel.currentIndex()
     
+    @property
+    def mitosis_params(self):
+        out=[]
+        for config, default in zip(self.mitosis_inputs, (1.5, 1, 1, 1, 1, 1, 1)):
+            text=config.text()
+            if text=='':
+                out.append(default)
+            else:
+                out.append(float(text))
+
+        return out[0], out[1], out[2:]
+
 class RightToolbar:
     def __init__(self, parent:QMainWindow):
         self.main_window = parent

@@ -1,4 +1,8 @@
-from PyQt6.QtWidgets import QComboBox, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox, QColorDialog, QWidget, QGridLayout
+from PyQt6.QtWidgets import (
+    QComboBox, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QMessageBox, QColorDialog, QWidget, QGridLayout,
+    QToolButton, QSpacerItem, QSizePolicy
+)
 from PyQt6.QtGui import QAction, QMouseEvent, QColor, QFont, QDoubleValidator
 from PyQt6.QtCore import Qt, pyqtSignal, QPointF
 from superqt import QRangeSlider
@@ -304,3 +308,52 @@ class OverlaySettingsDialog(QDialog):
             'outlines_color': self.outlines_color.name(),
             'outlines_alpha': outlines_alpha
         }
+
+def bordered(widget):
+    border_wrapper=QWidget(objectName='bordered')
+    border_layout=QVBoxLayout(border_wrapper)
+    border_layout.setContentsMargins(0,0,0,0)
+    border_layout.addWidget(widget)
+    return border_wrapper
+class CollapsibleWidget(QWidget):
+    def __init__(self, header_text, parent=None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.setContentsMargins(0, 0, 0, 0)
+        self.core_layout = QVBoxLayout()
+        self.toggle_hidden = QToolButton(text=header_text)
+        self.toggle_hidden.setCheckable(True)
+        self.toggle_hidden.setChecked(True)
+        self.toggle_hidden.setStyleSheet('QToolButton { border: none; }')
+        self.toggle_hidden.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.toggle_hidden.setArrowType(Qt.DownArrow)
+        self.toggle_hidden.toggled.connect(self.on_toggled)
+
+        # Content Widget with items
+        self.collapsing_widget = QWidget()
+        self.collapsing_layout = QVBoxLayout(self.collapsing_widget)
+
+        self.core_layout.addWidget(self.toggle_hidden)
+        self.core_layout.addWidget(self.collapsing_widget)
+        self.setLayout(self.core_layout)
+
+    def show_content(self):
+        self.toggle_hidden.setChecked(True)
+    def hide_content(self):
+        self.toggle_hidden.setChecked(False)
+        
+    def addWidget(self, widget):
+        self.collapsing_layout.addWidget(widget)
+
+    def addLayout(self, layout):
+        self.collapsing_layout.addLayout(layout)
+
+    def addSpacerItem(self, spacer_item):
+        self.collapsing_layout.addSpacerItem(spacer_item)
+        
+    def on_toggled(self, checked):
+        if checked:
+            self.toggle_hidden.setArrowType(Qt.DownArrow)
+            self.collapsing_widget.show()
+        else:
+            self.toggle_hidden.setArrowType(Qt.RightArrow)
+            self.collapsing_widget.hide()

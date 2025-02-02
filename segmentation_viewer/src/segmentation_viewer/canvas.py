@@ -236,7 +236,7 @@ class PyQtGraphCanvas(QWidget):
 
         return mask_overlay, opaque_mask
 
-    def add_cell_highlight(self, cell_index, frame=None, layer='selection', alpha=None, color=None, img_type='masks', seg_type='masks'):
+    def add_cell_highlight(self, cell_index, frame=None, layer='selection', alpha=None, color=None, img_type='masks', seg_type='masks', seg_alpha=False):
         from matplotlib.colors import to_rgb
         if frame is None:
             frame=self.main_window.frame
@@ -288,7 +288,8 @@ class PyQtGraphCanvas(QWidget):
             img_cell_mask = cell_mask_bbox[..., np.newaxis] * color
             # Create an opaque mask for the specified cell
             seg_cell_mask = img_cell_mask.copy()
-            seg_cell_mask[cell_mask_bbox, -1] = 1
+            if not seg_alpha:
+                seg_cell_mask[cell_mask_bbox, -1] = 1
 
             if img_type == 'outlines' or seg_type == 'outlines':
                 outlines=self.get_mask_boundary(cell_mask_bbox)

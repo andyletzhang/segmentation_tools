@@ -194,6 +194,8 @@ class MainWidget(QMainWindow):
         self.view_menu.addAction(create_action("Show Grayscale", self.left_toolbar.toggle_grayscale, self))
         self.view_menu.addAction(create_action("Invert Contrast", self.left_toolbar.toggle_inverted, self, 'I'))
         self.view_menu.addAction(create_action("Overlay Settings...", self.open_overlay_settings, self))
+        self.view_menu.addAction(create_action("Window Screenshot", self.save_screenshot, self))
+        self.view_menu.addAction(create_action("Save Stack GIF", self.save_stack_gif, self))
         #self.view_menu.addAction(create_action("Segmentation Plot", self.toggle_segmentation_plot, self))
 
         # IMAGE
@@ -2723,6 +2725,106 @@ class MainWidget(QMainWindow):
 
 
     #--------------I/O----------------
+    def take_screenshot(self):
+        screen = QApplication.primaryScreen()
+        if screen:
+            screenshot = screen.grabWindow(self.winId())  # Capture the window
+            return screenshot
+        else:
+            return None
+        
+    def save_screenshot(self):
+        file_path=QFileDialog.getSaveFileName(self, 'Save screenshot as...', filter='*.png')[0]
+        if file_path=='':
+            return
+        screenshot=self.take_screenshot()
+        if screenshot is None:
+            return
+        screenshot.save(file_path, "png")  # Save to file
+        print(f'Saved screenshot to {file_path}')
+
+    def save_stack_gif(self):
+        from PyQt6.QtGui import QImage
+        from PyQt6.QtCore import QBuffer, QByteArray, QTimer
+        from PyQt6.QtWidgets import QApplication
+        from PIL import Image
+        import io
+        
+        if not self.file_loaded:
+            return
+            
+        file_path = QFileDialog.getSaveFileName(self, 'Save stack as GIF...', filter='*.gif')[0]
+        if file_path == '':
+            return
+            
+        delay = 100  # ms between frames
+        images = []
+
+        # Ensure main window is active and process events
+        self.activateWindow()
+        self.raise_()
+        
+        # Process events and give a small delay for window activation
+        QApplication.processEvents()
+        QTimer.singleShot(100, lambda: None)  # Wait for 100ms
+
+        try:
+            # Convert each frame to PIL Image
+            for frame_number in tqdm(range(len(self.stack.frames)), desc='Saving GIF'):
+                self.change_current_frame(frame_number)
+                QApplication.processEvents()  # Allow GUI updates
+                # Convert QImage to PIL Image
+                qimage = self.take_screenshot().toImage()
+                
+                # Convert QImage to bytes using QByteArray
+                byte_array = QByteArray()
+                buffer = QBuffer(byte_array)
+                buffer.open(QBuffer.OpenModeFlag.WriteOnly)
+                qimage.save(buffer, "PNG")
+                
+                # Convert to PIL Image
+                pil_image = Image.open(io.BytesIO(byte_array.data()))
+                images.append(pil_image.convert('RGBA'))
+                
+            # Save as animated GIF
+            if images:
+                images[0].save(
+                    file_path,
+                    save_all=True,
+                    append_images=images[1:],
+                    duration=delay,
+                    loop=0,
+                    optimize=True
+                )
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save GIF: {str(e)}")
+
+    def plot_screenshot(self):
+        from pyqtgraph.exporters import ImageExporter
+
+        # Create the exporter
+        scene=self.canvas.img_plot.scene()
+        exporter = ImageExporter(scene)
+        # Get the viewbox
+        view = self.canvas.img_plot.getViewBox()
+
+        # Get the bounding rectangle of all ImageItems
+        data_rect = view.childrenBoundingRect()
+        # Store original clip rect
+        original_clip = scene.clipRect()
+
+        # Set clip rect to match data bounds
+        scene.setClipRect(data_rect)
+        # Set the export parameters
+        params=exporter.parameters()
+        params['width'] = self.frame.img.shape[1]  # or your desired resolution
+        # The height will be automatically set due to aspect ratio lock
+        print(exporter.parameters())
+        # Export directly to PNG
+        exporter.export('output.png')
+        scene.setClipRect(original_clip)
+        print('saved')
+
     def open_stack(self, files):
         self.stack=self.load_files(files)
         if not self.stack:

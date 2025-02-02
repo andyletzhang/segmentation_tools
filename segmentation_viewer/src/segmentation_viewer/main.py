@@ -2026,7 +2026,7 @@ class MainWidget(QMainWindow):
         self.drawing_cell_split=False
         self.split_cell_masks()
         self.cell_split.clearPoints()
-        self.select_cell(cell=self.selected_cell_n)
+        self.select_cell(particle=self.selected_particle_n)
         self.update_display()
 
     def close_cell_roi(self):

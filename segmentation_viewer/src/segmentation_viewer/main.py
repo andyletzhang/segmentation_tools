@@ -501,30 +501,44 @@ class MainWidget(QMainWindow):
     
     def cell_stat_attrs(self, cell):
         ''' Return all common attributes which are meaningful cell-level metrics '''
-        ignored_attrs={'cycle_stage','n','frame'}
+        ignored_attrs={'cycle_stage','n','frame','red','green'}
         attrs=cell_scalar_attrs(cell)-ignored_attrs
 
         return attrs
     
-    def get_cell_frame_attrs(self):
-        items=[]
-        if len(self.frame.cells)>0: # add any valid scalar cell attributes
-            common_attrs=self.cell_stat_attrs(self.frame.cells[0])
-            for cell in self.frame.cells[1:]:
-                common_attrs=common_attrs.intersection(set(dir(cell)))
-            items.extend(list(common_attrs))
+    def get_cell_frame_attrs(self, ignored={'frame','n','green','red'}):
+        ''' Return all attributes from any cell in the current frame '''
+        keys=set(np.concatenate([dir(cell) for cell in self.frame.cells]))
+        # remove __ prefixed attributes
+        keys={item for item in keys if not item.startswith('_')}
+        
+        for key in keys.copy():
+            # iterate until attribute is found
+            for cell in self.frame.cells:
+                try:
+                    val=getattr(cell, key)
+                except AttributeError:
+                    continue
 
-        return items
+                # remove non-scalar attributes
+                if not np.isscalar(val):
+                    keys.remove(key)
+                break
+            else:
+                keys.remove(key) # remove if attribute not found in any cell
+        
+        return keys-ignored
+        
 
     def menu_frame_attrs(self, menu):
         if not self.file_loaded:
             return
         current_attr=menu.currentText()
-        items=self.get_cell_frame_attrs()
-        items=['Select Cell Attribute']+natsorted(items)
         menu.blockSignals(True)
         menu.clear()
-        menu.addItems(items)
+        keys=self.get_cell_frame_attrs()
+        keys=['Select Cell Attribute']+natsorted(keys)
+        menu.addItems(keys)
         menu.blockSignals(False)
         current_index=menu.findText(current_attr)
         if current_index==-1:
@@ -535,13 +549,13 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         current_attr=self.seg_overlay_attr.currentText()
-        items=self.get_cell_frame_attrs()
+        keys=self.get_cell_frame_attrs()
         if hasattr(self.frame, 'heights'):
-            items.append('heights')
-        items=['Select Cell Attribute']+natsorted(items)
+            keys.append('heights')
+        keys=['Select Cell Attribute']+natsorted(keys)
         self.seg_overlay_attr.blockSignals(True)
         self.seg_overlay_attr.clear()
-        self.seg_overlay_attr.addItems(items)
+        self.seg_overlay_attr.addItems(keys)
         self.seg_overlay_attr.blockSignals(False)
         current_index=self.seg_overlay_attr.findText(current_attr)
         if current_index==-1:
@@ -2499,8 +2513,7 @@ class MainWidget(QMainWindow):
         self.convert_red_green()
 
         cells=np.concatenate([frame.cells for frame in self.stack.frames])
-        attrs=cell_scalar_attrs(cells[0])
-        attrs=attrs-{'n','frame'} # drop columns already included in the dataframe
+        attrs=self.get_cell_frame_attrs(ignored={'n','frame'}) # get all cell attributes except n and frame (redundant)
 
         for attr in attrs:
             df[attr]=np.array([getattr(cell, attr) for cell in cells])
@@ -2599,6 +2612,10 @@ class MainWidget(QMainWindow):
             self.left_toolbar.show_grayscale_checkbox.setChecked(False)
         self.canvas.clear_selection_overlay() # remove any overlays (highlighting, outlines)
         self.canvas.img_plot.autoRange()
+
+        self.histogram_menu.setCurrentIndex(0)
+        self.time_series_menu.setCurrentIndex(0)
+        self.particle_stat_menu.setCurrentIndex(0)
 
     def imshow(self):
         ''' Render any changes to the image data (new file, new frame, new z slice). '''
@@ -2929,9 +2946,9 @@ class MainWidget(QMainWindow):
         for frame in self.stack.frames: # loaded segmentation files will always have outlines
             frame.has_outlines=True
 
+        # reset visual settings
         self.canvas.img_plot.autoRange()
 
-        # reset visual settings
         self.left_toolbar.saved_visual_settings=[self.default_visual_settings for _ in range(4)]
         self.auto_range_sliders()
         self.normalize()

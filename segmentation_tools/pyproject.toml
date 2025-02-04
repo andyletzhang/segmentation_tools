@@ -26,6 +26,7 @@ dependencies = [
     "natsort",
     "nd2",
     "numba",
+    "dask",
 ]
 
 [build-system]

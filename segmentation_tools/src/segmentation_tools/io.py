@@ -53,11 +53,21 @@ def read_tif(tif_file):
     shape, order=read_tif_shape(tif_file)
     pages_shape=(shape[:-2]) # shape without the XY dimensions
     axes_map = {axis: i for i, axis in enumerate(reversed(order))}
-    tif_pages=np.array(tif_file.pages).reshape(pages_shape).transpose(axes_map['T'], axes_map['P'], axes_map['Z'], axes_map['C'])
-    placeholder=np.empty(tif_pages.shape[:3], dtype=object)
-    for i,j,k in np.ndindex(placeholder.shape):
-        placeholder[i,j,k]=lambda i=i, j=j, k=k:np.array([a.asarray() for a in tif_pages[i,j,k]]) # lazy load
-    return placeholder
+    if len(tif_file.pages)==1 and np.prod(pages_shape)>1:
+        # BigTIFF-adjacent (?) case with only one page.
+        import dask.array as da
+        tif_pages=da.from_zarr(tif_file.series[0].aszarr())
+        tif_pages=tif_pages.reshape(shape).transpose(axes_map['T'], axes_map['P'], axes_map['Z'], axes_map['C'], axes_map['Y'], axes_map['X'])
+        placeholder=np.empty(tif_pages.shape[:3], dtype=object)
+        for i,j,k in np.ndindex(placeholder.shape):
+            placeholder[i,j,k]=lambda i=i, j=j, k=k:np.array([a.compute() for a in tif_pages[i,j,k]])
+        return placeholder
+    else:
+        tif_pages=np.array(tif_file.pages).reshape(pages_shape).transpose(axes_map['T'], axes_map['P'], axes_map['Z'], axes_map['C'])
+        placeholder=np.empty(tif_pages.shape[:3], dtype=object)
+        for i,j,k in np.ndindex(placeholder.shape):
+            placeholder[i,j,k]=lambda i=i, j=j, k=k:np.array([a.asarray() for a in tif_pages[i,j,k]]) # lazy load
+        return placeholder
 
 def read_nd2_shape(nd2_file):
     # Read metadata to get the shape (T, Z, C)

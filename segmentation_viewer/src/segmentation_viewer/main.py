@@ -80,6 +80,7 @@ class MainWidget(QMainWindow):
         self.font_metrics=QFontMetrics(QLabel().font()) # metrics for the default font
         self.digit_width=self.font_metrics.horizontalAdvance('0') # text length scale
         self.cancel_iter=False # flag to cancel progress bar iteration
+        self.is_iterating=False
         self.circle_mask=None
 
         # Status bar
@@ -935,8 +936,10 @@ class MainWidget(QMainWindow):
                 self.is_iterating=True
                 self.cancel_iter=False
                 for i, item in enumerate(iterable):
+                    QApplication.processEvents() # allow updates, check for key presses
                     if self.cancel_iter:
-                        print('Task cancelled.')
+                        self.is_iterating=False
+                        QMessageBox.warning(self, 'Operation Cancelled', 'Operation cancelled by user.')
                         break
                     yield item
                     tqdm_bar.update(1)
@@ -2652,12 +2655,16 @@ class MainWidget(QMainWindow):
     
     def keyPressEvent(self, event):
         """Handle key press events (e.g., arrow keys for frame navigation)."""
+        if event.key() == Qt.Key.Key_Escape:
+            if self.is_iterating: # cancel progress bar iteration
+                self.cancel_iter=True
+
         if event.key() == Qt.Key.Key_Tab:
             # switch between tabs
             if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
                 current_tab=self.left_toolbar.tabbed_widget.currentIndex()
                 self.left_toolbar.tabbed_widget.setCurrentIndex((current_tab+1)%self.left_toolbar.tabbed_widget.count())
-        
+
         if not self.file_loaded:
             return
 
@@ -2722,9 +2729,6 @@ class MainWidget(QMainWindow):
             if self.drawing_cell_split:
                 self.cell_split.clearPoints()
                 self.drawing_cell_split=False
-            if self.is_iterating: # cancel progress bar iteration
-                self.cancel_iter=True
-                print('Cancel signal received.')
 
         # Handle frame navigation with left and right arrow keys
         if event.key() == Qt.Key.Key_Left:

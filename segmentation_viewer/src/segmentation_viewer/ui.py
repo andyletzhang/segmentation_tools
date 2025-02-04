@@ -738,7 +738,10 @@ class LeftToolbar(QScrollArea):
     
     @property
     def RGB_visible(self):
-        return [checkbox.isChecked() for checkbox in self.RGB_checkboxes]
+        if self.is_grayscale:
+            return None
+        else:
+            return [checkbox.isChecked() for checkbox in self.RGB_checkboxes]
 
     @RGB_visible.setter
     def RGB_visible(self, RGB):

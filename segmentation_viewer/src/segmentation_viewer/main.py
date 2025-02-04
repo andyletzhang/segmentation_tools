@@ -1967,6 +1967,13 @@ class MainWidget(QMainWindow):
                         else:
                             self.select_cell(particle=current_particle_n)
 
+                    elif (event.modifiers() & Qt.KeyboardModifier.AltModifier) and (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+                        # merge cells in all frames
+                        particle = self.particle_from_cell(current_cell_n, self.frame_number)
+                        if particle is not None:
+                            self.merge_particle_masks(self.selected_particle_n, particle)
+                        self.select_cell(particle=self.selected_particle_n) # reselect the merged particle
+
                     elif event.modifiers() == Qt.KeyboardModifier.AltModifier and self.selected_cell_n is not None:
                         self.merge_cell_masks(self.selected_cell_n, current_cell_n)
                         self.select_cell(cell=self.selected_cell_n) # reselect the merged cell
@@ -2272,7 +2279,7 @@ class MainWidget(QMainWindow):
             old_mask=new_masks==orig_label
             if hasattr(old_cell, '_centroid'):
                 del old_cell._centroid
-            outline=self.add_outline(old_mask)
+            outline=self.frame.add_outline(old_mask)
             self.frame.masks[old_mask]=orig_label # restore the original label to the largest mask
             if self.frame.has_outlines:
                 old_cell.outline=outline
@@ -2289,14 +2296,8 @@ class MainWidget(QMainWindow):
         if frame_number is None: frame_number=self.frame_number
         self.frame.cells=np.append(self.frame.cells, Cell(n, outline, color_ID=color_ID, red=red, green=green, frame_number=frame_number, parent=self.stack.frames[self.frame_number], **kwargs))
         self.frame.n_cells+=1
-    
-    def add_outline(self, mask):
-        outline=utils.outlines_list(mask)[0]
-        self.frame.outlines[outline[:,1], outline[:,0]]=True
 
-        return outline
-
-    def merge_cell_masks(self, cell_n1, cell_n2):
+    def merge_cell_masks(self, cell_n1, cell_n2, frame_number=None):
         '''
         merges cell_n2 into cell_n1.
         in practice, this reassigns the cell_n2 mask to cell_n1 and deletes cell_n2.
@@ -2305,45 +2306,68 @@ class MainWidget(QMainWindow):
             return
         
         if cell_n1>cell_n2:
-            selected_cell_n=cell_n1-1
+            selected_cell_n=cell_n1-1 # new cells will be renumbered
         else:
             selected_cell_n=cell_n1
 
-        # edit frame.masks, frame.outlines
-        mask_2=self.frame.masks==cell_n2+1
+        if frame_number is None:
+            frame_number=self.frame_number
+        # purge cell 2
+        new_cell, _ = self.stack.merge_cells(cell_n1, cell_n2, frame_number=frame_number)
+        print(f'Merged cell {cell_n2} into cell {cell_n1} in frame {frame_number}')
 
-        self.frame.masks[mask_2]=cell_n1+1 # merge masks
-
-        merged_mask=self.frame.masks==cell_n1+1
-        self.frame.outlines[merged_mask]=False # remove both outlines
-        outline=self.add_outline(merged_mask) # add merged outline
-
-        # edit merged cell object
-        new_cell=self.frame.cells[cell_n1]
-        new_cell.outline=outline
-
-        if hasattr(new_cell, '_centroid'):
-            del new_cell._centroid
         if hasattr(self.stack, 'tracked_centroids'):
-            t=self.stack.tracked_centroids
-            # recompute merged cell centroid
-            t.loc[(t.frame==self.frame_number)&(t.cell_number==cell_n1), ['x','y']]=new_cell.centroid.astype(t['x'].dtype)
             self.left_toolbar.also_save_tracking.setChecked(True)
 
         # add new cell mask to the overlay
-        self.canvas.add_cell_highlight(cell_n1, alpha=self.canvas.masks_alpha, color=new_cell.color_ID, layer='mask')
+        self.canvas.add_cell_highlight(selected_cell_n, alpha=self.canvas.masks_alpha, color=new_cell.color_ID, layer='mask', frame=self.stack.frames[frame_number])
 
-        # purge cell 2
-        self.stack.delete_cells([cell_n2], frame_number=self.frame_number)
-        print(f'Merged cell {cell_n2} into cell {cell_n1}')
+        if frame_number==self.frame_number:
+            self.update_tracking_overlay()
+            self.canvas.draw_outlines()
+            self.select_cell(cell=selected_cell_n)
+            self.update_ROIs_label()
+            self.update_display()
 
-        self.update_tracking_overlay()
-        self.canvas.draw_outlines()
-        self.select_cell(cell=selected_cell_n)
-        self.update_ROIs_label()
-        self.update_display()
+        #self.check_cell_numbers() # for troubleshooting
 
-        self.check_cell_numbers()
+    def merge_particle_masks(self, particle_n1, particle_n2):
+        ''' merges particle_n2 masks into particle_n1 masks. '''
+        t=self.stack.tracked_centroids
+        # renumber tracked_centroids so particle_n2 is the largest number
+        remapped_particles=np.arange(t['particle'].max()+2)
+        remapped_particles=np.delete(remapped_particles,particle_n2)
+        t['particle']=remapped_particles[t['particle']]
+        particle_n1=remapped_particles[particle_n1]
+        particle_n2=remapped_particles[particle_n2]
+
+        # get cells for each particle
+        particle1=self.stack.get_particle(particle_n1)
+        particle2=self.stack.get_particle(particle_n2)
+
+        particle1_frames=[cell.frame for cell in particle1]
+        particle2_frames=[cell.frame for cell in particle2]
+
+        particle1_color=particle1[0].color_ID
+
+        merge_frames=set(particle1_frames).intersection(particle2_frames) # frames where particle2 masks need to be merged into particle1 masks
+        relabel_frames=set(particle2_frames)-merge_frames # frames where particle2 cell needs to be relabeled as particle1
+        print(merge_frames, relabel_frames)
+
+        for frame_number in merge_frames:
+            cell1=particle1[particle1_frames.index(frame_number)]
+            cell2=particle2[particle2_frames.index(frame_number)]
+            self.merge_cell_masks(cell1.n, cell2.n, frame_number=frame_number)
+
+        for frame_number in relabel_frames:
+            frame=self.stack.frames[frame_number]
+            # relabel particle, redraw color
+            cell2=particle2[particle2_frames.index(frame_number)]
+            t.loc[t['particle']==particle_n2, 'particle']=particle_n1
+            cell2.color_ID=particle1_color
+            if hasattr(frame, 'stored_mask_overlay'):
+                self.canvas.add_cell_highlight(cell2.n, alpha=self.canvas.masks_alpha, color=particle1_color, layer='mask', frame=frame)
+        print(f'Relabeled cell {cell2.n} as particle {particle_n1} in frames {relabel_frames}')
 
     def check_cell_numbers(self):
         ''' for troubleshooting: check if the cell numbers in the frame and the masks align. '''

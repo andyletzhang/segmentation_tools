@@ -181,7 +181,12 @@ class SegmentedStack:
                 self.delete_cells(edge_cells, frame.frame_number)
                 frame.outlines=cp_utils.masks_to_outlines(frame.masks)
         return all_edge_cells
-
+    
+    def merge_cells(self, cell_n1, cell_n2, frame_number):
+        frame=self.frames[frame_number]
+        new_cell, idx=frame.merge_cells(cell_n1, cell_n2)
+        return new_cell, idx
+    
     # -------------Magic-------------
     def __len__(self):
         return len(self.frames)
@@ -250,7 +255,16 @@ class TimeStack(SegmentedStack):
         if hasattr(self, 'mitoses'):
             for mitosis in self.mitoses:
                 mitosis[['y','x']]=rotate_points(mitosis[['y','x']].values, shape, k)
-        
+    
+    def merge_cells(self, cell_n1, cell_n2, frame_number):
+        new_cell, idx=super().merge_cells(cell_n1, cell_n2, frame_number)
+        if hasattr(self, 'tracked_centroids'):
+            # recompute merged cell centroid
+            t=self.tracked_centroids
+            t.loc[(t.frame==frame_number)&(t.cell_number==cell_n1), ['x','y']]=new_cell.centroid.astype(t['x'].dtype)
+            self.remove_tracking_data([cell_n2], idx, frame_number)
+        return new_cell, idx
+    
     def delete_cells(self, cell_numbers, frame_number):
         idx=super().delete_cells(cell_numbers, frame_number)
         if hasattr(self, 'tracked_centroids'):
@@ -939,6 +953,34 @@ class SegmentedImage:
         self.cells=self.cells[cell_order]
         self.set_cell_attrs('n', range(self.n_cells)) # reassign cell.n values
         return cell_order
+
+    def add_outline(self, mask):
+        outline=cp_utils.outlines_list(mask)[0]
+        self.outlines[outline[:,1], outline[:,0]]=True
+
+        return outline
+    
+    def merge_cells(self, cell_n1, cell_n2):
+        # edit frame.masks, frame.outlines
+        mask_2=self.masks==cell_n2+1
+
+        self.masks[mask_2]=cell_n1+1 # merge masks
+
+        merged_mask=self.masks==cell_n1+1
+        self.outlines[merged_mask]=False # remove both outlines
+        outline=self.add_outline(merged_mask) # add merged outline
+
+        # edit merged cell object
+        new_cell=self.cells[cell_n1]
+        new_cell.outline=outline
+
+        if hasattr(new_cell, '_centroid'):
+            del new_cell._centroid
+
+        # remove cell 2
+        idx=self.delete_cells([cell_n2])
+
+        return new_cell, idx
 
     def delete_cells(self, cell_numbers):
         '''deletes a cell from the image.'''

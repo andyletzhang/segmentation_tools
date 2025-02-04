@@ -240,6 +240,8 @@ class PyQtGraphCanvas(QWidget):
         from matplotlib.colors import to_rgb
         if frame is None:
             frame=self.main_window.frame
+        elif isinstance(frame, int):
+            frame=self.main_window.stack.frames[frame]
 
         if alpha is None:
             alpha=self.selected_cell_alpha

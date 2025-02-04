@@ -1348,7 +1348,7 @@ class Cell:
     def area_pixels(self):
         area=0.5*np.abs(np.dot(self.outline.T[0],np.roll(self.outline.T[1],1))-np.dot(self.outline.T[1],np.roll(self.outline.T[0],1)))
         return area
-    area_pixels._scaling=1
+    area_pixels._scaling=2
     
     def perimeter_pixels(self):
         if len(self.outline)==0:

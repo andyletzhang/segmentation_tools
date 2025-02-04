@@ -185,6 +185,7 @@ class ExportWizard(QDialog):
         button_layout = QHBoxLayout()
         confirm_button = QPushButton("Confirm")
         cancel_button = QPushButton("Cancel")
+        self.save_input.returnPressed.connect(confirm_button.click)
         confirm_button.clicked.connect(self.confirm)
         cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(confirm_button)

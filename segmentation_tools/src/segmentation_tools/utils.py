@@ -9,10 +9,11 @@ def picklesize(o):
     '''
     return len(pickle.dumps(o))/(1024**2)
 
+
 def cell_scalar_attrs(cell):
     ''' Return all common attributes which are scalar cell attributes '''
     attrs=set(dir(cell))
-    ignored_attrs={'red','green','vertex_area','shape_parameter','sorted_vertices','vertex_perimeter'}
+    ignored_attrs={'vertex_area','shape_parameter','sorted_vertices','vertex_perimeter'}
     test_attrs=attrs-ignored_attrs
     # Collect attributes to remove instead of modifying the set in place
     to_remove = set()

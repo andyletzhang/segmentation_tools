@@ -7,6 +7,7 @@ name = "segmentation_viewer"
 version = "0.0.1"
 dependencies = [
     "PyQt6",
+    "PyQt6-QScintilla",
     "PyOpenGL",
     "shapely",
     "numpy",

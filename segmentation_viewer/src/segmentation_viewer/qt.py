@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QComboBox, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QMessageBox, QColorDialog, QWidget, QGridLayout,
-    QToolButton, QSpacerItem, QSizePolicy
+    QToolButton
 )
 from PyQt6.QtGui import QAction, QMouseEvent, QColor, QFont, QDoubleValidator
 from PyQt6.QtCore import Qt, pyqtSignal, QPointF
@@ -340,7 +340,7 @@ class CollapsibleWidget(QWidget):
         self.toggle_hidden.setChecked(True)
     def hide_content(self):
         self.toggle_hidden.setChecked(False)
-        
+
     def addWidget(self, widget):
         self.collapsing_layout.addWidget(widget)
 

@@ -24,6 +24,7 @@ from .canvas import PyQtGraphCanvas, CellMaskPolygons, CellSplitLines
 from .command_line import CommandLineWindow
 from .qt import CustomComboBox, SubstackDialog
 from .io import ExportWizard
+from .scripting import ScriptWindow
 
 from natsort import natsorted
 import importlib.resources
@@ -31,7 +32,9 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
-# TODO: script execution, similar to command line
+# TODO: quiet versions of all the analysis functions with popups, so scripting can be automated
+# TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
+# ndimage labeled measurements on any of these attributes to create new ones
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
 # TODO: File -> export heights tif, import heights tif
@@ -210,6 +213,11 @@ class MainWidget(QMainWindow):
         self.stack_menu = self.menu_bar.addMenu("Stack")
         self.stack_menu.addAction(create_action("Delete frame", self.delete_frame, self))
         self.stack_menu.addAction(create_action("Make substack...", self.make_substack, self))
+
+        # SCRIPTS
+        self.script_menu = self.menu_bar.addMenu("Scripts")
+        self.script_menu.addAction(create_action("Open Command Line", self.open_command_line, self))
+        self.script_menu.addAction(create_action("Run Script...", self.open_script_editor, self))
 
         # HELP
         self.help_menu = self.menu_bar.addMenu("Help")
@@ -1141,6 +1149,7 @@ class MainWidget(QMainWindow):
     def update_tracking_overlay(self):
         sender = self.sender()
         
+        # enforce checkbox exclusivity
         if sender == self.left_toolbar.highlight_track_ends_button and sender.isChecked():
             self.left_toolbar.highlight_mitoses_button.setChecked(False)
         elif sender == self.left_toolbar.highlight_mitoses_button and sender.isChecked():
@@ -1748,6 +1757,12 @@ class MainWidget(QMainWindow):
         self.globals_dict['cli'] = self.cli_window.cli
         self.cli_window.show()
 
+    def open_script_editor(self):
+        # Create a separate window for the script editor
+        if not hasattr(self, 'script_window') or not self.script_window.isVisible():
+            self.script_window = ScriptWindow(self, self.globals_dict, self.locals_dict)
+            self.script_window.show()
+
     def select_cell(self, particle=None, cell=None):
         ''' Select a cell or particle by number. '''
         if self.FUCCI_mode: # classifying FUCCI, no cell selection
@@ -1956,6 +1971,7 @@ class MainWidget(QMainWindow):
                 # cell selection actions
                 if  current_cell_n>=0:
                     if (event.modifiers() & Qt.KeyboardModifier.ControlModifier) and (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+                        # delete cell from all frames
                         particle = self.particle_from_cell(current_cell_n, self.frame_number)
                         if particle is not None:
                             self.delete_particle(particle_n=particle)
@@ -1963,7 +1979,7 @@ class MainWidget(QMainWindow):
                         self.update_display()
 
                     elif event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-                        # ctrl click deletes cells
+                        # delete cell from current frame
                         self.delete_cell_mask(current_cell_n)
                         if current_particle_n is None:
                             self.select_cell(None) # deselect the cell
@@ -2463,6 +2479,7 @@ class MainWidget(QMainWindow):
         for frame in self.progress_bar(frames_to_save):
             self.save_frame(frame) # save the frame to the same file path
 
+        print(f'Saved segmentation to {self.stack.name}')
 
     def save_as_segmentation(self):
         if not self.file_loaded:
@@ -2484,6 +2501,7 @@ class MainWidget(QMainWindow):
                 file_path=file_path+'_seg.npy'
             self.save_frame(self.frame, file_path)
         
+        print(f'Saved segmentation to {folder_path}')
         if self.left_toolbar.also_save_tracking.isChecked():
             self.save_tracking(file_path=folder_path+'/tracking.csv')
 
@@ -2510,9 +2528,6 @@ class MainWidget(QMainWindow):
             frame.img=frame.zstack[self.zstack_number]
 
         frame.to_seg_npy(file_path, write_attrs=write_attrs, overwrite_img=True)
-
-        frame.name=file_path
-        print(f'Saved frame to {file_path}')
         frame.name=file_path
 
     def export_csv(self):

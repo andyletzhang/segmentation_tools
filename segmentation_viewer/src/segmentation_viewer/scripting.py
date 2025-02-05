@@ -2,7 +2,7 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout,
     QWidget, QFileDialog, QMessageBox)
-from PyQt6.Qsci import QsciScintilla, QsciLexerPython
+from PyQt6.Qsci import QsciScintilla, QsciLexerPython, QsciAPIs
 from PyQt6.QtGui import QFont, QColor, QAction
 from PyQt6.QtCore import Qt
 import ast
@@ -148,11 +148,43 @@ class ScriptWindow(QMainWindow):
 
         # Enable brace matching
         self.text_edit.setBraceMatching(QsciScintilla.BraceMatch.SloppyBraceMatch)
-
-        # Enable auto-completion (functions, variables, keywords)
-        self.text_edit.setAutoCompletionThreshold(1)  # Show after 1 character
-        self.text_edit.setAutoCompletionSource(QsciScintilla.AutoCompletionSource.AcsAPIs)
+        self.initialize_auto_completion(lexer)
     
+    def initialize_auto_completion(self, lexer):
+        from keyword import kwlist
+        import builtins
+
+        api=QsciAPIs(lexer)
+        # Add Python keywords
+        for kw in kwlist:
+            api.add(kw)
+
+        for key in self.global_env:
+            api.add(key)
+
+        for key in self.local_env:
+            api.add(key)
+
+        # Add Python built-ins
+        for builtin in dir(builtins):
+            if not builtin.startswith('_'):  # Skip private built-ins
+                api.add(builtin)
+
+        # Enable both API-based and document-based completion
+        self.text_edit.setAutoCompletionSource(QsciScintilla.AutoCompletionSource.AcsAll)
+
+        # Show completion after 2 characters (more practical than 1)
+        self.text_edit.setAutoCompletionThreshold(2)
+
+        # Make it case-sensitive
+        self.text_edit.setAutoCompletionCaseSensitivity(True)
+
+        # Replace word when completing
+        self.text_edit.setAutoCompletionReplaceWord(True)
+
+        # Prepare the API (must be called after adding words)
+        api.prepare()
+
     def load_script(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Open Script", self.scripts_path, "Python Files (*.py)")
         if file_path:

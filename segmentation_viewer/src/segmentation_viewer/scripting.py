@@ -111,15 +111,15 @@ class ScriptWindow(QMainWindow):
         lexer.setColor(QColor("#ffffff"))  # Default text color
 
         # Syntax Highlighting Colors
-        lexer.setColor(QColor("#ffffff"), QsciLexerPython.Default)  # Default text
-        lexer.setColor(QColor("#dcdcaa"), QsciLexerPython.Keyword)  # Keywords
-        lexer.setColor(QColor("#569cd6"), QsciLexerPython.ClassName)  # Class names
-        lexer.setColor(QColor("#9cdcfe"), QsciLexerPython.FunctionMethodName)  # Function names
-        lexer.setColor(QColor("#ce9178"), QsciLexerPython.Comment)  # Comments
-        lexer.setColor(QColor("#d69d85"), QsciLexerPython.Number)  # Numbers
-        lexer.setColor(QColor("#c586c0"), QsciLexerPython.Decorator)  # Decorators
-        lexer.setColor(QColor("#d7ba7d"), QsciLexerPython.SingleQuotedString) # Strings
-        lexer.setColor(QColor("#d7ba7d"), QsciLexerPython.DoubleQuotedString)
+        lexer.setColor(QColor("#f0f0f0"), QsciLexerPython.Default)  # Default Text (white)
+        lexer.setColor(QColor("#569cd6"), QsciLexerPython.Keyword)  # Keywords (blue)
+        lexer.setColor(QColor("#4ec9b0"), QsciLexerPython.ClassName)  # Classes (cyan)
+        lexer.setColor(QColor("#dcdcaa"), QsciLexerPython.FunctionMethodName)  # Function names (yellow)
+        lexer.setColor(QColor("#6a9955"), QsciLexerPython.Comment)  # Comments (green)
+        lexer.setColor(QColor("#b5cea8"), QsciLexerPython.Number)  # Numbers (light green)
+        lexer.setColor(QColor("#c586c0"), QsciLexerPython.Decorator)  # Decorators (purple)
+        lexer.setColor(QColor("#ce9178"), QsciLexerPython.SingleQuotedString)  # Strings (orange)
+        lexer.setColor(QColor("#ce9178"), QsciLexerPython.DoubleQuotedString)
 
         # Enable auto-indentation (new lines follow previous indentation)
         self.text_edit.setAutoIndent(True)
@@ -132,13 +132,9 @@ class ScriptWindow(QMainWindow):
 
         # Enable Pythonic behavior: indent after colons (if, for, def, etc.)
         self.text_edit.setIndentationGuides(True)
-        self.text_edit.setBraceMatching(QsciScintilla.BraceMatch.SloppyBraceMatch)
 
         # Set caret (cursor) color
         self.text_edit.setCaretForegroundColor(QColor("#ffffff"))
-        
-        # Enable word wrap
-        self.text_edit.setWrapMode(QsciScintilla.WrapMode.WrapWord)
 
         # Enable line numbers
         self.text_edit.setMarginType(0, QsciScintilla.MarginType.NumberMargin)
@@ -148,6 +144,11 @@ class ScriptWindow(QMainWindow):
 
         # Enable brace matching
         self.text_edit.setBraceMatching(QsciScintilla.BraceMatch.SloppyBraceMatch)
+        self.text_edit.setMatchedBraceBackgroundColor(QColor("#2e2e2e"))
+        self.text_edit.setMatchedBraceForegroundColor(QColor("#74d7ec"))
+        self.text_edit.setUnmatchedBraceBackgroundColor(QColor("#2e2e2e"))
+        self.text_edit.setUnmatchedBraceForegroundColor(QColor("#ff6b6b"))
+
         self.initialize_auto_completion(lexer)
     
     def initialize_auto_completion(self, lexer):

@@ -1,11 +1,14 @@
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout,
-    QWidget, QFileDialog, QMessageBox)
+    QWidget, QFileDialog, QMessageBox, QToolTip
+    )
 from PyQt6.Qsci import QsciScintilla, QsciLexerPython, QsciAPIs
 from PyQt6.QtGui import QFont, QColor, QAction
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QPoint
 import ast
+import re
+import numpy as np
 
 class ExecutionInterrupted(Exception):
     """Custom exception to stop script execution."""
@@ -35,6 +38,9 @@ class ScriptWindow(QMainWindow):
         # Execution environment
         self.local_env = local_env if local_env is not None else {}
         self.global_env = global_env if global_env is not None else {}
+
+        self.global_env['script_window']=self
+
         for name in dir(self.main_window):
             if not name.startswith("__") and not name.endswith("Event"):
                 try:
@@ -60,12 +66,62 @@ class ScriptWindow(QMainWindow):
         self.interrupt_button = QPushButton("Interrupt", self)
         self.execute_button.setShortcut("Ctrl+Return")
         self.interrupt_button.clicked.connect(self.interrupt_execution)
+        run_interrupt_layout.addStretch()
         run_interrupt_layout.addWidget(self.execute_button)
         run_interrupt_layout.addWidget(self.interrupt_button)
 
         layout.addLayout(run_interrupt_layout)
 
         central_widget.setLayout(layout)
+        self.text_edit.setMouseTracking(True)
+        self.text_edit.mouseMoveEvent = self.mouseMoveEvent
+
+    def mouseMoveEvent(self, event):
+        """Show a tooltip with the docstring of the word under the mouse."""
+        pos = event.pos()
+        char_pos = self.text_edit.SendScintilla(QsciScintilla.SCI_POSITIONFROMPOINT, pos.x(), pos.y())
+        
+        if char_pos < 0:
+            QToolTip.hideText()
+            return  # No valid character under the mouse
+        char_x = self.text_edit.SendScintilla(QsciScintilla.SCI_POINTXFROMPOSITION, 0, char_pos)
+        char_y = self.text_edit.SendScintilla(QsciScintilla.SCI_POINTYFROMPOSITION, 0, char_pos)
+        
+        if np.abs(pos.x() - char_x) > 10 or np.abs(pos.y() - char_y) > 10:
+            QToolTip.hideText()
+            return
+        
+        def extract_identifier(text, index):
+            """Extracts a full dotted identifier (e.g., np.sum) from a given position."""
+            start, end = index, index
+            length = len(text)
+
+            # Expand left while within bounds and characters are valid
+            while start > 0 and (text[start - 1].isalnum() or text[start - 1] in "._"):
+                start -= 1
+
+            # Expand right while within bounds and characters are valid
+            while end < length and (text[end].isalnum() or text[end] in "._"):
+                end += 1
+
+            return text[start:end] if start != end else None  # Avoid returning empty strings
+        
+        identifier=extract_identifier(self.text_edit.text(), char_pos)
+        if not identifier:
+            QToolTip.hideText()
+            return
+        
+        # Try resolving the object dynamically
+        obj = None
+        try:
+            obj = eval(identifier, self.global_env, self.local_env)
+        except Exception:
+            pass  # Ignore evaluation errors
+        
+        if obj and hasattr(obj, "__doc__"):
+            QToolTip.showText(self.mapToGlobal(pos) + QPoint(10, 10), obj.__doc__.strip(), self)
+
+        super().mouseMoveEvent(event)
 
     @property
     def scripts_path(self):
@@ -79,7 +135,7 @@ class ScriptWindow(QMainWindow):
             return self._scripts_path.as_posix()
 
     def _setup_menu(self):
-        from .qt import create_action
+        from segmentation_viewer.utils import create_action
         self.menu_bar=self.menuBar()
         # FILE
         self.file_menu = self.menu_bar.addMenu("File")
@@ -247,3 +303,9 @@ class ScriptWindow(QMainWindow):
             QMessageBox.critical(self, "Execution Error", f"Error:\n{e}")
         finally:
             self.is_executing = False
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = ScriptWindow()
+    window.show()
+    sys.exit(app.exec())

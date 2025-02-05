@@ -3173,6 +3173,8 @@ class MainWidget(QMainWindow):
             self.shape_dialog.close()
         if hasattr(self, 'cli_window'):
             self.cli_window.close()
+        if hasattr(self, 'script_window'):
+            self.script_window.close()
         if hasattr(self, 'overlay_dialog'):
             self.overlay_dialog.close()
 

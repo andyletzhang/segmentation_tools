@@ -170,12 +170,12 @@ class SegmentedStack:
         idx=frame.delete_cells(cell_numbers)
         return idx
     
-    def remove_edge_cells(self, frames=None):
+    def remove_edge_cells(self, frames=None, margin=1):
         if frames is None:
             frames=self.frames
         all_edge_cells=[]
         for frame in frames:
-            edge_cells=frame.find_edge_cells()
+            edge_cells=frame.find_edge_cells(margin)
             all_edge_cells.append(edge_cells)
             if len(edge_cells)>0:
                 self.delete_cells(edge_cells, frame.frame_number)
@@ -200,7 +200,7 @@ class TimeStack(SegmentedStack):
         super().__init__(**kwargs)
 
     # -------------Particle Tracking-------------
-    def track_centroids(self, memory=3, v_quantile=0.97, filter_stubs=False, **kwargs):
+    def track_centroids(self, memory=0, v_quantile=0.97, filter_stubs=False, **kwargs):
         '''
         uses the trackpy package to track cell centroids.
         This works in two stages: 

@@ -354,13 +354,13 @@ class LeftToolbar(QScrollArea):
         segmentation_layout.addWidget(segment_frame_widget)
         segmentation_layout.addWidget(segmentation_utils_widget)
 
-        self.mend_gaps_button.clicked.connect(self.main_window.mend_gaps)
-        self.remove_edge_masks_button.clicked.connect(self.main_window.remove_edge_masks)
+        self.mend_gaps_button.clicked.connect(self.main_window._mend_gaps_pressed)
+        self.remove_edge_masks_button.clicked.connect(self.main_window._remove_edge_masks_pressed)
         self.cell_diameter.textChanged.connect(self.main_window._update_cell_diameter)
         self.cell_diameter_calibrate.clicked.connect(self.main_window._calibrate_diameter_pressed)
         self.segment_frame_button.clicked.connect(self.main_window._segment_frame_pressed)
         self.segment_stack_button.clicked.connect(self.main_window._segment_stack_pressed)
-        generate_outlines_button.clicked.connect(self.main_window.generate_outlines_list)
+        generate_outlines_button.clicked.connect(self.main_window._generate_outlines_pressed)
         clear_masks_button.clicked.connect(self.main_window.clear_masks)
 
         return segmentation_tab
@@ -544,7 +544,7 @@ class LeftToolbar(QScrollArea):
         self.volume_button.clicked.connect(self.main_window._measure_volumes_pressed)
         self.get_heights_button.clicked.connect(self.main_window._measure_heights_pressed)
         self.get_coverslip_height.clicked.connect(self.main_window._calibrate_coverslip_height_pressed)
-        self.get_spherical_volumes.clicked.connect(self.main_window.compute_spherical_volumes)
+        self.get_spherical_volumes.clicked.connect(self.main_window._compute_spherical_volumes_pressed)
 
         return self.volumes_tab
     
@@ -620,8 +620,8 @@ class LeftToolbar(QScrollArea):
         tracking_tab_layout.addWidget(tracking_border)
         tracking_tab_layout.addWidget(mitoses_border)
 
-        self.track_centroids_button.clicked.connect(self.main_window.track_centroids)
-        self.tracking_range.returnPressed.connect(self.main_window.track_centroids)
+        self.track_centroids_button.clicked.connect(self.main_window._track_centroids_pressed)
+        self.tracking_range.returnPressed.connect(self.main_window._track_centroids_pressed)
         split_particle_button.clicked.connect(self.main_window.split_particle_tracks)
         clear_tracking_button.clicked.connect(self.main_window.clear_tracking)
         self.save_tracking_button.clicked.connect(self.main_window.save_tracking)

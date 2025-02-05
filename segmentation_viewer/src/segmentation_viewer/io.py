@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import numpy as np
 
-def read_image_file(file_path, progress_bar=None, **progress_kwargs):
+def read_image_file(file_path, progress_bar=None, image_shape=None, **progress_kwargs):
     if progress_bar is None:
         progress_bar = lambda x, **kwargs: x
     if file_path.endswith('.nd2'):
@@ -23,20 +23,27 @@ def read_image_file(file_path, progress_bar=None, **progress_kwargs):
         shape=tuple(shape[axes_map[axis]] for axis in 'TPZCYX')
         placeholder=read_tif(file) # Load the TIFF file
 
-    shape_dialog = ShapeDialog(shape) # Prompt user to select ranges to import for each dimension
-    if shape_dialog.exec_() == QDialog.Accepted:
-        try:
-            out=shape_dialog.get_selected_ranges()
-            if out is None:
-                file.close()
-                return None
-            else:
-                t_bounds, p_bounds, z_bounds, c_bounds=out
-        except ValueError as e:
-            print(f"Error: {e}")
+    if image_shape is not None:
+        if image_shape=='all':
+            t_bounds, p_bounds, z_bounds, c_bounds = (slice(None), slice(None), slice(None), slice(None))
+        else:
+            t_bounds, p_bounds, z_bounds, c_bounds = image_shape
+
     else:
-        file.close()
-        return None
+        shape_dialog = ShapeDialog(shape) # Prompt user to select ranges to import for each dimension
+        if shape_dialog.exec_() == QDialog.Accepted:
+            try:
+                out=shape_dialog.get_selected_ranges()
+                if out is None:
+                    file.close()
+                    return None
+                else:
+                    t_bounds, p_bounds, z_bounds, c_bounds=out
+            except ValueError as e:
+                print(f"Error: {e}")
+        else:
+            file.close()
+            return None
     
     sliced=placeholder[np.ix_(t_bounds, p_bounds, z_bounds)] # index the P, T, and Z dimensions
     img_shape=(shape[4], shape[5], len(c_bounds)) # output image shape (Y, X, C)

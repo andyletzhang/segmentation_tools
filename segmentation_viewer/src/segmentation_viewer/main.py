@@ -188,7 +188,7 @@ class MainWidget(QMainWindow):
         #self.edit_menu.addAction(create_action("Undo", self.undo, self, 'Ctrl+Z'))
         #self.edit_menu.addAction(create_action("Redo", self.redo, self, 'Ctrl+Shift+Z'))
         self.edit_menu.addAction(create_action("Clear Masks", self.clear_masks, self))
-        self.edit_menu.addAction(create_action("Generate Outlines", self.generate_outlines_list, self))
+        self.edit_menu.addAction(create_action("Generate Outlines", self._generate_outlines_pressed, self))
         self.edit_menu.addAction(create_action("Mend Gaps", self.mend_gaps, self))
         self.edit_menu.addAction(create_action("Remove Edge Masks", self.remove_edge_masks, self))
 
@@ -731,7 +731,7 @@ class MainWidget(QMainWindow):
 
         self.select_cell(particle=particle)
 
-    def mend_gaps(self):
+    def _mend_gaps_pressed(self):
         if not self.file_loaded:
             return
         from segmentation_tools.preprocessing import mend_gaps
@@ -741,18 +741,31 @@ class MainWidget(QMainWindow):
             frames=[self.frame]
         
         gap_size=self.left_toolbar.gap_size.text()
+        if gap_size=='':
+            gap_size=None
+        else:
+            gap_size=int(gap_size)
+
+        self.mend_gaps(frames, gap_size)        
+        self._update_display()
+
+    def mend_gaps(self, frames, gap_size=None):
+        '''
+        Mend gaps in/between the masks of the specified frames.
+
+        Parameters
+        ----------
+        frames : list of Frame
+            The frames to mend gaps in.
+        gap_size : int
+            The maximum gap size to mend. If None, the default gap size (based on mean cell area) is used.
+        '''
         for frame in self._progress_bar(frames):
-            if gap_size=='':
-                gap_size=None
-            else:
-                gap_size=int(gap_size)
             mended=frame.mend_gaps(gap_size)
             if mended and hasattr(frame, 'stored_mask_overlay'):
                 del frame.stored_mask_overlay
-        
-        self._update_display()
 
-    def remove_edge_masks(self):
+    def _remove_edge_masks_pressed(self):
         if not self.file_loaded:
             return
         if self.left_toolbar.segment_on_stack.isChecked():
@@ -762,11 +775,7 @@ class MainWidget(QMainWindow):
             frames=[self.frame]
             current_frame=0
         
-        edge_cells=self.stack.remove_edge_cells(self._progress_bar(frames))
-        for deleted_cells, frame in zip(edge_cells, frames):
-            print(f'Removed {len(deleted_cells)} edge cells from frame {frame.frame_number}')
-            if hasattr(frame, 'stored_mask_overlay'):
-                del frame.stored_mask_overlay
+        edge_cells=self.remove_edge_masks(frames)
 
         if self.selected_cell_n in edge_cells[current_frame]:
             # deselect the removed cell if it was selected
@@ -777,8 +786,31 @@ class MainWidget(QMainWindow):
         self._update_display()
         self._update_ROIs_label()
 
+    def remove_edge_masks(self, frames, margin=1):
+        '''
+        Remove masks bordering the edge of the image in the specified frames.
+
+        Parameters
+        ----------
+        frames : list of Frame
+            The frames to remove edge masks from.
+        margin : int
+            The number of pixels to consider as the edge of the image. Defaults to 1.
+
+        Returns
+        -------
+        edge_cells : list of list of ints
+            The cell IDs which were removed from each frame.
+        '''
+        edge_cells=self.stack.remove_edge_cells(self._progress_bar(frames), margin=margin)
+        for deleted_cells, frame in zip(edge_cells, frames):
+            print(f'Removed {len(deleted_cells)} edge cells from frame {frame.frame_number}')
+            if hasattr(frame, 'stored_mask_overlay'):
+                del frame.stored_mask_overlay
         if hasattr(self.stack, 'tracked_centroids'):
             self.left_toolbar.also_save_tracking.setChecked(True)
+
+        return edge_cells
     
     def _update_cell_diameter(self, diameter):
         self._draw_cell_diameter(diameter)
@@ -805,6 +837,17 @@ class MainWidget(QMainWindow):
         self.left_toolbar.cell_diameter.setText(f'{diam:.2f}')
 
     def calibrate_cell_diameter(self, img, channels):
+        '''
+        Automatically calibrate the cell diameter for the specified image using Cellpose.
+
+        Parameters
+        ----------
+        img : np.ndarray
+            The image to calibrate the cell diameter for.
+        channels : length-2 tuple of ints
+            The channels (membrane, nuclei) to use for segmentation.
+            0 is grayscale, 1-3 are RGB, 4 is FUCCI (combined red and green) and is only available for nuclei.
+        '''
         if not self.file_loaded:
             return
 
@@ -834,7 +877,14 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         
-        self.segment([self.frame])
+        diameter=self.left_toolbar.cell_diameter.text()
+        if diameter=='':
+            diameter=None
+        else:
+            diameter=float(diameter)
+        channels=self.left_toolbar.segmentation_channels
+
+        self.segment([self.frame], diameter=diameter, channels=channels)
 
         # update the display
         self.left_toolbar.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
@@ -851,7 +901,14 @@ class MainWidget(QMainWindow):
             for frame in self.stack.frames:
                 frame.img=frame.zstack[self.zstack_number]
 
-        self.segment(self.stack.frames)
+        diameter=self.left_toolbar.cell_diameter.text()
+        if diameter=='':
+            diameter=None
+        else:
+            diameter=float(diameter)
+        channels=self.left_toolbar.segmentation_channels
+
+        self.segment(self.stack.frames, diameter=diameter, channels=channels)
 
         # update the display
         self.left_toolbar.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
@@ -860,13 +917,20 @@ class MainWidget(QMainWindow):
         self._update_display()
         self._FUCCI_overlay()
 
-    def segment(self, frames):
-        diameter=self.left_toolbar.cell_diameter.text()
-        if diameter=='':
-            diameter=None
-        else:
-            diameter=float(diameter)
-        channels=self.left_toolbar.segmentation_channels
+    def segment(self, frames, diameter=None, channels=[0,0]):
+        '''
+        Performs segmentation on the specified frames using Cellpose.
+
+        Parameters
+        ----------
+        frames : list of frames
+            The frames to segment.
+        diameter : float
+            The cell diameter to use for segmentation. If None, the diameter is automatically calibrated.
+        channels : length-2 tuple of ints
+            The channels (membrane, nuclei) to use for segmentation.
+            0 is grayscale, 1-3 are RGB, 4 is FUCCI (combined red and green) and is only available for nuclei.
+        '''
 
         if not hasattr(self, 'cellpose_model'):
             from cellpose import models
@@ -897,6 +961,10 @@ class MainWidget(QMainWindow):
                 self._update_ROIs_label()
 
     def clear_masks(self):
+        '''
+        Clear the segmentation masks for the current frame.
+        '''
+
         if not self.file_loaded:
             return
         
@@ -962,7 +1030,11 @@ class MainWidget(QMainWindow):
             return custom_iterator()
         
     def replace_segmentation(self, frame):
-        ''' Generate the cell outlines and cell objects from the new segmentation masks. '''
+        ''' 
+        Replace frame cells and outlines using frame.masks as reference.
+        Called after any re-segmentation operation.
+        '''
+
         frame.has_outlines=False
         frame.outlines=utils.masks_to_outlines(frame.masks)
         frame.n_cells=np.max(frame.masks)
@@ -972,6 +1044,10 @@ class MainWidget(QMainWindow):
 
     
     def get_tracked_FUCCI(self):
+        '''
+        Get cell cycle classification by tracking particles through time.
+        Tries to identify G1-S and S-G2 transitions by characteristic changes in red/green intensity.
+        '''
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
@@ -986,6 +1062,17 @@ class MainWidget(QMainWindow):
         self._FUCCI_overlay()
 
     def cell_red_green_intensities(self, event=None, percentile=90, sigma=4):
+        '''
+        Measure red and green channel intensities for each cell in the current frame.
+
+        Parameters
+        ----------
+        percentile : float
+            The percentile to use for thresholding the red and green channels.
+        sigma:
+            The sigma value to use for Gaussian smoothing of the red and green channels.
+        '''
+
         if not self.file_loaded:
             return
         for frame in self._progress_bar(self.stack.frames):
@@ -1016,6 +1103,9 @@ class MainWidget(QMainWindow):
         self.clear_FUCCI(self.stack.frames)
 
     def clear_FUCCI(self, frames):
+        '''
+        Clear the FUCCI labels for the specified frames.
+        '''
         for frame in frames:
             frame.set_cell_attrs(['red', 'green'], np.array([[False, False] for _ in range(frame.n_cells)]).T)
         self._FUCCI_overlay()
@@ -1023,15 +1113,33 @@ class MainWidget(QMainWindow):
     def _measure_FUCCI_frame(self):
         if not self.file_loaded:
             return
-        self.measure_FUCCI([self.frame])
+        red_threshold, green_threshold, percent_threshold=self.left_toolbar.red_threshold, self.left_toolbar.green_threshold, self.left_toolbar.percent_threshold
+        self.measure_FUCCI([self.frame], red_threshold=red_threshold, green_threshold=green_threshold, percent_threshold=percent_threshold)
 
     def _measure_FUCCI_stack(self):
         if not self.file_loaded:
             return
-        self.measure_FUCCI(self.stack.frames)
-    
-    def measure_FUCCI(self, frames):
         red_threshold, green_threshold, percent_threshold=self.left_toolbar.red_threshold, self.left_toolbar.green_threshold, self.left_toolbar.percent_threshold
+        self.measure_FUCCI(self.stack.frames, red_threshold=red_threshold, green_threshold=green_threshold, percent_threshold=percent_threshold)
+    
+    def measure_FUCCI(self, frames, red_threshold=None, green_threshold=None, orange_brightness=1, percent_threshold=0.15):
+        '''
+        Measure the FUCCI labels for the specified frames by snapshot thresholding.
+
+        Parameters
+        ----------
+        frames : list of Frame
+            The frames to measure FUCCI for.
+        red_threshold : float
+            The threshold to use for the red channel. If None, the threshold is determined automatically (but may be inaccurate).
+        green_threshold : float
+            The threshold to use for the green channel. If None, the threshold is determined automatically (but may be inaccurate).
+        orange_brightness : float
+            The relative brightness of red compared to green to be considered orange. Defaults to 1.
+            If many G1 cells are being classified as G2, consider increasing this value.
+        percent_threshold : float
+            The fractional area of the cell which must be above the red/green threshold to be considered positive.
+        '''
         for frame in self._progress_bar(frames, desc='Measuring FUCCI'):
             if self.is_zstack:
                 img=frame.zstack[self.zstack_number]
@@ -1040,17 +1148,18 @@ class MainWidget(QMainWindow):
             if not hasattr(frame, 'FUCCI'):
                 frame.FUCCI=img[...,0], img[...,1] # use the red and green channels
 
-            frame.measure_FUCCI(red_fluor_threshold=red_threshold, green_fluor_threshold=green_threshold, orange_brightness=1, percent_threshold=percent_threshold)
+            frame.measure_FUCCI(red_fluor_threshold=red_threshold, green_fluor_threshold=green_threshold, orange_brightness=orange_brightness, percent_threshold=percent_threshold)
             self._get_red_green(frame)
         
-        red_threshold=self.frame.red_fluor_threshold
-        green_threshold=self.frame.green_fluor_threshold
-        self.red_threshold=red_threshold
-        self.green_threshold=green_threshold
+        self.red_threshold=self.frame.red_fluor_threshold
+        self.green_threshold=self.frame.green_fluor_threshold
         self.FUCCI_dropdown=3
         self._FUCCI_overlay()
 
     def delete_particle_head(self):
+        '''
+        Delete all masks preceding (and including) the current frame for the selected particle.
+        '''
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
@@ -1075,6 +1184,9 @@ class MainWidget(QMainWindow):
             self._plot_particle_statistic()
 
     def delete_particle_tail(self):
+        '''
+        Delete all masks following (and including) the current frame for the selected particle.
+        '''
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
@@ -1099,6 +1211,14 @@ class MainWidget(QMainWindow):
             self._plot_particle_statistic()
 
     def delete_particle(self, event=None, particle_n=None):
+        '''
+        Delete all masks for the selected particle.
+
+        Parameters
+        ----------
+        particle_n : int
+            The particle number to delete masks for. If None, the selected particle is used.
+        '''
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
@@ -1119,6 +1239,9 @@ class MainWidget(QMainWindow):
                 self.delete_cell_mask(cell_n, frame)
 
     def clear_tracking(self):
+        '''
+        Clear all tracking data for the stack.
+        '''
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
@@ -1140,11 +1263,30 @@ class MainWidget(QMainWindow):
             
         self.canvas.draw_masks()
 
-    def get_mitoses(self):
+    def _get_mitoses_pressed(self):
         if not self.file_loaded:
             return
         distance_threshold, score_cutoff, weights=self.left_toolbar.mitosis_params
-        self.stack.get_mitoses(distance_threshold=distance_threshold, score_cutoff=score_cutoff, weights=weights, progress=self._progress_bar)
+        self.get_mitoses(distance_threshold=distance_threshold, score_cutoff=score_cutoff, weights=weights)
+
+    def get_mitoses(self, event=None, **kwargs):
+        '''
+        Identify mitoses for the stack using the specified parameters.
+        Scoring and identification has been manually tuned for confluent MDCK monolayers.
+
+        Parameters
+        ----------
+        distance_threshold : float
+            The maximum distance between daughter centroids for a mitosis to be considered valid.
+        score_cutoff : float
+            The minimum score for a mitosis to be considered valid. Defaults to 1.
+        weights : list of five floats
+            The weights to use for the mitosis scoring function. Defaults to [1, 1, 1, 1, 1].
+            Weights correspond to the following features:
+            [mother_circularity, daughter_circularities, daughter_centroid_asymmetry, daughter_angle, center_of_mass_displacement]
+        '''
+
+        self.stack.get_mitoses(progress=self._progress_bar, **kwargs)
 
     def _update_tracking_overlay(self):
         sender = self.sender()
@@ -1160,12 +1302,12 @@ class MainWidget(QMainWindow):
             return
         else:
             if self.left_toolbar.highlight_track_ends_button.isChecked():
-                self.highlight_track_ends()
+                self._highlight_track_ends()
             elif self.left_toolbar.highlight_mitoses_button.isChecked():
-                self.highlight_mitoses()
+                self._highlight_mitoses()
             return
 
-    def highlight_mitoses(self):
+    def _highlight_mitoses(self):
         if hasattr(self.stack, 'tracked_centroids'):
             if not hasattr(self.stack, 'mitoses'):
                 print('No mitoses found. Finding mitoses...')
@@ -1201,7 +1343,7 @@ class MainWidget(QMainWindow):
             self.statusBar().showMessage('No tracked centroids found.', 2000)
             return
         
-    def highlight_track_ends(self):        
+    def _highlight_track_ends(self):
         if hasattr(self.stack, 'tracked_centroids'):
             # get the start and end points of each track
             t=self.stack.tracked_centroids
@@ -1241,7 +1383,10 @@ class MainWidget(QMainWindow):
                 self.change_current_frame(max(self.frame_number - 1, 0))
 
     def update_zstack_number(self, zstack_number):
-        if not self.file_loaded:
+        '''
+        Move in z to the specified z-stack slice.
+        '''
+        if not self.file_loaded or not self.is_zstack:
             return
         self.zstack_number = zstack_number
         self.frame.img=self.frame.zstack[self.zstack_number]
@@ -1277,10 +1422,30 @@ class MainWidget(QMainWindow):
         self._refresh_right_toolbar('volume')
 
     def measure_volumes(self, frames):
+        '''
+        Measure the volumes of the specified frames.
+        This is accomplished by integrating heights over each cell mask.
+        
+        Parameters
+        ----------
+        frames : list of Frame
+            The frames to measure volumes for.
+        '''
         for frame in self._progress_bar(frames):
             if not hasattr(frame, 'heights'):
                 if hasattr(frame, 'zstack'):
-                    self.measure_heights()
+                    peak_prominence=self.left_toolbar.peak_prominence.text()
+                    coverslip_height=self.left_toolbar.coverslip_height.text()
+                    if peak_prominence=='':
+                        peak_prominence=0.01
+                    else:
+                        peak_prominence=float(peak_prominence)
+                    if coverslip_height=='':
+                        coverslip_height=self.calibrate_coverslip_height([frame])
+                        self.left_toolbar.coverslip_height.setText(f'{coverslip_height:.2f}')
+                    else:
+                        coverslip_height=float(coverslip_height)
+                    self.measure_heights([frame], peak_prominence, coverslip_height)
                 else:
                     raise ValueError(f'No heights or z-stack available to measure volumes for {frame.name}.')
             
@@ -1309,6 +1474,19 @@ class MainWidget(QMainWindow):
         self.left_toolbar.coverslip_height.setText(f'{coverslip_height:.2f}')
     
     def calibrate_coverslip_height(self, frames):
+        '''
+        Identify the bottom of the sample from the specified frames.
+
+        Parameters
+        ----------
+        frames : list of Frame
+            The frames to calibrate the coverslip height for.
+        
+        Returns
+        -------
+        coverslip_height : float
+            The height of the coverslip (in microns) above the bottom of the z-stack.
+        '''
         from segmentation_tools.heightmap import get_coverslip_z
         z_profile=[]
         for z_index in range(frames[0].zstack.shape[0]):
@@ -1351,7 +1529,20 @@ class MainWidget(QMainWindow):
         self._show_seg_overlay()
         self.left_toolbar.volume_button.setEnabled(True)
 
-    def measure_heights(self, frames, peak_prominence, coverslip_height=None):
+    def measure_heights(self, frames, peak_prominence=0.01, coverslip_height=None):
+        '''
+        Compute the heightmap of the monolayer for the specified frames.
+
+        Parameters
+        ----------
+        frames : list of Frame
+            The frames to measure heights for.
+        peak_prominence : float
+            The minimum prominence of a peak to be considered the top of a cell. Defaults to 0.01.
+            If the height map is very noisy, consider increasing this value. If cell membranes are not being detected, consider decreasing it.
+        coverslip_height : float
+            The height of the coverslip above the bottom of the z-stack. If None, the bottom of the z-stack is treated as the coverslip.
+        '''
         from segmentation_tools.heightmap import get_heights
         
         for frame in self._progress_bar(frames):
@@ -1367,7 +1558,7 @@ class MainWidget(QMainWindow):
                 if coverslip_height:
                     frame.coverslip_height=coverslip_height
 
-    def compute_spherical_volumes(self):
+    def _compute_spherical_volumes_pressed(self):
         if not self.file_loaded:
             return
         
@@ -1376,12 +1567,34 @@ class MainWidget(QMainWindow):
         else:
             frames=[self.frame]
 
-        for frame in self._progress_bar(frames):
-            frame.get_spherical_volumes()
+        self.get_spherical_volumes(frames)
         
         self._refresh_right_toolbar('volume')
 
+    def get_spherical_volumes(self, frames):
+        '''
+        Compute the volumes of cells if their areas are treated as circular cross-sections of spheres.
+        This is used for estimating the volumes of cells in suspension.
+
+        Parameters
+        ----------
+        frames : list of Frame
+            The frames to compute spherical volumes for
+        '''
+        for frame in self._progress_bar(frames):
+            frame.get_spherical_volumes()
+
     def change_current_frame(self, frame_number, reset=False):
+        '''
+        Change the current frame to the specified frame number.
+        
+        Parameters
+        ----------
+        frame_number : int
+            The frame number to change to.
+        reset : bool
+            Whether to reset the display to the default view.
+        '''
         if not self.file_loaded:
             return
         self.frame_number = frame_number
@@ -1518,34 +1731,26 @@ class MainWidget(QMainWindow):
             self.status_tracking_ID.setText(f"Tracking ID: {tracking_ID}")
             self.selected_particle_prompt.setText(str(tracking_ID))
 
-    def track_centroids(self):
-        ''' Track centroids for the current stack. '''
+    def _track_centroids_pressed(self):
         if not self.file_loaded:
             return
 
         tracking_range=self.left_toolbar.tracking_range.text()
+        if tracking_range=='':
+            search_range=None
         memory=self.left_toolbar.memory_range.text()
         if memory=='':
             memory=0
 
         self.statusBar().showMessage(f'Tracking centroids...')
-        for frame in self.stack.frames:
-            if not frame.has_outlines:
-                outlines=utils.outlines_list(frame.masks)
-                for cell, outline in zip(frame.cells, outlines):
-                    cell.outline=outline
-                    cell.get_centroid()
-                frame.has_outlines=True
 
         try:
-            if tracking_range=='':
-                self.stack.track_centroids(memory=memory)
-            else:
-                self.stack.track_centroids(search_range=float(tracking_range), memory=memory)
+            self.track_centroids(tracking_range=float(tracking_range), memory=int(memory))
         except Exception as e:
             print(e)
             self.statusBar().showMessage(f'Error tracking centroids: {e}', 4000)
             return
+
         print(f'Tracked centroids for stack {self.stack.name}')
         self.tracking_range.setText(f'{self.stack.tracking_range:.2f}')
         self.statusBar().showMessage(f'Tracked centroids for stack {self.stack.name}.', 2000)
@@ -1553,6 +1758,31 @@ class MainWidget(QMainWindow):
         self.canvas.draw_masks()
         self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(True)
 
+    def track_centroids(self, **kwargs):
+        ''' 
+        Track centroids for the current stack using trackpy.
+        
+        Parameters
+        ----------
+        search_range : float
+            The maximum distance a cell can move between frames. If None, the search range is determined automatically.
+        v_quantile : float
+            The quantile to use for automatically determining the search range. Defaults to 0.97.
+            Adjust this lower if too many cells are being linked incorrectly, or higher if you're losing tracks.
+        memory : int
+            The maximum number of frames a cell can be lost for before being considered a new cell. Defaults to 0.
+        '''
+
+        for frame in self._progress_bar(self.stack.frames, desc='Generating outlines'):
+            if not frame.has_outlines:
+                outlines=utils.outlines_list(frame.masks)
+                for cell, outline in zip(frame.cells, outlines):
+                    cell.outline=outline
+                    cell.get_centroid()
+                frame.has_outlines=True
+
+        self.stack.track_centroids(**kwargs)
+        
     def _recolor_tracks(self):
         # recolor cells so each particle has one color over time
         for frame in self.stack.frames:
@@ -1567,6 +1797,17 @@ class MainWidget(QMainWindow):
             frame.set_cell_attrs('color_ID', self.canvas.cell_cmap(tracked_frame['color']))
 
     def particle_from_cell(self, cell_number, frame_number=None):
+        '''
+        Get the particle number for the specified cell in the specified frame.
+        
+        Parameters
+        ----------
+        cell_number : int
+            The cell number to get the particle number for.
+        frame_number : int
+            The frame number to get the particle number for. If None, the current frame is used.
+        '''
+
         if not hasattr(self.stack, 'tracked_centroids'):
             return None
         if frame_number is None:
@@ -1581,6 +1822,17 @@ class MainWidget(QMainWindow):
             raise ValueError(f'Cell {cell_number} has {len(particle)} particles in frame {frame_number}')
     
     def cell_from_particle(self, particle, frame_number=None):
+        '''
+        Get the cell number for the specified particle in the specified frame.
+
+        Parameters
+        ----------
+        particle : int
+            The particle number to get the cell number for.
+        frame_number : int
+            The frame number to get the cell number for. If None, the current frame is used.
+        '''
+
         if not hasattr(self.stack, 'tracked_centroids'):
             return None
         if frame_number is None:
@@ -1595,10 +1847,19 @@ class MainWidget(QMainWindow):
             raise ValueError(f'Particle {particle} has {len(cell)} cells in frame {frame_number}')
         
     def split_particle_tracks(self):
+        '''
+        Split the selected particle track at the current frame. The previous timepoints will keep the original particle number.
+
+        Returns
+        -------
+        new_particle : int
+            The new particle number assigned to the second half of the split particle.
+            If no split was made, returns None.
+        '''
         new_particle=self.stack.split_particle_track(self.selected_particle_n, self.frame_number)
 
         if new_particle is None:
-            return
+            return None
         
         self.selected_particle_n=new_particle
         
@@ -1616,7 +1877,21 @@ class MainWidget(QMainWindow):
         self._plot_particle_statistic()
         self._update_tracking_overlay()
 
+        return new_particle
+
     def merge_particle_tracks(self, first_particle, second_particle):
+        '''
+        Merge the two specified particles at the current frame.
+        This will combine two particle IDs and create up to two new ones for the severed ends of the old particle tracks.
+        
+        Parameters
+        ----------
+        first_particle : int
+            The first particle to merge.
+        second_particle : int
+            The second particle to merge.
+        '''
+
         if hasattr(self.stack, 'tracked_centroids'):
             if first_particle==second_particle: # same particle, no need to merge
                 return
@@ -1771,7 +2046,17 @@ class MainWidget(QMainWindow):
             self.script_window.show()
 
     def select_cell(self, particle=None, cell=None):
-        ''' Select a cell or particle by number. '''
+        '''
+        Select a cell or particle by number. If None, selection is cleared.
+        
+        Parameters
+        ----------
+        particle : int
+            The particle number to select.
+        cell : int
+            The cell number to select. If both particle and cell are specified, cell takes precedence.
+        '''
+
         if self.FUCCI_mode: # classifying FUCCI, no cell selection
             return
         
@@ -2130,7 +2415,15 @@ class MainWidget(QMainWindow):
         self._update_display()
 
     def random_color(self, n_samples=None):
-        ''' Generate random colors for the cell masks. '''
+        '''
+        Generate a collection of random cell mask colors.
+        
+        Parameters
+        ----------
+        n_samples : int
+            The number of colors to generate. If None, a single color is generated.
+        '''
+
         random_colors=np.random.randint(0, self.canvas.cell_n_colors, size=n_samples)
         colors=np.array(self.canvas.cell_cmap(random_colors))[...,:3]
 
@@ -2149,6 +2442,20 @@ class MainWidget(QMainWindow):
 
     #--------------Segmentation functions----------------
     def add_cell_mask(self, enclosed_pixels):
+        '''
+        Add a new cell mask to the current frame based on the enclosed pixels.
+        
+        Parameters
+        ----------
+        enclosed_pixels : np.ndarray
+            An array of pixel coordinates enclosed by the new cell mask.
+        
+        Returns
+        -------
+        new_mask_n : int
+            The cell number of the new mask.
+        '''
+
         new_mask_n=self.frame.n_cells # new cell number
         cell_mask=np.zeros_like(self.frame.masks, dtype=bool)
         cell_mask[enclosed_pixels[:,0], enclosed_pixels[:,1]]=True
@@ -2186,6 +2493,15 @@ class MainWidget(QMainWindow):
         return new_mask_n
     
     def split_cell_masks(self, min_size=5):
+        '''
+        Split cells that intersect with the current curve.
+        
+        Parameters
+        ----------
+        min_size : int
+            The minimum size of a cell mask in pixels. Cells smaller than this will be merged with their largest neighbor.
+        '''
+
         curve_coords=np.array([(p.x(), p.y()) for p in self.cell_split.points]).astype(int)
         next_label = np.max(self.frame.masks) + 1
         
@@ -2320,15 +2636,53 @@ class MainWidget(QMainWindow):
             del self.frame.stored_mask_overlay
 
     def add_cell(self, n, outline, color_ID=None, red=False, green=False, frame_number=None, **kwargs):
-        if frame_number is None: frame_number=self.frame_number
-        self.frame.cells=np.append(self.frame.cells, Cell(n, outline, color_ID=color_ID, red=red, green=green, frame_number=frame_number, parent=self.stack.frames[self.frame_number], **kwargs))
-        self.frame.n_cells+=1
+        '''
+        Add a new cell to the current frame.
+        
+        Parameters
+        ----------
+        n : int
+            The cell number.
+        outline : np.ndarray
+            The outline of the cell mask.
+        color_ID : int
+            The color ID of the cell mask. If None, a random color is generated.
+        frame_number : int
+            The frame number to add the cell to. If None, the current frame is used.
+
+        Any other keyword arguments are passed to the Cell constructor.
+
+        Returns
+        -------
+        new_cell : Cell
+            The new cell object.
+        '''
+        if frame_number is None:
+            frame_number=self.frame_number
+        else:
+            frame=self.stack.frames[frame_number]
+
+        new_cell=Cell(n, outline, color_ID=color_ID, red=red, green=green, frame_number=frame_number, parent=self.stack.frames[self.frame_number], **kwargs)
+        frame.cells=np.append(self.frame.cells, new_cell)
+        frame.n_cells+=1
+
+        return new_cell
 
     def merge_cell_masks(self, cell_n1, cell_n2, frame_number=None):
         '''
-        merges cell_n2 into cell_n1.
-        in practice, this reassigns the cell_n2 mask to cell_n1 and deletes cell_n2.
+        Merges the cell_n2 mask into cell_n1.
+        This is done by reassigning the cell_n2 mask to cell_n1 and deleting cell_n2.
+
+        Parameters
+        ----------
+        cell_n1 : int
+            The cell number to merge into.
+        cell_n2 : int
+            The cell number to merge.
+        frame_number : int
+            The frame number to merge the cells in. If None, the current frame is used.
         '''
+
         if cell_n1==cell_n2:
             return
         
@@ -2359,7 +2713,17 @@ class MainWidget(QMainWindow):
         #self.check_cell_numbers() # for troubleshooting
 
     def merge_particle_masks(self, particle_n1, particle_n2):
-        ''' merges particle_n2 masks into particle_n1 masks. '''
+        '''
+        Merges the masks of particle_n2 into particle_n1 in every frame.
+        This is done by a series of cell mask merges.
+
+        Parameters
+        ----------
+        particle_n1 : int
+            The particle number to merge into.
+        particle_n2 : int
+            The particle number to merge.
+        '''
         t=self.stack.tracked_centroids
         # renumber tracked_centroids so particle_n2 is the largest number
         remapped_particles=np.arange(t['particle'].max()+2)
@@ -2406,7 +2770,7 @@ class MainWidget(QMainWindow):
         if np.any(mask_number_alignment):
             print(f'{np.sum(mask_number_alignment)} cell masks misalign starting with {np.where(mask_number_alignment)[0][0]}')
 
-    def generate_outlines_list(self):
+    def _generate_outlines_pressed(self):
         if not self.file_loaded:
             return
 
@@ -2415,15 +2779,40 @@ class MainWidget(QMainWindow):
         else:
             frames=[self.frame]
 
+        self.generate_outlines(frames)
+        self.statusBar().showMessage(f'Generated outlines.', 1000)
+
+    def generate_outlines(self, frames):
+        '''
+        Generate cell outlines for a list of frames.
+        
+        Parameters
+        ----------
+        frames : list
+            A list of Frame objects to generate outlines for.
+        '''
+
         for frame in self._progress_bar(frames, desc='Generating outlines'):
             outlines=utils.outlines_list(frame.masks)
             for cell, outline in zip(frame.cells, outlines):
                 cell.outline=outline
                 cell.get_centroid()
             frame.has_outlines=True
-        self.statusBar().showMessage(f'Generated outlines.', 1000)
 
     def delete_cell_mask(self, cell_n, frame=None, update_display=True):
+        '''
+        Delete a cell mask from the current frame.
+        
+        Parameters
+        ----------
+        cell_n : int
+            The cell number to delete.
+        frame : Frame
+            The frame to delete the cell from. If None, the current frame is used.
+        update_display : bool
+            Whether to update the display after deleting the cell.
+        '''
+
         if frame is None:
             frame=self.frame
 
@@ -2443,6 +2832,15 @@ class MainWidget(QMainWindow):
                 self._update_ROIs_label()
         
     def save_tracking(self, event=None, file_path=None):
+        '''
+        Save the tracking data to a CSV file.
+        
+        Parameters
+        ----------
+        file_path : str
+            The file path to save the tracking data to. If None, a file dialog is opened.
+        '''
+
         if not self.file_loaded:
             return
         
@@ -2515,6 +2913,17 @@ class MainWidget(QMainWindow):
 
 
     def save_frame(self, frame, file_path=None):
+        '''
+        Save a frame to a .seg.npy file.
+        
+        Parameters
+        ----------
+        frame : Frame
+            The frame to save.
+        file_path : str
+            The file path to save the frame to. If None, the frame's name is used.
+        '''
+
         if file_path is None:
             file_path=frame.name
         if not frame.has_outlines:
@@ -2586,6 +2995,18 @@ class MainWidget(QMainWindow):
         return df
     
     def export_csv(self, file_path, columns='all', csv_df=None):
+        '''
+        Export all cell-level attributes to a CSV file.
+
+        Parameters
+        ----------
+        file_path : str
+            The file path to save the CSV file to.
+        columns : list
+            A list of column names to export. If 'all', all columns are exported.
+        csv_df : pd.DataFrame
+            The DataFrame to export. If None, the export DataFrame is generated.
+        '''
         for frame in self.stack.frames:
             if not frame.has_outlines:
                 print(f'Generating outlines for frame {frame.frame_number}...')
@@ -2675,6 +3096,9 @@ class MainWidget(QMainWindow):
                 self.canvas.highlight_cells(colored_cells, alpha=1, color=overlay_color, img_type='outlines', layer='FUCCI')
 
     def reset_display(self):
+        '''
+        Reset the display to its initialized state.
+        '''
         self.drawing_cell_roi=False
         self.drawing_cell_split=False
         self.select_cell(None)
@@ -2846,12 +3270,18 @@ class MainWidget(QMainWindow):
                 del frame.stored_mask_overlay
                 
     def rotate_clockwise(self):
+        '''
+        Rotate the stack 90 degrees clockwise.
+        '''
         self.stack.rot90(k=1, progress=self._progress_bar)
         self._clear_stored_overlays()
         self._update_display()
         self.canvas.img_plot.autoRange()
 
     def rotate_counterclockwise(self):
+        '''
+        Rotate the stack 90 degrees counterclockwise.
+        '''
         self.stack.rot90(k=3, progress=self._progress_bar)
         self._clear_stored_overlays()
         self._update_display()
@@ -2888,6 +3318,14 @@ class MainWidget(QMainWindow):
                 print(f'tracked_centroids has {len(extra_tracks)} extra tracks in frame {frame.frame_number}: {extra_tracks}')
     #--------------I/O----------------
     def take_screenshot(self):
+        '''
+        Take a screenshot of the main window.
+
+        Returns
+        -------
+        screenshot : QImage
+            The screenshot as a QImage.
+        '''
         screen = QApplication.primaryScreen()
         if screen:
             screenshot = screen.grabWindow(self.winId())  # Capture the window
@@ -2895,10 +3333,20 @@ class MainWidget(QMainWindow):
         else:
             return None
         
-    def save_screenshot(self):
-        file_path=QFileDialog.getSaveFileName(self, 'Save screenshot as...', filter='*.png')[0]
-        if file_path=='':
-            return
+    def save_screenshot(self, file_path=None):
+        '''
+        Take a screenshot of the main window and save it to a file.
+        
+        Parameters
+        ----------
+        file_path : str
+            The file path to save the screenshot to. If None, a file dialog is opened.
+        '''
+
+        if file_path is None:
+            file_path=QFileDialog.getSaveFileName(self, 'Save screenshot as...', filter='*.png')[0]
+            if file_path=='':
+                return
         screenshot=self.take_screenshot()
         if screenshot is None:
             return
@@ -2920,6 +3368,17 @@ class MainWidget(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to save GIF: {str(e)}")
 
     def save_stack_gif(self, file_path, delay=100):
+        '''
+        Save the stack with its current visual settings as an animated GIF.
+
+        Parameters
+        ----------
+        file_path : str
+            The file path to save the GIF to.
+        delay : int
+            The delay between frames in milliseconds.
+        '''
+
         from PyQt6.QtCore import QBuffer, QByteArray, QTimer
         from PyQt6.QtWidgets import QApplication
         from PIL import Image
@@ -2963,6 +3422,16 @@ class MainWidget(QMainWindow):
             )
 
     def open_stack(self, files):
+        '''
+        Open a stack of images or segmentation files.
+        If multiple file types are present, the function will attempt to load the segmented files first, then the image files.
+        
+        Parameters
+        ----------
+        files : str or list
+            The file path(s) to open. If a folder is selected, all files in the folder will be loaded (if valid).
+        '''
+
         if isinstance(files, str):
             files=[files]
         
@@ -3099,6 +3568,15 @@ class MainWidget(QMainWindow):
             return False
 
     def delete_frame(self, event=None, frame_number=None):
+        '''
+        Delete a frame from the stack.
+        
+        Parameters
+        ----------
+        frame_number : int
+            The frame number to delete. If None, the current frame is deleted.
+        '''
+
         if not self.file_loaded:
             return
         
@@ -3112,33 +3590,66 @@ class MainWidget(QMainWindow):
         self.frame_slider.setRange(0, len(self.stack.frames)-1)
         self.change_current_frame(min(frame_number, len(self.stack.frames)-1))
 
-    def make_substack(self):
+    def make_substack(self, substack_frames=None):
+        '''
+        Create a substack from the current stack.
+        
+        Parameters
+        ----------
+        substack_frames : list
+            A list of frame numbers to include in the substack. If None, a dialog is opened to select the frames.
+        '''
+
         if not self.file_loaded:
             return
-        # popup dialog to select the range of frames to include in the substack
-        dialog=SubstackDialog(len(self.stack.frames), self)
-        if dialog.exec() == QDialog.Accepted:
-            substack_frames = dialog.get_input()
-            if substack_frames is None:
-                return
-            substack_frames=np.array(substack_frames)
-            self.stack.make_substack(substack_frames)
-            self.frame_slider.setRange(0, len(self.stack.frames)-1)
-            self.change_current_frame(min(self.frame_number, len(self.stack.frames)-1))
+        
+        if substack_frames is None:
+            # popup dialog to select the range of frames to include in the substack
+            dialog=SubstackDialog(len(self.stack.frames), self)
+            if dialog.exec() == QDialog.Accepted:
+                substack_frames = dialog.get_input()
+                if substack_frames is None:
+                    return
+
+        substack_frames=np.array(substack_frames)
+        self.stack.make_substack(substack_frames)
+        self.frame_slider.setRange(0, len(self.stack.frames)-1)
+        self.change_current_frame(min(self.frame_number, len(self.stack.frames)-1))
     
     #def import_masks(self):
     
-    def import_images(self):
+    def import_images(self, files=None, image_shape=None):
+        '''
+        Import images to the current stack.
+        
+        Parameters
+        ----------
+        files : str or list
+            The file path(s) to import. If None, a file dialog is opened.
+        image_shape : tuple or str
+            The shape of the images to import.
+            If 'all', all images are imported in full.
+            If tuple, treated as (t_bounds, p_bounds, z_bounds, c_bounds), where each bound is a slice or numpy index array.
+            if None, a shape dialog is opened.
+        '''
+        
         from segmentation_viewer.io import read_image_file
-        files = natsorted(QFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2')[0])
-        # TODO: check if the number of images matches the number of frames in the stack
+
+        if not self.file_loaded:
+            return
+        
+        if files is None:
+            files = natsorted(QFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2')[0])
+        elif isinstance(files, str):
+            files=[files]
+
         if len(files)==0:
             return
         
         imgs=[]
         for file in files:
             name=Path(file).name
-            file_imgs=read_image_file(file, progress_bar=self._progress_bar, desc=f'Importing images from {name}')
+            file_imgs=read_image_file(file, progress_bar=self._progress_bar, desc=f'Importing images from {name}', image_shape=image_shape)
             if file_imgs is None:
                 continue
             imgs.extend(file_imgs)
@@ -3146,6 +3657,7 @@ class MainWidget(QMainWindow):
         if len(imgs)==0: # no images loaded
             return
         
+        # TODO: check if the number of images matches the number of frames in the stack
         for img, frame in zip(imgs, self.stack.frames):
             if img.shape[-1]==1: # single channel
                 img=img[..., 0] # drop the last dimension

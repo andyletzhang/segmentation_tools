@@ -3,17 +3,10 @@ from PyQt6.QtWidgets import (
     QPushButton, QMessageBox, QColorDialog, QWidget, QGridLayout,
     QToolButton
 )
-from PyQt6.QtGui import QAction, QMouseEvent, QColor, QFont, QDoubleValidator
+from PyQt6.QtGui import QMouseEvent, QColor, QFont, QDoubleValidator
 from PyQt6.QtCore import Qt, pyqtSignal, QPointF
 from superqt import QRangeSlider
 from segmentation_viewer.io import RangeStringValidator, range_string_to_list
-
-def create_action(name, func, parent=None, shortcut=None):
-    action=QAction(name, parent)
-    action.triggered.connect(func)
-    if shortcut is not None:
-        action.setShortcut(shortcut)
-    return action
 
 class CustomComboBox(QComboBox):
     '''Custom QComboBox that emits a signal when the dropdown is opened'''

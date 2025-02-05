@@ -25,6 +25,7 @@ from .command_line import CommandLineWindow
 from .qt import CustomComboBox, SubstackDialog
 from .io import ExportWizard
 from .scripting import ScriptWindow
+from .utils import load_stylesheet, create_html_table
 
 from natsort import natsorted
 import importlib.resources
@@ -169,7 +170,7 @@ class MainWidget(QMainWindow):
     def _get_menu_bar(self):
         
         # Menu bar
-        from segmentation_viewer.qt import create_action
+        from .utils import create_action
         self.menu_bar = self.menuBar()
         
         # FILE
@@ -3632,7 +3633,7 @@ class MainWidget(QMainWindow):
             If tuple, treated as (t_bounds, p_bounds, z_bounds, c_bounds), where each bound is a slice or numpy index array.
             if None, a shape dialog is opened.
         '''
-        
+
         from segmentation_viewer.io import read_image_file
 
         if not self.file_loaded:
@@ -3720,41 +3721,6 @@ class MainWidget(QMainWindow):
 
         self._dump_config()
         event.accept()
-
-
-def load_stylesheet(file_path):
-    with open(file_path, 'r') as f:
-        return f.read()
-
-def create_html_table(labels, values):
-    if len(labels) != len(values):
-        raise ValueError("Labels and values must be of the same length")
-
-    html = """
-    <table style="border-collapse: collapse; width: 100%;">
-        <thead>
-            <tr>
-                <th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Label</th>
-                <th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Value</th>
-            </tr>
-        </thead>
-        <tbody>
-    """
-    # Loop to add rows
-    for label, value in zip(labels, values):
-        value=round(value, 2) # round to 2 decimal places
-        html += f"""
-        <tr>
-            <td style="padding: 4px;"><b>{label}:</b></td>
-            <td style="padding: 4px;">{value}</td>
-        </tr>
-        """
-    
-    html += """
-        </tbody>
-    </table>
-    """
-    return html
 
 
 def main():

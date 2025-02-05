@@ -35,7 +35,15 @@ class ScriptWindow(QMainWindow):
         # Execution environment
         self.local_env = local_env if local_env is not None else {}
         self.global_env = global_env if global_env is not None else {}
-
+        for name in dir(self.main_window):
+            if not name.startswith("__"):
+                try:
+                    attr=getattr(self.main_window, name)
+                except AttributeError:
+                    continue
+                if callable(attr):
+                    self.global_env[name] = attr
+        
         # Main widget and layout
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)

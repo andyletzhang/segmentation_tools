@@ -2964,7 +2964,7 @@ class MainWidget(QMainWindow):
             return
         
         self.export_csv(save_path, columns=checked_attributes, csv_df=df)
-        print(f'Saved CSV to {file_path}')
+        print(f'Saved CSV to {save_path}')
         
     def _get_export(self):
         for frame in self.stack.frames:

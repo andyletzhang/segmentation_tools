@@ -536,7 +536,7 @@ class MainWidget(QMainWindow):
             else:
                 keys.remove(key) # remove if attribute not found in any cell
         
-        return keys-ignored
+        return list(keys-ignored)
         
 
     def menu_frame_attrs(self, menu):

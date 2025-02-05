@@ -36,7 +36,7 @@ class ScriptWindow(QMainWindow):
         self.local_env = local_env if local_env is not None else {}
         self.global_env = global_env if global_env is not None else {}
         for name in dir(self.main_window):
-            if not name.startswith("__"):
+            if not name.startswith("__") and not name.endswith("Event"):
                 try:
                     attr=getattr(self.main_window, name)
                 except AttributeError:

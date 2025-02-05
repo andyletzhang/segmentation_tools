@@ -141,17 +141,17 @@ class ShapeDialog(QDialog):
             return None
         
 class ExportWizard(QDialog):
-    def __init__(self, dataframe, parent=None, root_path=''):
+    def __init__(self, dataframe, total_rows, parent=None, root_path=''):
         super().__init__(parent)
         self.setWindowTitle("Export Wizard")
         self.setMinimumWidth(300)
         self.setFixedHeight(300)
         self.resize(400,300)
         self.attributes = dataframe.columns.tolist()
-        self.data = dataframe
+        self.preview_rows=3
+        self.data = dataframe.iloc[:self.preview_rows]
         self.checked_attributes = []
         self.save_path = ""
-        self.preview_rows=3
         self.minimumColumnWidth=60
 
         # Main layout
@@ -178,7 +178,7 @@ class ExportWizard(QDialog):
             column_width=max(self.table_preview.columnWidth(col)+10, self.minimumColumnWidth)
             self.table_preview.setColumnWidth(col, column_width)
         main_layout.addWidget(self.table_preview)
-        n_rows_label = QLabel(f"Total rows: {len(self.data)}")
+        n_rows_label = QLabel(f"Total rows: {total_rows}")
         main_layout.addWidget(n_rows_label)
 
         # Confirm and Cancel buttons

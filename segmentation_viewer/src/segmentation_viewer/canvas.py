@@ -119,7 +119,7 @@ class PyQtGraphCanvas(QWidget):
 
     def wheelEvent(self, event):
         ''' Redirect wheel events to the main window. '''
-        self.main_window.canvas_wheelEvent(event)
+        self.main_window._canvas_wheelEvent(event)
 
     def overlay_outlines(self):
         self.img_outline_overlay.setVisible(self.main_window.outlines_visible)
@@ -365,7 +365,7 @@ class PyQtGraphCanvas(QWidget):
         x,y=self.get_plot_coords(pos, pixels=False)
         self.update_cursor(x, y)
 
-        self.main_window.mouse_moved(pos)
+        self.main_window._mouse_moved(pos)
 
     def update_cursor(self, x, y):
         """Update the segmentation plot cursor based on the image plot cursor."""
@@ -373,7 +373,7 @@ class PyQtGraphCanvas(QWidget):
         self.seg_hline.setPos(y)
         self.img_vline.setPos(x)
         self.img_hline.setPos(y)
-        self.main_window.update_coordinate_label(int(x), int(y))
+        self.main_window._update_coordinate_label(int(x), int(y))
 
     @property
     def cursor_pixels(self):
@@ -443,7 +443,7 @@ class SegPlot(pg.PlotWidget):
     '''
     def __init__(self, parent=None, **kwargs):
         super().__init__(parent, **kwargs)
-        self.main_window = parent
+        self.canvas = parent
         self.setMenuEnabled(False)
         self.getViewBox().invertY(True)
         self.setAspectLocked(True)

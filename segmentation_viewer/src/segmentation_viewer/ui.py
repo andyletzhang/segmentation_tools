@@ -154,7 +154,7 @@ class LeftToolbar(QScrollArea):
     @xy_size.setter
     def xy_size(self, value):
         self.xy_size_input.setText(str(value))
-        self.main_window.update_voxel_size()
+        self.main_window._update_voxel_size()
 
     @property
     def z_size(self):
@@ -167,7 +167,7 @@ class LeftToolbar(QScrollArea):
     @z_size.setter
     def z_size(self, value):
         self.z_size_input.setText(str(value))
-        self.main_window.update_voxel_size()
+        self.main_window._update_voxel_size()
 
     def _create_size_input(self):
         size_input = QLineEdit(self, placeholderText='None')
@@ -208,7 +208,7 @@ class LeftToolbar(QScrollArea):
         self.add_RGB_sliders(self.slider_layout)
         self.segmentation_channels_widget.show()
         self.show_grayscale_checkbox.setChecked(False)
-        self.main_window.show_grayscale_toggled(False)
+        self.main_window._show_grayscale_toggled(False)
 
     def add_RGB_sliders(self, layout):
         self.LUT_range_sliders=[]
@@ -225,7 +225,7 @@ class LeftToolbar(QScrollArea):
     def LUT_slider_changed(self, event):
         ''' Update the LUTs when the sliders are moved. '''
         self.normalize_custom_button.setChecked(True)
-        self.main_window.set_LUTs()
+        self.main_window._set_LUTs()
 
     def update_LUT_labels(self):
         ''' Update the labels next to the LUT sliders with the current values. '''
@@ -245,7 +245,7 @@ class LeftToolbar(QScrollArea):
         slider.valueChanged.connect(self.LUT_slider_changed)
 
     def update_display(self):
-        self.main_window.update_display()
+        self.main_window._update_display()
 
     def toggle_grayscale(self):
         self.show_grayscale_checkbox.toggle()
@@ -356,10 +356,10 @@ class LeftToolbar(QScrollArea):
 
         self.mend_gaps_button.clicked.connect(self.main_window.mend_gaps)
         self.remove_edge_masks_button.clicked.connect(self.main_window.remove_edge_masks)
-        self.cell_diameter.textChanged.connect(self.main_window.update_cell_diameter)
-        self.cell_diameter_calibrate.clicked.connect(self.main_window.calibrate_diameter_pressed)
-        self.segment_frame_button.clicked.connect(self.main_window.segment_frame_pressed)
-        self.segment_stack_button.clicked.connect(self.main_window.segment_stack_pressed)
+        self.cell_diameter.textChanged.connect(self.main_window._update_cell_diameter)
+        self.cell_diameter_calibrate.clicked.connect(self.main_window._calibrate_diameter_pressed)
+        self.segment_frame_button.clicked.connect(self.main_window._segment_frame_pressed)
+        self.segment_stack_button.clicked.connect(self.main_window._segment_stack_pressed)
         generate_outlines_button.clicked.connect(self.main_window.generate_outlines_list)
         clear_masks_button.clicked.connect(self.main_window.clear_masks)
 
@@ -445,13 +445,13 @@ class LeftToolbar(QScrollArea):
 
         get_intensities_button.clicked.connect(self.main_window.cell_red_green_intensities)
         get_tracked_FUCCI_button.clicked.connect(self.main_window.get_tracked_FUCCI)
-        self.FUCCI_dropdown.currentIndexChanged.connect(self.main_window.FUCCI_overlay_changed)
-        self.FUCCI_checkbox.stateChanged.connect(self.main_window.update_display)
-        FUCCI_frame_button.clicked.connect(self.main_window.measure_FUCCI_frame)
-        FUCCI_stack_button.clicked.connect(self.main_window.measure_FUCCI_stack)
-        self.propagate_FUCCI_checkbox.stateChanged.connect(self.main_window.propagate_FUCCI_toggled)
-        clear_frame_button.clicked.connect(self.main_window.clear_FUCCI_frame_pressed)
-        clear_stack_button.clicked.connect(self.main_window.clear_FUCCI_stack_pressed)
+        self.FUCCI_dropdown.currentIndexChanged.connect(self.main_window._FUCCI_overlay_changed)
+        self.FUCCI_checkbox.stateChanged.connect(self.main_window._update_display)
+        FUCCI_frame_button.clicked.connect(self.main_window._measure_FUCCI_frame)
+        FUCCI_stack_button.clicked.connect(self.main_window._measure_FUCCI_stack)
+        self.propagate_FUCCI_checkbox.stateChanged.connect(self.main_window._propagate_FUCCI_toggled)
+        clear_frame_button.clicked.connect(self.main_window._clear_FUCCI_frame_pressed)
+        clear_stack_button.clicked.connect(self.main_window._clear_FUCCI_stack_pressed)
 
         return FUCCI_tab
     
@@ -541,9 +541,9 @@ class LeftToolbar(QScrollArea):
         volumes_layout.addLayout(self.get_coverslip_height_layout)
         volumes_layout.addWidget(self.get_spherical_volumes)
 
-        self.volume_button.clicked.connect(self.main_window.measure_volumes)
-        self.get_heights_button.clicked.connect(self.main_window.measure_heights)
-        self.get_coverslip_height.clicked.connect(self.main_window.calibrate_coverslip_height)
+        self.volume_button.clicked.connect(self.main_window._measure_volumes_pressed)
+        self.get_heights_button.clicked.connect(self.main_window._measure_heights_pressed)
+        self.get_coverslip_height.clicked.connect(self.main_window._calibrate_coverslip_height_pressed)
         self.get_spherical_volumes.clicked.connect(self.main_window.compute_spherical_volumes)
 
         return self.volumes_tab
@@ -625,9 +625,9 @@ class LeftToolbar(QScrollArea):
         split_particle_button.clicked.connect(self.main_window.split_particle_tracks)
         clear_tracking_button.clicked.connect(self.main_window.clear_tracking)
         self.save_tracking_button.clicked.connect(self.main_window.save_tracking)
-        self.load_tracking_button.clicked.connect(self.main_window.load_tracking_pressed)
-        self.highlight_track_ends_button.stateChanged.connect(self.main_window.update_tracking_overlay)
-        self.highlight_mitoses_button.stateChanged.connect(self.main_window.update_tracking_overlay)
+        self.load_tracking_button.clicked.connect(self.main_window._load_tracking_pressed)
+        self.highlight_track_ends_button.stateChanged.connect(self.main_window._update_tracking_overlay)
+        self.highlight_mitoses_button.stateChanged.connect(self.main_window._update_tracking_overlay)
         delete_head.clicked.connect(self.main_window.delete_particle_head)
         delete_tail.clicked.connect(self.main_window.delete_particle_tail)
         delete_all.clicked.connect(self.main_window.delete_particle)
@@ -639,10 +639,10 @@ class LeftToolbar(QScrollArea):
         layout = QGridLayout(widget)
         layout.setVerticalSpacing(5)
 
-        self.save_button = QPushButton("Save", self.main_window)
-        self.save_as_button = QPushButton("Save As", self.main_window)
-        self.save_stack = QCheckBox("Save Stack", self.main_window)
-        self.also_save_tracking = QCheckBox("Save Tracking", self.main_window)
+        self.save_button = QPushButton("Save", self)
+        self.save_as_button = QPushButton("Save As", self)
+        self.save_stack = QCheckBox("Save Stack", self)
+        self.also_save_tracking = QCheckBox("Save Tracking", self)
 
         self.save_stack.setChecked(True)
 
@@ -654,30 +654,30 @@ class LeftToolbar(QScrollArea):
         return widget
 
     def _create_command_line_button(self):
-        self.command_line_button = QPushButton("Open Command Line", self.main_window)
+        self.command_line_button = QPushButton("Open Command Line", self)
         return self.command_line_button
 
     def _connect_signals(self):
         # Normalize signals
-        self.inverted_checkbox.stateChanged.connect(self.main_window.invert_toggled)
-        self.normalize_frame_button.toggled.connect(self.main_window.update_normalize_frame)
-        self.normalize_stack_button.toggled.connect(self.main_window.update_normalize_frame)
-        self.normalize_custom_button.toggled.connect(self.main_window.update_normalize_frame)
+        self.inverted_checkbox.stateChanged.connect(self.main_window._invert_toggled)
+        self.normalize_frame_button.toggled.connect(self.main_window._update_normalize_frame)
+        self.normalize_stack_button.toggled.connect(self.main_window._update_normalize_frame)
+        self.normalize_custom_button.toggled.connect(self.main_window._update_normalize_frame)
         
         # Segmentation overlay signals
         self.masks_checkbox.stateChanged.connect(self.set_masks_visibility)
         self.outlines_checkbox.stateChanged.connect(self.set_outlines_visibility)
         
         # Command line signal
-        self.command_line_button.clicked.connect(self.main_window.open_command_line)
+        self.command_line_button.clicked.connect(self.main_window._open_command_line)
         
         # Voxel size signals
-        self.xy_size_input.editingFinished.connect(self.main_window.update_voxel_size)
-        self.z_size_input.editingFinished.connect(self.main_window.update_voxel_size)
+        self.xy_size_input.editingFinished.connect(self.main_window._update_voxel_size)
+        self.z_size_input.editingFinished.connect(self.main_window._update_voxel_size)
         
         # Save signals
-        self.save_button.clicked.connect(self.main_window.save_segmentation)
-        self.save_as_button.clicked.connect(self.main_window.save_as_segmentation)
+        self.save_button.clicked.connect(self.main_window._save_segmentation)
+        self.save_as_button.clicked.connect(self.main_window._save_as_segmentation)
         
         # Tab switch signal
         self.tabbed_widget.currentChanged.connect(self.tab_switched)
@@ -695,7 +695,7 @@ class LeftToolbar(QScrollArea):
         # load visual settings for the new tab
         self.current_tab=index
         self._visual_settings=self.saved_visual_settings[index]
-        self.main_window.tab_switched(index)
+        self.main_window._tab_switched(index)
 
     def clear_LUT_sliders(self):
         try:
@@ -734,7 +734,7 @@ class LeftToolbar(QScrollArea):
         
         for checkbox in self.RGB_checkboxes:
            checkbox.stateChanged.connect(self.update_display)
-        self.show_grayscale_checkbox.stateChanged.connect(self.main_window.show_grayscale_toggled)
+        self.show_grayscale_checkbox.stateChanged.connect(self.main_window._show_grayscale_toggled)
     
     @property
     def RGB_visible(self):
@@ -767,7 +767,7 @@ class LeftToolbar(QScrollArea):
             slider.blockSignals(True)
             slider.setValue(tuple(bound))
             slider.blockSignals(False)
-        self.main_window.set_LUTs()
+        self.main_window._set_LUTs()
 
     def set_LUT_slider_ranges(self, ranges):
         for slider, slider_range in zip(self.LUT_range_sliders, ranges):
@@ -847,9 +847,9 @@ class RightToolbar:
     def _create_stat_tabs(self):
         self.stat_tabs = QTabWidget()
         tabs = [
-            ("Histogram", self.main_window.get_histogram_tab()),
-            ("Particle", self.main_window.get_particle_stat_tab()),
-            ("Time Series", self.main_window.get_time_series_tab())
+            ("Histogram", self.main_window._get_histogram_tab()),
+            ("Particle", self.main_window._get_particle_stat_tab()),
+            ("Time Series", self.main_window._get_time_series_tab())
         ]
         
         for name, widget in tabs:
@@ -927,25 +927,25 @@ class RightToolbar:
 
     def _connect_signals(self):
         # Tab switching
-        self.stat_tabs.currentChanged.connect(self.main_window.stat_tab_switched)
+        self.stat_tabs.currentChanged.connect(self.main_window._stat_tab_switched)
 
         # Cell selection signals
         for prompt, handler in [
-            (self.selected_cell_prompt, self.main_window.cell_prompt_changed),
-            (self.selected_particle_prompt, self.main_window.particle_prompt_changed)
+            (self.selected_cell_prompt, self.main_window._cell_prompt_changed),
+            (self.selected_particle_prompt, self.main_window._particle_prompt_changed)
         ]:
             prompt.textChanged.connect(handler)
             prompt.returnPressed.connect(handler)
 
         # Stat overlay signals
-        self.seg_overlay_attr.dropdownOpened.connect(self.main_window.get_overlay_attrs)
-        self.seg_overlay_attr.activated.connect(self.main_window.new_seg_overlay)
-        self.seg_overlay_attr.currentIndexChanged.connect(self.main_window.new_seg_overlay)
+        self.seg_overlay_attr.dropdownOpened.connect(self.main_window._get_overlay_attrs)
+        self.seg_overlay_attr.activated.connect(self.main_window._new_seg_overlay)
+        self.seg_overlay_attr.currentIndexChanged.connect(self.main_window._new_seg_overlay)
         
         # LUT signals
-        self.stat_LUT_slider.valueChanged.connect(self.main_window.stat_LUT_slider_changed)
+        self.stat_LUT_slider.valueChanged.connect(self.main_window._stat_LUT_slider_changed)
         for button in (self.stat_frame_button, self.stat_stack_button, self.stat_custom_button):
-            button.toggled.connect(self.main_window.update_stat_LUT)
+            button.toggled.connect(self.main_window._update_stat_LUT)
 
 def clear_layout(layout):
     while layout.count():

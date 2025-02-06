@@ -4,11 +4,12 @@ from PyQt6.QtWidgets import (
     QWidget, QFileDialog, QMessageBox, QToolTip
     )
 from PyQt6.Qsci import QsciScintilla, QsciLexerPython, QsciAPIs
-from PyQt6.QtGui import QFont, QColor, QAction
+from PyQt6.QtGui import QFont, QColor, QIcon
 from PyQt6.QtCore import Qt, QPoint
 import ast
 import re
 import numpy as np
+import importlib.resources
 
 class ExecutionInterrupted(Exception):
     """Custom exception to stop script execution."""
@@ -30,6 +31,8 @@ class ScriptWindow(QMainWindow):
     def __init__(self, parent=None, local_env=None, global_env=None):
         super().__init__()
         self.main_window = parent
+        icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('script_editor.png')
+        self.setWindowIcon(QIcon(str(icon_path)))
         self.setWindowTitle("Script Editor")
         self.setGeometry(100, 100, 800, 500)
         self.script_path = None
@@ -42,7 +45,7 @@ class ScriptWindow(QMainWindow):
         self.global_env['script_window']=self
 
         for name in dir(self.main_window):
-            if not name.startswith("__") and not name.endswith("Event"):
+            if not name.startswith("_") and not name.endswith("Event"):
                 try:
                     attr=getattr(self.main_window, name)
                 except AttributeError:

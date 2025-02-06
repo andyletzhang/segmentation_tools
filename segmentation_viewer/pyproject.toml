@@ -16,6 +16,8 @@ dependencies = [
     "pyqtgraph",
     "requests",
     "segmentation_tools", # You may need to manually install this since it's local.
+    "dask=2024.8",
+    "zarr=2.13",
 ]
 
 [project.scripts]

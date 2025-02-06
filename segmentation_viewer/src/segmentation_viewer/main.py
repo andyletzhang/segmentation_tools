@@ -33,6 +33,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
+# TODO: move clear_tracking away from delete_particle
 # TODO: export segplot as gif
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
 # ndimage labeled measurements on any of these attributes to create new ones
@@ -3619,7 +3620,7 @@ class MainWidget(QMainWindow):
     
     #def import_masks(self):
     
-    def import_images(self, files=None, image_shape=None):
+    def import_images(self, event=None, files=None, image_shape=None):
         '''
         Import images to the current stack.
         

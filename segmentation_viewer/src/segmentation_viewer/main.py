@@ -9,7 +9,7 @@ from skimage import draw
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QRadioButton, QInputDialog, QMessageBox,
-    QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy, QFileDialog, QDialog,
+    QVBoxLayout, QHBoxLayout, QSizePolicy, QFileDialog, QDialog,
     QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter, QProgressBar, QScrollArea,
 )
 from PyQt6.QtCore import Qt
@@ -33,7 +33,10 @@ from pathlib import Path
 from tqdm import tqdm
 
 # high priority
+# TODO: script editor icon
 # TODO: move clear_tracking away from delete_particle
+# TODO: change RGB_ImageItem LUTs in settings (new settings dialog?)
+# add LUTs to config file
 # TODO: export segplot as gif
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
 # ndimage labeled measurements on any of these attributes to create new ones
@@ -44,7 +47,7 @@ from tqdm import tqdm
 
 # low priority
 # TODO: when cell is clicked, have option to show its entire colormapped track
-# TODO: get_mitoses, visualize mitoses, edit mitoses
+# TODO: edit mitoses
 # TODO: use fastremap to add cell highlights?
 
 # TODO: some image pyramid approach to speed up work on large images??
@@ -519,6 +522,8 @@ class MainWidget(QMainWindow):
     
     def _get_cell_frame_attrs(self, ignored={'frame','n','green','red'}):
         ''' Return all attributes from any cell in the current frame '''
+        if len(self.frame.cells)==0:
+            return []
         keys=set(np.concatenate([dir(cell) for cell in self.frame.cells]))
         # remove __ prefixed attributes
         keys={item for item in keys if not item.startswith('_')}
@@ -3733,8 +3738,10 @@ def main():
     else:
         app = QApplication.instance()
 
+    # apply dark theme
     darktheme_stylesheet=load_stylesheet(importlib.resources.files('segmentation_viewer.assets').joinpath('darktheme.qss'))
     app.setStyleSheet(darktheme_stylesheet)
+
     app.quitOnLastWindowClosed = True
     ui = MainWidget()
     ui.show()

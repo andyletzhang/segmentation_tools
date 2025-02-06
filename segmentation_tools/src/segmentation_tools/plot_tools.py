@@ -534,3 +534,27 @@ def hist_median(v, histtype='step', weights='default', zorder=None, ax=None, bin
     
     bin_idx=np.digitize(median, bins)-1 # find which bin the median is in
     ax.plot([median, median], [0, n[bin_idx]], color=patch[0].get_edgecolor(), zorder=zorder, linestyle='--', linewidth=linewidth,  alpha=alpha) # draw a line at the median up to the height of the bin
+
+def probability_density(x, bins=100, range=None):
+    from scipy.stats import gaussian_kde
+    x=x[~np.isnan(x)]
+    kde=gaussian_kde(x)
+    if range is None:
+        range=(x.min(), x.max())
+    x=np.linspace(*range, bins)
+    return kde(x)
+
+def pdf_median(v, ax=None, bins=30, range=(0,6000), linewidth=1.4, alpha=1, fill_under=False, **kwargs):
+    if not ax:
+        ax=plt.gca()
+    x=np.linspace(*range, bins)
+    pdf=probability_density(v, bins=bins, range=range)
+    median=np.nanmedian(v)
+    line, =ax.plot(x, pdf, linewidth=linewidth, alpha=alpha, **kwargs)
+    if fill_under:
+        ax.fill_between(x, pdf, alpha=alpha/3, color=line.get_color())
+    
+    median_height = pdf[np.argmin(np.abs(x - median))]
+    ax.plot([median, median], [0, median_height], color=line.get_color(), linestyle='--')
+
+    return x, pdf

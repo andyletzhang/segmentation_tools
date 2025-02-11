@@ -591,7 +591,7 @@ class LeftToolbar(QScrollArea):
         clear_tracking_button=QPushButton("Clear Tracking", self)
         
         get_mitoses_button=QPushButton("Get Mitoses", self)
-        get_mitoses_button.clicked.connect(self.main_window.get_mitoses)
+        get_mitoses_button.clicked.connect(self.main_window._get_mitoses_pressed)
 
         self.mitosis_inputs=[QLineEdit(self, placeholderText=text) for text in ['1.5', '1', '1', '1', '1', '1', '1']]
         self.mitoses_config_menu=QFormLayout()
@@ -611,6 +611,7 @@ class LeftToolbar(QScrollArea):
         track_centroids_widget.addWidget(delete_particle_label)
         track_centroids_widget.addLayout(delete_particle_layout)
         track_centroids_widget.addWidget(clear_tracking_button)
+        track_centroids_widget.hide_content()
         
         mitoses_widget.core_layout.addWidget(get_mitoses_button)
         mitoses_widget.addLayout(self.mitoses_config_menu)

@@ -200,7 +200,7 @@ class TimeStack(SegmentedStack):
         super().__init__(**kwargs)
 
     # -------------Particle Tracking-------------
-    def track_centroids(self, memory=0, v_quantile=0.97, filter_stubs=False, **kwargs):
+    def track_centroids(self, memory=0, v_quantile=0.97, filter_stubs=False, search_range=None, **kwargs):
         '''
         uses the trackpy package to track cell centroids.
         This works in two stages: 
@@ -220,20 +220,16 @@ class TimeStack(SegmentedStack):
         drift_firstpass=tp.compute_drift(t_firstpass)
         t_corrected=tp.subtract_drift(t_firstpass,drift_firstpass).reset_index(drop=True) # subtract drift in the stage. NB: will also catch any collective migration.
     
-        if 'search_range' in kwargs and kwargs['search_range'] is not None: # user can specify a search range if they want. Otherwise one is deduced from the velocity distribution.
-            self.tracking_range=kwargs['search_range']
-            kwargs.pop('search_range')
-
-        else: # get a search range by evaluating the velocity distribution.
+        if search_range is None: # get a search range by evaluating the velocity distribution.
             # This is a simplified copy of the get_velocities() method.
             v=t_corrected[['x','y','frame','particle']].groupby('particle').apply(np.diff, axis=0)
             v_arr=np.concatenate(v.values)[:,:3]
             velocities=np.linalg.norm(v_arr[:,:2], axis=1)/v_arr[:,2] # get magnitude of velocity normalized by time
 
-            self.tracking_range=np.quantile(velocities, v_quantile) # let's assume the top (1-v_quantile) percent of velocities are spurious tracks or actually mitosis. We'll use this as a cutoff for the real tracking.
+            search_range=np.quantile(velocities, v_quantile) # let's assume the top (1-v_quantile) percent of velocities are spurious tracks or actually mitosis. We'll use this as a cutoff for the real tracking.
         
         # FINAL PASS: small search range
-        t_final=tp.link(t_corrected, search_range=self.tracking_range, memory=memory, **kwargs)
+        t_final=tp.link(t_corrected, search_range=search_range, memory=memory, **kwargs)
         if filter_stubs:
             t_final=tp.filter_stubs(t_final, filter_stubs) # drop tracks which are $filter_stubs or fewer frames long
             t_final['particle']=t_final.groupby('particle').ngroup() # renumber particle tracks with filtered tracks ommitted from count
@@ -241,6 +237,7 @@ class TimeStack(SegmentedStack):
         self.tracked_centroids=tp.subtract_drift(t_final,drift_finalpass).reset_index(drop=True)
         self.drift=drift_firstpass+drift_finalpass
         self.drift=pd.concat([pd.DataFrame({'frame':[0],'y':[0],'x':[0]}).set_index('frame'), self.drift]) # add a row for the first frame (no drift)
+        self.tracking_range=search_range
         return self.tracked_centroids
 
     # -------------Mask Operations-------------

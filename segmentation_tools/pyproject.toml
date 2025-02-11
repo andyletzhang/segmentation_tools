@@ -15,7 +15,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "numpy",
+    "numpy<2",
     "cellpose",
     "pandas",
     "trackpy",
@@ -26,7 +26,8 @@ dependencies = [
     "natsort",
     "nd2",
     "numba",
-    "dask",
+    "dask==2024.8",
+    "zarr==2.13",
 ]
 
 [build-system]

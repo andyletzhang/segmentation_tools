@@ -1292,6 +1292,7 @@ class MainWidget(QMainWindow):
             return
         distance_threshold, score_cutoff, weights=self.left_toolbar.mitosis_params
         self.get_mitoses(distance_threshold=distance_threshold, score_cutoff=score_cutoff, weights=weights)
+        self._update_tracking_overlay()
 
     def get_mitoses(self, event=None, **kwargs):
         '''
@@ -1329,13 +1330,14 @@ class MainWidget(QMainWindow):
                 self._highlight_track_ends()
             elif self.left_toolbar.highlight_mitoses_button.isChecked():
                 self._highlight_mitoses()
+            else:
+                self.canvas.clear_tracking_overlay()
             return
 
     def _highlight_mitoses(self):
         if hasattr(self.stack, 'tracked_centroids'):
             if not hasattr(self.stack, 'mitoses'):
-                print('No mitoses found. Finding mitoses...')
-                self.get_mitoses()
+                return
 
             # get all mitoses within n frames of the current frame
             tail_length=5
@@ -2810,7 +2812,7 @@ class MainWidget(QMainWindow):
             frames=[self.frame]
 
         self.generate_outlines(frames)
-        self.statusBar().showMessage(f'Generated outlines.', 1000)
+        self.statusBar().showMessage('Generated outlines.', 1000)
 
     def generate_outlines(self, frames):
         '''
@@ -3132,12 +3134,13 @@ class MainWidget(QMainWindow):
         self.drawing_cell_roi=False
         self.drawing_cell_split=False
         self.select_cell(None)
-        self.FUCCI_dropdown=0 # clear overlay
+        self.FUCCI_dropdown=0 # clear FUCCI overlay
+        self.canvas.clear_tracking_overlay()
         self.seg_overlay_attr.setCurrentIndex(0) # clear attribute overlay
         self.left_toolbar.RGB_visible=True
         if not self.is_grayscale:
             self.left_toolbar.show_grayscale_checkbox.setChecked(False)
-        self.canvas.clear_selection_overlay() # remove any overlays (highlighting, outlines)
+        self.canvas.clear_selection_overlay() # remove any selection overlays (highlighting, outlines)
         self.canvas.img_plot.autoRange()
 
         self.histogram_menu.setCurrentIndex(0)
@@ -3325,6 +3328,7 @@ class MainWidget(QMainWindow):
             event.ignore()
 
     def dropEvent(self, event):
+        # TODO: figure out how to release the dragged window
         files = [u.toLocalFile() for u in event.mimeData().urls()]
         self.open_stack(natsorted(files))
 

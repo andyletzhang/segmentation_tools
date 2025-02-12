@@ -1,36 +1,53 @@
+import importlib.resources
+import os
 import sys
+from pathlib import Path
+
+import fastremap
 import numpy as np
 import pandas as pd
-from cellpose import utils # takes a while to import :(
-import os
-import fastremap
+import pyqtgraph as pg
+from cellpose import utils  # takes a while to import :(
+from natsort import natsorted
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFontMetrics, QIcon, QIntValidator
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFileDialog,
+    QFormLayout,
+    QGraphicsEllipseItem,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QRadioButton,
+    QScrollArea,
+    QSizePolicy,
+    QSlider,
+    QSplitter,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 from scipy import ndimage
 from skimage import draw
-
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QLabel, QRadioButton, QInputDialog, QMessageBox,
-    QVBoxLayout, QHBoxLayout, QSizePolicy, QFileDialog, QDialog,
-    QLineEdit, QTabWidget, QSlider, QGraphicsEllipseItem, QFormLayout, QSplitter, QProgressBar, QScrollArea,
-)
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIntValidator, QIcon, QFontMetrics
-import pyqtgraph as pg
-
-from segmentation_tools.segmented_comprehension import SegmentedStack, Cell
-from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
-from segmentation_tools.utils import cell_scalar_attrs
-from .ui import LeftToolbar, labeled_LUT_slider
-from .canvas import PyQtGraphCanvas, CellMaskPolygons, CellSplitLines
-from .command_line import CommandLineWindow
-from .qt import CustomComboBox, SubstackDialog
-from .io import ExportWizard
-from .scripting import ScriptWindow
-from .utils import load_stylesheet, create_html_table
-
-from natsort import natsorted
-import importlib.resources
-from pathlib import Path
 from tqdm import tqdm
+
+from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
+from segmentation_tools.segmented_comprehension import Cell, SegmentedStack
+from segmentation_tools.utils import cell_scalar_attrs
+
+from .canvas import CellMaskPolygons, CellSplitLines, PyQtGraphCanvas
+from .command_line import CommandLineWindow
+from .io import ExportWizard
+from .qt import CustomComboBox, SubstackDialog
+from .scripting import ScriptWindow
+from .ui import LeftToolbar, labeled_LUT_slider
+from .utils import create_html_table, load_stylesheet
 
 # high priority
 # TODO: script editor icon
@@ -46,6 +63,7 @@ from tqdm import tqdm
 # TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
 
 # low priority
+# TODO: reorder channels preview
 # TODO: when cell is clicked, have option to show its entire colormapped track
 # TODO: edit mitoses
 # TODO: use fastremap to add cell highlights?

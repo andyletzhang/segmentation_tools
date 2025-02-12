@@ -1,5 +1,6 @@
 from PyQt6.QtGui import QAction
 
+
 def create_action(name, func, parent=None, shortcut=None):
     action=QAction(name, parent)
     action.triggered.connect(func)

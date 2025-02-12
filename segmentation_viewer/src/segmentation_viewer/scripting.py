@@ -1,15 +1,24 @@
-import sys
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout,
-    QWidget, QFileDialog, QMessageBox, QToolTip
-    )
-from PyQt6.Qsci import QsciScintilla, QsciLexerPython, QsciAPIs
-from PyQt6.QtGui import QFont, QColor, QIcon
-from PyQt6.QtCore import Qt, QPoint
 import ast
-import re
-import numpy as np
 import importlib.resources
+import re
+import sys
+
+import numpy as np
+from PyQt6.Qsci import QsciAPIs, QsciLexerPython, QsciScintilla
+from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtGui import QColor, QFont, QIcon
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QHBoxLayout,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QToolTip,
+    QVBoxLayout,
+    QWidget,
+)
+
 
 class ExecutionInterrupted(Exception):
     """Custom exception to stop script execution."""

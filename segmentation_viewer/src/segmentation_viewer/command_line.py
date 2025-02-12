@@ -1,9 +1,10 @@
-from PyQt6.QtCore import pyqtSignal, pyqtSlot, QThread, Qt
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLineEdit, QMainWindow
-from PyQt6.QtGui import QIcon, QTextCursor
 import importlib.resources
 import io
 import sys
+
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QIcon, QTextCursor
+from PyQt6.QtWidgets import QLineEdit, QMainWindow, QTextEdit, QVBoxLayout, QWidget
 
 
 class CommandLineWindow(QMainWindow):

@@ -1,15 +1,27 @@
 import numpy as np
-
-from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QLabel, QPushButton, QRadioButton, QComboBox,
-    QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QSpacerItem, QSizePolicy,
-    QLineEdit, QTabWidget, QFormLayout, QSplitter, QScrollArea,
-)
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIntValidator, QDoubleValidator
+from PyQt6.QtGui import QDoubleValidator, QIntValidator
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFormLayout,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QPushButton,
+    QRadioButton,
+    QScrollArea,
+    QSizePolicy,
+    QSpacerItem,
+    QSplitter,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .qt import CustomComboBox, FineScrubQRangeSlider
-
 
 spacer = (0,10) # default spacer size (width, height)
 def create_vertical_spacer(spacing=None, hSizePolicy=QSizePolicy.Policy.Fixed, vSizePolicy=QSizePolicy.Policy.Fixed):

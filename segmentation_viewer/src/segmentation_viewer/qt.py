@@ -1,12 +1,23 @@
+from PyQt6.QtCore import QPointF, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QDoubleValidator, QFont, QMouseEvent
 from PyQt6.QtWidgets import (
-    QComboBox, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QMessageBox, QColorDialog, QWidget, QGridLayout,
-    QToolButton
+    QColorDialog,
+    QComboBox,
+    QDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtGui import QMouseEvent, QColor, QFont, QDoubleValidator
-from PyQt6.QtCore import Qt, pyqtSignal, QPointF
 from superqt import QRangeSlider
+
 from segmentation_viewer.io import RangeStringValidator, range_string_to_list
+
 
 class CustomComboBox(QComboBox):
     '''Custom QComboBox that emits a signal when the dropdown is opened'''

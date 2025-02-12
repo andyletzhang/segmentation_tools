@@ -1,12 +1,15 @@
-from segmentation_tools import __file__ as tools_file
-from segmentation_viewer import __file__ as viewer_file
-import tempfile
+import os
 import shutil
-from pathlib import Path
-import requests
+import tempfile
 import zipfile
 from io import BytesIO
-import os
+from pathlib import Path
+
+import requests
+
+from segmentation_tools import __file__ as tools_file
+from segmentation_viewer import __file__ as viewer_file
+
 
 def download_and_extract_repo(repo_url, extract_to):
     # GitHub URL for downloading as a ZIP (change the branch or commit if needed)

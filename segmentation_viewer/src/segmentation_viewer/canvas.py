@@ -1,20 +1,34 @@
-import numpy as np
 import fastremap
-
+import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QGraphicsPolygonItem, QGraphicsPathItem, QGraphicsScene
-from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QPen, QColor, QBrush, QPolygonF, QPainter, QCursor, QPainterPath, QImage
+from PyQt6.QtCore import QPointF, Qt
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QCursor,
+    QImage,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPolygonF,
+)
+from PyQt6.QtWidgets import (
+    QGraphicsPathItem,
+    QGraphicsPolygonItem,
+    QGraphicsScene,
+    QHBoxLayout,
+    QWidget,
+)
 from shapely.geometry import LineString
 from shapely.ops import polygonize, unary_union
 
 try:
-    from cucim.skimage.color import rgb2hsv, hsv2rgb
     import cupy as xp
+    from cucim.skimage.color import hsv2rgb, rgb2hsv
     on_gpu=True
 except ImportError:
-    from skimage.color import rgb2hsv, hsv2rgb
     import numpy as xp
+    from skimage.color import hsv2rgb, rgb2hsv
     Warning('cupy and/or cucim not found. Inverted contrast may be slow.')
     on_gpu=False
 

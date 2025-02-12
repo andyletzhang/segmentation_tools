@@ -1,17 +1,35 @@
 
-from nd2 import ND2File
-from segmentation_tools.io import read_nd2, read_nd2_shape, read_tif, read_tif_shape
-from tifffile import TiffFile
-from PyQt6.QtGui import QValidator
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QWidget, QDialog, QVBoxLayout, QFormLayout, QLineEdit, QPushButton, QHBoxLayout, QLabel, QFileDialog, QTableWidget, QTableWidgetItem, QCheckBox, QMessageBox
-from pathlib import Path
 import re
+from pathlib import Path
+
 import numpy as np
+from nd2 import ND2File
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QValidator
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+from tifffile import TiffFile
+
+from segmentation_tools.io import read_nd2, read_nd2_shape, read_tif, read_tif_shape
+
 
 def read_image_file(file_path, progress_bar=None, image_shape=None, **progress_kwargs):
     if progress_bar is None:
-        progress_bar = lambda x, **kwargs: x
+        def progress_bar(x, **kwargs):
+            return x
     if file_path.endswith('.nd2'):
         file=ND2File(file_path)
         shape=read_nd2_shape(file) # (T, P, Z, C, Y, X)

@@ -1,15 +1,15 @@
-import matplotlib.pyplot as plt
-import matplotlib.patheffects as patheffects
-from matplotlib.patches import Polygon
-from matplotlib.collections import PatchCollection
+from pathlib import Path
 
+import matplotlib.patheffects as patheffects
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
-from pathlib import Path
+from matplotlib.collections import PatchCollection
+from matplotlib.patches import Polygon
 from tqdm.notebook import tqdm
 
 from segmentation_tools import preprocessing
+
 
 def plot_trajectories(stack, output_path=None, trail_length=10, linewidth=1, markersize=1, figsize=10, show_labels=True, tracking_kwargs={}):
     '''display trajectories superimposed over images.'''

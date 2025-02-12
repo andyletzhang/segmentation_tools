@@ -1,13 +1,13 @@
-import numpy as np
-import pandas as pd
-from scipy import ndimage
-
-from natsort import natsorted
 from glob import glob
 from pathlib import Path
 
-import fastremap
 import cellpose.utils as cp_utils
+import fastremap
+import numpy as np
+import pandas as pd
+from natsort import natsorted
+from scipy import ndimage
+
 from . import preprocessing
 
 '''
@@ -439,9 +439,7 @@ class TimeStack(SegmentedStack):
         Returns:
             DataFrame: DataFrame containing velocities and related data.
         """
-        import os
         import pandas as pd
-        import numpy as np
         
         # Load velocities from CSV if requested
         if from_csv:
@@ -570,7 +568,14 @@ class TimeStack(SegmentedStack):
                         cell.cycle_stage=3
 
     def get_interpretable_FUCCI(self, zero_remainder=True, impute_zeros=True):
-        from .FUCCI_linking import get_problematic_IDs, impute_fill, smooth_small_flickers, correct_mother_G2, correct_daughter_G1, remove_sandwich_flicker
+        from .FUCCI_linking import (
+            correct_daughter_G1,
+            correct_mother_G2,
+            get_problematic_IDs,
+            impute_fill,
+            remove_sandwich_flicker,
+            smooth_small_flickers,
+        )
         cell_cycle=np.concatenate([frame.fetch_cell_cycle() for frame in self.frames])
         if hasattr(self, 'tracked_centroids') and len(self.tracked_centroids)==len(cell_cycle):
             t=self.tracked_centroids.sort_values(['frame', 'cell_number'])
@@ -777,10 +782,10 @@ class SegmentedImage:
         else:
             raise ValueError('data must be a path to a seg.npy file or a dictionary of data from a seg.npy file.')
         
-        if not 'masks' in data.keys():
+        if 'masks' not in data.keys():
             raise ValueError('Failed to instantiate SegmentedImage: segmented data must contain masks.')
         
-        if not 'outlines' in data.keys():
+        if 'outlines' not in data.keys():
             data['outlines']=cp_utils.masks_to_outlines(data['masks'])
 
         # Print debug statements if verbose mode is enabled
@@ -1207,7 +1212,8 @@ class SegmentedImage:
         cc_junctions=np.column_stack(np.where(convolve2d(self.outlines,np.array([[1,1],[1,1]]))==4))
         
         # find 2x2 boxes with three or four cells in them (our metric for TCJs)
-        is_TCJ=lambda x,y: len(np.unique(self.masks[x-1:x+1,y-1:y+1]))>=3 # very rare cases will have four-cell junctions, generally three
+        def is_TCJ(x, y):
+            return len(np.unique(self.masks[x-1:x+1,y-1:y+1]))>=3 # very rare cases will have four-cell junctions, generally three
         is_TCJ_vect=np.vectorize(is_TCJ)
         TCJs=cc_junctions[is_TCJ_vect(cc_junctions[:,0],cc_junctions[:,1])]
         self.TCJs=TCJs
@@ -1254,8 +1260,8 @@ class SegmentedImage:
     
     def cell_polygons(self,ec='k',fc='lightsteelblue',linewidths=0.8,**kwargs):
         '''returns a matplotlib PatchCollection of vertex-reconstructed cells for efficient plotting.'''
-        from matplotlib.patches import Polygon
         from matplotlib.collections import PatchCollection
+        from matplotlib.patches import Polygon
         cell_polygons=[]
         for cell in self.good_cells():
             vertices=cell.sorted_vertices

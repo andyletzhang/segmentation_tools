@@ -1761,22 +1761,24 @@ class MainWidget(QMainWindow):
 
         tracking_range=self.left_toolbar.tracking_range.text()
         if tracking_range=='':
-            search_range=None
+            tracking_range=None
+        else:
+            tracking_range=float(tracking_range)
         memory=self.left_toolbar.memory_range.text()
         if memory=='':
             memory=0
 
-        self.statusBar().showMessage(f'Tracking centroids...')
+        self.statusBar().showMessage('Tracking centroids...')
 
         try:
-            self.track_centroids(tracking_range=float(tracking_range), memory=int(memory))
+            self.track_centroids(search_range=tracking_range, memory=int(memory))
         except Exception as e:
             print(e)
             self.statusBar().showMessage(f'Error tracking centroids: {e}', 4000)
             return
 
         print(f'Tracked centroids for stack {self.stack.name}')
-        self.tracking_range.setText(f'{self.stack.tracking_range:.2f}')
+        self.left_toolbar.tracking_range.setText(f'{self.stack.tracking_range:.2f}')
         self.statusBar().showMessage(f'Tracked centroids for stack {self.stack.name}.', 2000)
         self._recolor_tracks()
         self.canvas.draw_masks()

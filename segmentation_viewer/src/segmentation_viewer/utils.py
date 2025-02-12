@@ -2,15 +2,17 @@ from PyQt6.QtGui import QAction
 
 
 def create_action(name, func, parent=None, shortcut=None):
-    action=QAction(name, parent)
+    action = QAction(name, parent)
     action.triggered.connect(func)
     if shortcut is not None:
         action.setShortcut(shortcut)
     return action
 
+
 def load_stylesheet(file_path):
-    with open(file_path, 'r') as f:
+    with open(file_path, "r") as f:
         return f.read()
+
 
 def create_html_table(labels, values):
     if len(labels) != len(values):
@@ -28,14 +30,14 @@ def create_html_table(labels, values):
     """
     # Loop to add rows
     for label, value in zip(labels, values):
-        value=round(value, 2) # round to 2 decimal places
+        value = round(value, 2)  # round to 2 decimal places
         html += f"""
         <tr>
             <td style="padding: 4px;"><b>{label}:</b></td>
             <td style="padding: 4px;">{value}</td>
         </tr>
         """
-    
+
     html += """
         </tbody>
     </table>

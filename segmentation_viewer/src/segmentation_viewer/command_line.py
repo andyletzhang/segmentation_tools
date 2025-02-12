@@ -10,17 +10,20 @@ from PyQt6.QtWidgets import QLineEdit, QMainWindow, QTextEdit, QVBoxLayout, QWid
 class CommandLineWindow(QMainWindow):
     def __init__(self, parent=None, globals_dict={}, locals_dict={}):
         super().__init__()
-        icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('terminal_icon.png')
+        icon_path = importlib.resources.files("segmentation_viewer.assets").joinpath("terminal_icon.png")
         self.setWindowIcon(QIcon(str(icon_path)))
         self.setWindowTitle("Command Line")
 
         # Add the CommandLineWidget to the new window
-        self.cli = CommandLineWidget(parent=self, globals_dict=globals_dict, locals_dict=locals_dict)
-        self.setCentralWidget(self.cli)  
+        self.cli = CommandLineWidget(
+            parent=self, globals_dict=globals_dict, locals_dict=locals_dict
+        )
+        self.setCentralWidget(self.cli)
 
         # Set the window size and show the window
         self.resize(700, 400)
         self.show()
+
 
 class CommandLineWidget(QWidget):
     def __init__(self, parent=None, globals_dict={}, locals_dict={}):
@@ -28,7 +31,7 @@ class CommandLineWidget(QWidget):
 
         # Set up the layout
         layout = QVBoxLayout(self)
-        
+
         # Terminal-style output display area (Read-Only)
         self.terminal_display = QTextEdit(self)
         self.terminal_display.setStyleSheet("""
@@ -40,7 +43,7 @@ class CommandLineWidget(QWidget):
 
         self.terminal_display.setReadOnly(True)
         layout.addWidget(self.terminal_display)
-        
+
         # Command input area
         self.command_input = QLineEdit(self)
         self.command_input.setStyleSheet("""
@@ -67,6 +70,7 @@ class CommandLineWidget(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+
         # Set the focus to the command input box when the window is shown
         self.command_input.setFocus()
 
@@ -82,34 +86,41 @@ class CommandLineWidget(QWidget):
                 self.history_index += 1
                 self.command_input.setText(self.command_history[self.history_index])
             else:
-                self.history_index = len(self.command_history)  # Reset to allow new input
+                # Reset to allow new input
+                self.history_index = len(self.command_history)
                 self.command_input.clear()
         else:
             # Call base class keyPressEvent for default handling
             super().keyPressEvent(event)
-    
+
     def execute_command(self):
         # Get the command from the input box
         command = self.command_input.text()
         self.command_input.clear()
 
         if command:
-            if command in self.command_history: # remove redundant commands further back in the history
+            # remove redundant commands further back in the history
+            if command in self.command_history:
                 self.command_history.remove(command)
             self.command_history.append(command)
-            self.history_index = len(self.command_history)  # Reset index to point to the latest command
+
+            # Reset index to point to the latest command
+            self.history_index = len(self.command_history)
+
             # Display the command in the terminal display
             self.terminal_display.append(self.prompt + command)
-            
+
             # Execute the command and show the result
-            self.worker = CodeExecutionWorker(command, self.globals_dict, self.locals_dict)
+            self.worker = CodeExecutionWorker(
+                command, self.globals_dict, self.locals_dict
+            )
             self.worker.execution_done.connect(self.on_code_execution_done)
             self.worker.start()
             # block text input until the command is executed
             self.command_input.setDisabled(True)
         self.terminal_display.moveCursor(QTextCursor.End)
 
-    @pyqtSlot(str, str) # Decorator to specify the type of the signal
+    @pyqtSlot(str, str)  # Decorator to specify the type of the signal
     def on_code_execution_done(self, output, error):
         if output:
             self.terminal_display.append(output)
@@ -117,11 +128,12 @@ class CommandLineWidget(QWidget):
         if error:
             self.terminal_display.append(f"Error: {error}")
             self.terminal_display.moveCursor(QTextCursor.End)
-        
+
         # Re-enable the command input box
         self.command_input.setDisabled(False)
         # Set the focus back to the command input box
         self.command_input.setFocus()
+
 
 class CodeExecutionWorker(QThread):
     execution_done = pyqtSignal(str, str)  # Signal to emit output and error
@@ -152,7 +164,7 @@ class CodeExecutionWorker(QThread):
             # If it’s not an expression, run it as a statement using exec
             try:
                 exec(self.code, self.globals_dict, self.locals_dict)
-                output = "" # No output for statements
+                output = ""  # No output for statements
             except Exception as e:
                 output = ""
                 error = str(e)
@@ -166,8 +178,8 @@ class CodeExecutionWorker(QThread):
             sys.stdout = sys_stdout
             sys.stderr = sys.stderr
 
-        if not output or output=='None':
-            output=output_buffer.getvalue()
+        if not output or output == "None":
+            output = output_buffer.getvalue()
         output_buffer.close()
 
         # Emit the result and any error message back to the main thread

@@ -20,18 +20,21 @@ from segmentation_viewer.io import RangeStringValidator, range_string_to_list
 
 
 class CustomComboBox(QComboBox):
-    '''Custom QComboBox that emits a signal when the dropdown is opened'''
-    dropdownOpened=pyqtSignal(QComboBox)  # Signal emitted when the dropdown is opened
+    """Custom QComboBox that emits a signal when the dropdown is opened"""
+
+    dropdownOpened = pyqtSignal(QComboBox)  # Signal emitted when the dropdown is opened
+
     def showPopup(self):
         self.dropdownOpened.emit(self)
         super().showPopup()  # Call the original showPopup method
 
     def changeToText(self, text):
-        '''Set the current text of the combobox without triggering the currentIndexChanged signal'''
+        """Set the current text of the combobox without triggering the currentIndexChanged signal"""
         # add item to the combobox if it doesn't exist
-        if self.findText(text)==-1:
+        if self.findText(text) == -1:
             self.addItem(text)
         super().setCurrentText(text)
+
 
 class FineScrubQRangeSlider(QRangeSlider):
     def __init__(self, *args, **kwargs):
@@ -45,14 +48,14 @@ class FineScrubQRangeSlider(QRangeSlider):
             # Create a modified left-click event at the same position
             self.fine_scrubbing = True
             self.original_press_pos = event.position()
-            
+
             modified_event = QMouseEvent(
                 event.type(),
                 event.position(),
                 event.globalPosition(),
                 Qt.MouseButton.LeftButton,  # Convert right click to left
                 Qt.MouseButton.LeftButton,  # Active buttons
-                event.modifiers()
+                event.modifiers(),
             )
             super().mousePressEvent(modified_event)
         else:
@@ -67,7 +70,7 @@ class FineScrubQRangeSlider(QRangeSlider):
                 event.globalPosition(),
                 Qt.MouseButton.LeftButton,
                 Qt.MouseButton.NoButton,  # No buttons pressed after release
-                event.modifiers()
+                event.modifiers(),
             )
             self.fine_scrubbing = False
             self.original_press_pos = None
@@ -80,10 +83,10 @@ class FineScrubQRangeSlider(QRangeSlider):
             # Calculate the scaled movement
             delta = event.position() - self.original_press_pos
             scaled_delta = delta * self.fine_scrub_factor
-            
+
             # Create new position that applies the scaled movement to the original position
             fine_pos = self.original_press_pos + scaled_delta
-            
+
             # Create modified move event with scaled position
             modified_event = QMouseEvent(
                 event.type(),
@@ -91,39 +94,40 @@ class FineScrubQRangeSlider(QRangeSlider):
                 event.globalPosition(),
                 Qt.MouseButton.LeftButton,
                 Qt.MouseButton.LeftButton,
-                event.modifiers()
+                event.modifiers(),
             )
             super().mouseMoveEvent(modified_event)
         else:
             super().mouseMoveEvent(event)
 
+
 class SubstackDialog(QDialog):
     def __init__(self, array_length, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Input Substack Frames")
-        
+
         # Layout and widgets
         layout = QVBoxLayout(self)
         self.label = QLabel("Input substack frames:", self)
         layout.addWidget(self.label)
-        
+
         self.line_edit = QLineEdit(self)
         self.line_edit.setPlaceholderText("e.g. 1-10, 15, 17-18")
-        
+
         # Set the validator to the QLineEdit
-        self.line_edit.setValidator(RangeStringValidator(array_length-1, self))
-        
+        self.line_edit.setValidator(RangeStringValidator(array_length - 1, self))
+
         layout.addWidget(self.line_edit)
-        
+
         # Confirm and Cancel buttons
-        submit_layout=QHBoxLayout()
+        submit_layout = QHBoxLayout()
         self.button_confirm = QPushButton("Confirm", self)
         self.button_cancel = QPushButton("Cancel", self)
         submit_layout.addWidget(self.button_confirm)
         submit_layout.addWidget(self.button_cancel)
 
         layout.addLayout(submit_layout)
-        
+
         # Connect buttons
         self.button_confirm.clicked.connect(self.accept)
         self.button_cancel.clicked.connect(self.reject)
@@ -135,11 +139,17 @@ class SubstackDialog(QDialog):
         try:
             return range_string_to_list(self.line_edit.text())
         except ValueError:
-            QMessageBox.warning(self, "Invalid Input", "Invalid input. Please enter a valid range of frames.")
+            QMessageBox.warning(
+                self,
+                "Invalid Input",
+                "Invalid input. Please enter a valid range of frames.",
+            )
             return None
-        
+
+
 class OverlaySettingsDialog(QDialog):
     settings_applied = pyqtSignal(dict)
+
     def __init__(self, parent: QWidget = None):
         """
         Initialize the dialog. Inherit initial settings from the parent.
@@ -169,33 +179,39 @@ class OverlaySettingsDialog(QDialog):
         gui_label = QLabel("GUI Element")
         color_label = QLabel("Color")
         alpha_label = QLabel("Alpha")
-        
+
         for label in [gui_label, color_label, alpha_label]:
             label.setFont(bold_font)
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
+
         settings_grid.addWidget(gui_label, 0, 0)
         settings_grid.addWidget(color_label, 0, 1)
         settings_grid.addWidget(alpha_label, 0, 2)
 
         # Selected cell row
-        self.selected_cell_color_swatch, self.selected_cell_alpha_line=self.add_color_alpha_row(
-            settings_grid, 1, 
-            "Selected Cell", 
-            self.selected_cell_color, 
-            self.selected_cell_alpha, 
-            self.change_selected_cell_color
+        self.selected_cell_color_swatch, self.selected_cell_alpha_line = (
+            self.add_color_alpha_row(
+                settings_grid,
+                1,
+                "Selected Cell",
+                self.selected_cell_color,
+                self.selected_cell_alpha,
+                self.change_selected_cell_color,
+            )
         )
 
         # Masks row (no color picker)
-        self.masks_alpha_line=self.add_alpha_row(settings_grid, 2, "Masks", self.masks_alpha)
+        self.masks_alpha_line = self.add_alpha_row(
+            settings_grid, 2, "Masks", self.masks_alpha
+        )
 
         # Outlines row
-        self.outlines_color_swatch, self.outlines_alpha_line=self.add_color_alpha_row(
-            settings_grid, 3, 
-            "Outlines", 
-            self.outlines_color, 
-            self.outlines_alpha, 
+        self.outlines_color_swatch, self.outlines_alpha_line = self.add_color_alpha_row(
+            settings_grid,
+            3,
+            "Outlines",
+            self.outlines_color,
+            self.outlines_alpha,
             self.change_outlines_color,
         )
 
@@ -220,7 +236,15 @@ class OverlaySettingsDialog(QDialog):
         self.button_cancel.clicked.connect(self.reject)
         self.button_apply.clicked.connect(self.apply_settings)
 
-    def add_color_alpha_row(self, layout, row, label_text, initial_color, initial_alpha, color_change_callback):
+    def add_color_alpha_row(
+        self,
+        layout,
+        row,
+        label_text,
+        initial_color,
+        initial_alpha,
+        color_change_callback,
+    ):
         """
         Add a row with a color picker and an alpha input to the grid layout.
         """
@@ -228,9 +252,11 @@ class OverlaySettingsDialog(QDialog):
         label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(label, row, 0)
 
-        color_button=QPushButton()
+        color_button = QPushButton()
         color_button.setFixedSize(40, 20)
-        color_button.setStyleSheet(f"background-color: {initial_color.name()}; border: 1px solid black;")
+        color_button.setStyleSheet(
+            f"background-color: {initial_color.name()}; border: 1px solid black;"
+        )
         color_button.clicked.connect(color_change_callback)
         layout.addWidget(color_button, row, 1, Qt.AlignmentFlag.AlignCenter)
 
@@ -267,19 +293,27 @@ class OverlaySettingsDialog(QDialog):
         """
         Open a QColorDialog to change the selected cell color.
         """
-        color = QColorDialog.getColor(self.selected_cell_color, self, "Choose Selected Cell Color")
+        color = QColorDialog.getColor(
+            self.selected_cell_color, self, "Choose Selected Cell Color"
+        )
         if color.isValid():
             self.selected_cell_color = color
-            self.selected_cell_color_swatch.setStyleSheet(f"background-color: {color.name()}; border: 1px solid black;")
+            self.selected_cell_color_swatch.setStyleSheet(
+                f"background-color: {color.name()}; border: 1px solid black;"
+            )
 
     def change_outlines_color(self):
         """
         Open a QColorDialog to change the outlines color.
         """
-        color = QColorDialog.getColor(self.outlines_color, self, "Choose Outlines Color")
+        color = QColorDialog.getColor(
+            self.outlines_color, self, "Choose Outlines Color"
+        )
         if color.isValid():
             self.outlines_color = color
-            self.outlines_color_swatch.setStyleSheet(f"background-color: {color.name()}; border: 1px solid black;")
+            self.outlines_color_swatch.setStyleSheet(
+                f"background-color: {color.name()}; border: 1px solid black;"
+            )
 
     def apply_settings(self):
         """
@@ -292,33 +326,37 @@ class OverlaySettingsDialog(QDialog):
         Returns the selected settings.
         """
         if not self.selected_cell_alpha_line.text():
-            selected_cell_alpha=self.selected_cell_alpha
+            selected_cell_alpha = self.selected_cell_alpha
         else:
-            selected_cell_alpha=float(self.selected_cell_alpha_line.text())
-        
+            selected_cell_alpha = float(self.selected_cell_alpha_line.text())
+
         if not self.masks_alpha_line.text():
-            masks_alpha=self.masks_alpha
+            masks_alpha = self.masks_alpha
         else:
-            masks_alpha=float(self.masks_alpha_line.text())
+            masks_alpha = float(self.masks_alpha_line.text())
 
         if not self.outlines_alpha_line.text():
-            outlines_alpha=self.outlines_alpha
+            outlines_alpha = self.outlines_alpha
         else:
-            outlines_alpha=float(self.outlines_alpha_line.text())
-        
-        return {'selected_cell_color': self.selected_cell_color.name(),
-            'selected_cell_alpha': selected_cell_alpha,
-            'masks_alpha': masks_alpha,
-            'outlines_color': self.outlines_color.name(),
-            'outlines_alpha': outlines_alpha
+            outlines_alpha = float(self.outlines_alpha_line.text())
+
+        return {
+            "selected_cell_color": self.selected_cell_color.name(),
+            "selected_cell_alpha": selected_cell_alpha,
+            "masks_alpha": masks_alpha,
+            "outlines_color": self.outlines_color.name(),
+            "outlines_alpha": outlines_alpha,
         }
 
+
 def bordered(widget):
-    border_wrapper=QWidget(objectName='bordered')
-    border_layout=QVBoxLayout(border_wrapper)
-    border_layout.setContentsMargins(0,0,0,0)
+    border_wrapper = QWidget(objectName="bordered")
+    border_layout = QVBoxLayout(border_wrapper)
+    border_layout.setContentsMargins(0, 0, 0, 0)
     border_layout.addWidget(widget)
     return border_wrapper
+
+
 class CollapsibleWidget(QWidget):
     def __init__(self, header_text, parent=None, **kwargs):
         super().__init__(parent, **kwargs)
@@ -327,7 +365,7 @@ class CollapsibleWidget(QWidget):
         self.toggle_hidden = QToolButton(text=header_text)
         self.toggle_hidden.setCheckable(True)
         self.toggle_hidden.setChecked(True)
-        self.toggle_hidden.setStyleSheet('QToolButton { border: none; }')
+        self.toggle_hidden.setStyleSheet("QToolButton { border: none; }")
         self.toggle_hidden.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toggle_hidden.setArrowType(Qt.DownArrow)
         self.toggle_hidden.toggled.connect(self.on_toggled)
@@ -342,6 +380,7 @@ class CollapsibleWidget(QWidget):
 
     def show_content(self):
         self.toggle_hidden.setChecked(True)
+
     def hide_content(self):
         self.toggle_hidden.setChecked(False)
 
@@ -353,7 +392,7 @@ class CollapsibleWidget(QWidget):
 
     def addSpacerItem(self, spacer_item):
         self.collapsing_layout.addSpacerItem(spacer_item)
-        
+
     def on_toggled(self, checked):
         if checked:
             self.toggle_hidden.setArrowType(Qt.DownArrow)

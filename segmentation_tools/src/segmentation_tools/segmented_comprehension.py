@@ -333,11 +333,34 @@ class TimeStack(SegmentedStack):
         else:
             t.loc[(t.particle==particle_ID)&(t.frame>=split_frame), 'particle']=new_particle_ID
             return new_particle_ID
-
+        
+    def particle_from_cell(self, cell_number, frame_number):
+        if not hasattr(self, 'tracked_centroids'):
+            raise ValueError('No tracking data available.')
+        t=self.tracked_centroids
+        particle=t[(t.frame==frame_number)&(t.cell_number==cell_number)]['particle']
+        if len(particle)==1:
+            return particle.item()
+        elif len(particle)>1:
+            raise ValueError(f'Cell {cell_number} has multiple particles in frame {frame_number}')
+        else:
+            return None
+        
+    def cell_from_particle(self, particle, frame_number):
+        if not hasattr(self, 'tracked_centroids'):
+            raise ValueError('No tracking data available.')
+        t=self.tracked_centroids
+        cell=t[(t.frame==frame_number)&(t.particle==particle)]['cell_number']
+        if len(cell)==1:
+            return cell.item()
+        elif len(cell)>1:
+            raise ValueError(f'Particle {particle} has {len(cell)} cells in frame {frame_number}')
+        else:
+            return None
+            
     def get_particle(self, input_ID):
         """
         Retrieve the cell trajectories for a given particle ID or cell.
-
         Args:
             input_ID (int, np.integer, Cell): ID of the particle or a Cell object.
 

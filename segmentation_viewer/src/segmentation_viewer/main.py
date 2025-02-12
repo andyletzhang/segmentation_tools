@@ -1835,19 +1835,11 @@ class MainWidget(QMainWindow):
         frame_number : int
             The frame number to get the particle number for. If None, the current frame is used.
         '''
-
         if not hasattr(self.stack, 'tracked_centroids'):
             return None
         if frame_number is None:
             frame_number=self.frame_number
-        t=self.stack.tracked_centroids
-        particle=t[(t.frame==frame_number)&(t.cell_number==cell_number)]['particle']
-        if len(particle)==1:
-            return particle.item()
-        elif len(particle)==0:
-            return None
-        else:
-            raise ValueError(f'Cell {cell_number} has {len(particle)} particles in frame {frame_number}')
+        return self.stack.particle_from_cell(cell_number, frame_number)
     
     def cell_from_particle(self, particle, frame_number=None):
         '''
@@ -1860,19 +1852,12 @@ class MainWidget(QMainWindow):
         frame_number : int
             The frame number to get the cell number for. If None, the current frame is used.
         '''
-
         if not hasattr(self.stack, 'tracked_centroids'):
             return None
         if frame_number is None:
             frame_number=self.frame_number
-        t=self.stack.tracked_centroids
-        cell=t[(t.frame==frame_number)&(t.particle==particle)]['cell_number']
-        if len(cell)==1:
-            return cell.item()
-        elif len(cell)==0:
-            return None
-        else:
-            raise ValueError(f'Particle {particle} has {len(cell)} cells in frame {frame_number}')
+
+        return self.stack.cell_from_particle(particle, frame_number)
         
     def split_particle_tracks(self):
         '''

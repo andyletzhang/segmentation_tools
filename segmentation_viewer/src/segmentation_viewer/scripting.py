@@ -140,8 +140,9 @@ class ScriptWindow(QMainWindow):
         if hasattr(self,'_scripts_path'):
             return self._scripts_path.as_posix()
         else:
-            from platformdirs import user_documents_dir
             from pathlib import Path
+
+            from platformdirs import user_documents_dir
             self._scripts_path=Path(user_documents_dir()).joinpath('segmentation_viewer/scripts')
             self._scripts_path.mkdir(parents=True, exist_ok=True)
             return self._scripts_path.as_posix()
@@ -220,8 +221,8 @@ class ScriptWindow(QMainWindow):
         self.initialize_auto_completion(lexer)
     
     def initialize_auto_completion(self, lexer):
-        from keyword import kwlist
         import builtins
+        from keyword import kwlist
 
         api=QsciAPIs(lexer)
         # Add Python keywords

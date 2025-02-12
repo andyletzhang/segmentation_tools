@@ -759,7 +759,6 @@ class MainWidget(QMainWindow):
     def _mend_gaps_pressed(self):
         if not self.file_loaded:
             return
-        from segmentation_tools.preprocessing import mend_gaps
         if self.left_toolbar.segment_on_stack.isChecked():
             frames=self.stack.frames
         else:
@@ -3404,10 +3403,11 @@ class MainWidget(QMainWindow):
             The delay between frames in milliseconds.
         '''
 
+        import io
+
+        from PIL import Image
         from PyQt6.QtCore import QBuffer, QByteArray, QTimer
         from PyQt6.QtWidgets import QApplication
-        from PIL import Image
-        import io
         images = []
 
         # Ensure main window is active and process events

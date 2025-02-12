@@ -2061,9 +2061,13 @@ class MainWidget(QMainWindow):
     
     def _open_command_line(self):
         # Create a separate window for the command line interface
-        self.cli_window = CommandLineWindow(self, self.globals_dict, self.locals_dict)
-        self.globals_dict['cli'] = self.cli_window.cli
-        self.cli_window.show()
+        if not hasattr(self, 'cli_window') or not self.cli_window.isVisible():
+            self.cli_window = CommandLineWindow(self, self.globals_dict, self.locals_dict)
+            self.globals_dict['cli'] = self.cli_window.cli
+            self.cli_window.show()
+        else:
+            self.cli_window.activateWindow()
+            self.cli_window.raise_()
 
     def _open_script_editor(self):
         # Create a separate window for the script editor

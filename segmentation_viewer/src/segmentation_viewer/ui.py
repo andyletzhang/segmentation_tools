@@ -612,9 +612,11 @@ class LeftToolbar(QScrollArea):
         clear_tracking_button = QPushButton('Clear Tracking', self, objectName='deleteButton')
 
         get_mitoses_button = QPushButton('Get Mitoses', self)
+        delete_mitosis_button = QPushButton('Delete Mitosis', self)
         self.mitoses_label = QLabel('0 Mitoses', self)
         apply_new_weights_button = QPushButton('Apply New Weights', self)
         get_mitoses_button.clicked.connect(self.main_window._get_mitoses_pressed)
+        delete_mitosis_button.clicked.connect(self.main_window._delete_mitosis_pressed)
         apply_new_weights_button.clicked.connect(self.main_window._apply_new_weights_pressed)
 
         self.mitosis_inputs = [QLineEdit(self, placeholderText=text) for text in ['1.5', '1', '1', '1', '1', '1', '1', '1']]
@@ -654,6 +656,7 @@ class LeftToolbar(QScrollArea):
         mitoses_widget.header_layout.addWidget(self.mitoses_label)
         mitoses_widget.header_layout.addSpacerItem(QSpacerItem(5,0))
         mitoses_widget.core_layout.addWidget(get_mitoses_button)
+        mitoses_widget.core_layout.addWidget(delete_mitosis_button)
         mitoses_widget.addLayout(self.mitoses_config_menu)
         mitoses_widget.addWidget(apply_new_weights_button)
         mitoses_widget.hide_content()

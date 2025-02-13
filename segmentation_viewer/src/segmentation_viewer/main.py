@@ -50,7 +50,6 @@ from .ui import LeftToolbar, labeled_LUT_slider
 from .utils import create_html_table, load_stylesheet
 
 # high priority
-# TODO: move clear_tracking away from delete_particle
 # TODO: change RGB_ImageItem LUTs in settings (new settings dialog?)
 # add LUTs to config file
 # TODO: export segplot as gif
@@ -1316,6 +1315,25 @@ class MainWidget(QMainWindow):
                 del cell.color_ID
 
         self.canvas.draw_masks()
+
+    def _delete_mitosis_pressed(self):
+        if not self.file_loaded:
+            return
+        if not hasattr(self.stack, 'mitoses'):
+            return
+        candidate_particle = self.selected_particle_n
+        if candidate_particle is None:
+            return
+        idx, col=np.where(self.stack.mitoses[['mother','daughter1','daughter2']]==candidate_particle)
+        if len(idx)==0: # not in mitoses
+            return
+        elif len(idx)==1:
+            idx=idx[0]
+        else:
+            idx=idx[np.argmin(col)]
+        
+        self.stack.mitoses.drop(self.stack.mitoses.index[idx],inplace=True)
+        self._update_tracking_overlay()
 
     def _get_mitoses_pressed(self):
         if not self.file_loaded:
@@ -2879,7 +2897,6 @@ class MainWidget(QMainWindow):
             particle2_frames
         )  # frames where particle2 masks need to be merged into particle1 masks
         relabel_frames = set(particle2_frames) - merge_frames  # frames where particle2 cell needs to be relabeled as particle1
-        print(merge_frames, relabel_frames)
 
         for frame_number in merge_frames:
             cell1 = particle1[particle1_frames.index(frame_number)]
@@ -2896,7 +2913,8 @@ class MainWidget(QMainWindow):
                 self.canvas.add_cell_highlight(
                     cell2.n, alpha=self.canvas.masks_alpha, color=particle1_color, layer='mask', frame=frame
                 )
-        print(f'Relabeled cell {cell2.n} as particle {particle_n1} in frames {relabel_frames}')
+        if len(relabel_frames) > 0:
+            print(f'Relabeled cell {cell2.n} as particle {particle_n1} in frames {relabel_frames}')
 
     def _check_cell_numbers(self):
         """for troubleshooting: check if the cell numbers in the frame and the masks align."""

@@ -44,6 +44,28 @@ QPushButton:disabled, QLineEdit:disabled, QCheckBox::indicator:disabled {
     border: 1px solid #3a3a3a;    /* Dimmer border */
 }
 
+QPushButton#deleteButton {
+    background-color: #463838;    /* Slightly reddish dark gray */
+    color: #ffffff;
+    border: 1px solid #554444;    /* Slightly reddish border */
+    border-radius: 5px;
+    padding: 5px;
+}
+
+QPushButton#deleteButton:hover {
+    background-color: #574444;    /* Lighter reddish gray on hover */
+}
+
+QPushButton#deleteButton:pressed {
+    background-color: #352a2a;    /* Darker reddish gray when pressed */
+}
+
+QPushButton#deleteButton:disabled {
+    background-color: #2d2626;    /* Darker disabled state */
+    color: #666666;
+    border: 1px solid #3a3333;
+}
+
 /* Menu and toolbar */
 QToolBar {
     background-color: #3e3e3e;

@@ -349,7 +349,7 @@ class LeftToolbar(QScrollArea):
         gap_size_layout.addWidget(self.gap_size)
         generate_remove_layout = QHBoxLayout()
         generate_outlines_button = QPushButton('Generate Outlines', self)
-        clear_masks_button = QPushButton('Clear Masks', self)
+        clear_masks_button = QPushButton('Clear Masks', self, objectName='deleteButton')
         generate_remove_layout.addWidget(generate_outlines_button)
         generate_remove_layout.addWidget(clear_masks_button)
         operate_on_layout.addWidget(self.segment_on_frame)
@@ -437,8 +437,8 @@ class LeftToolbar(QScrollArea):
         # clear FUCCI, propagate FUCCI
         self.propagate_FUCCI_checkbox = QCheckBox('Propagate FUCCI', self)
         self.propagate_FUCCI_checkbox.setEnabled(False)
-        clear_frame_button = QPushButton('Clear Frame', self)
-        clear_stack_button = QPushButton('Clear Stack', self)
+        clear_frame_button = QPushButton('Clear Frame', self, objectName='deleteButton')
+        clear_stack_button = QPushButton('Clear Stack', self, objectName='deleteButton')
         clear_FUCCI_layout = QHBoxLayout()
         clear_FUCCI_layout.addWidget(clear_frame_button)
         clear_FUCCI_layout.addWidget(clear_stack_button)
@@ -608,7 +608,7 @@ class LeftToolbar(QScrollArea):
         delete_particle_layout.addWidget(delete_head)
         delete_particle_layout.addWidget(delete_tail)
         delete_particle_layout.addWidget(delete_all)
-        clear_tracking_button = QPushButton('Clear Tracking', self)
+        clear_tracking_button = QPushButton('Clear Tracking', self, objectName='deleteButton')
 
         get_mitoses_button = QPushButton('Get Mitoses', self)
         apply_new_weights_button = QPushButton('Apply New Weights', self)
@@ -640,11 +640,11 @@ class LeftToolbar(QScrollArea):
 
         track_centroids_widget.core_layout.addWidget(self.track_centroids_button)
         track_centroids_widget.core_layout.addLayout(io_menu)
+        track_centroids_widget.core_layout.addWidget(clear_tracking_button)
         track_centroids_widget.addLayout(self.tracking_range_layout)
         track_centroids_widget.addWidget(split_particle_button)
         track_centroids_widget.addWidget(delete_particle_label)
         track_centroids_widget.addLayout(delete_particle_layout)
-        track_centroids_widget.addWidget(clear_tracking_button)
         track_centroids_widget.hide_content()
 
         mitoses_widget.core_layout.addWidget(get_mitoses_button)

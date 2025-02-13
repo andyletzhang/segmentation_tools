@@ -586,6 +586,7 @@ class LeftToolbar(QScrollArea):
         self.tracking_range_layout.addRow(memory_label, self.memory_range)
 
         self.track_centroids_button = QPushButton('Track Centroids', self)
+        self.tracking_label = QLabel('0 Tracks', self)
 
         io_menu = QHBoxLayout()
         self.save_tracking_button = QPushButton('Save Tracking', self)
@@ -611,6 +612,7 @@ class LeftToolbar(QScrollArea):
         clear_tracking_button = QPushButton('Clear Tracking', self, objectName='deleteButton')
 
         get_mitoses_button = QPushButton('Get Mitoses', self)
+        self.mitoses_label = QLabel('0 Mitoses', self)
         apply_new_weights_button = QPushButton('Apply New Weights', self)
         get_mitoses_button.clicked.connect(self.main_window._get_mitoses_pressed)
         apply_new_weights_button.clicked.connect(self.main_window._apply_new_weights_pressed)
@@ -638,6 +640,8 @@ class LeftToolbar(QScrollArea):
         mitoses_widget = CollapsibleWidget(header_text='Mitoses', parent=self.tabbed_widget)
         mitoses_border = bordered(mitoses_widget)
 
+        track_centroids_widget.header_layout.addWidget(self.tracking_label)
+        track_centroids_widget.header_layout.addSpacerItem(QSpacerItem(5,0))
         track_centroids_widget.core_layout.addWidget(self.track_centroids_button)
         track_centroids_widget.core_layout.addLayout(io_menu)
         track_centroids_widget.core_layout.addWidget(clear_tracking_button)
@@ -647,6 +651,8 @@ class LeftToolbar(QScrollArea):
         track_centroids_widget.addLayout(delete_particle_layout)
         track_centroids_widget.hide_content()
 
+        mitoses_widget.header_layout.addWidget(self.mitoses_label)
+        mitoses_widget.header_layout.addSpacerItem(QSpacerItem(5,0))
         mitoses_widget.core_layout.addWidget(get_mitoses_button)
         mitoses_widget.addLayout(self.mitoses_config_menu)
         mitoses_widget.addWidget(apply_new_weights_button)
@@ -669,6 +675,12 @@ class LeftToolbar(QScrollArea):
         delete_all.clicked.connect(self.main_window.delete_particle)
 
         return tracking_tab
+
+    def update_tracking_label(self, n_tracks: int):
+        self.tracking_label.setText(f'{n_tracks} Tracks')
+
+    def update_mitoses_label(self, n_mitoses: int):
+        self.mitoses_label.setText(f'{n_mitoses} Mitoses')
 
     def _create_save_widget(self):
         widget = QWidget(objectName='bordered')

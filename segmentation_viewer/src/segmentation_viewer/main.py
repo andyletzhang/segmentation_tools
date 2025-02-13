@@ -7,7 +7,7 @@ import fastremap
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
-from cellpose import utils  # takes a while to import :(
+from cellpose import utils
 from natsort import natsorted
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFontMetrics, QIcon, QIntValidator
@@ -50,7 +50,6 @@ from .ui import LeftToolbar, labeled_LUT_slider
 from .utils import create_html_table, load_stylesheet
 
 # high priority
-# TODO: script editor icon
 # TODO: move clear_tracking away from delete_particle
 # TODO: change RGB_ImageItem LUTs in settings (new settings dialog?)
 # add LUTs to config file
@@ -1291,6 +1290,7 @@ class MainWidget(QMainWindow):
                 if hasattr(frame, 'stored_mask_overlay'):
                     self.canvas.add_cell_highlight(cell_n, frame, color='none', layer='mask')
                 self.delete_cell_mask(cell_n, frame)
+            self._update_tracking_overlay()
 
     def clear_tracking(self):
         """
@@ -1360,7 +1360,10 @@ class MainWidget(QMainWindow):
 
     def _update_tracking_overlay(self):
         sender = self.sender()
-
+        if hasattr(self.stack, 'tracked_centroids'):
+            self.left_toolbar.update_tracking_label(self.stack.tracked_centroids['particle'].nunique())
+        if hasattr(self.stack, 'mitoses'):
+            self.left_toolbar.update_mitoses_label(len(self.stack.mitoses))
         # enforce checkbox exclusivity
         if sender == self.left_toolbar.highlight_track_ends_button and sender.isChecked():
             self.left_toolbar.highlight_mitoses_button.setChecked(False)

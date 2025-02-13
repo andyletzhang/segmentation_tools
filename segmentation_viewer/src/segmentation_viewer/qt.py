@@ -326,6 +326,8 @@ class CollapsibleWidget(QWidget):
         super().__init__(parent, **kwargs)
         self.setContentsMargins(0, 0, 0, 0)
         self.core_layout = QVBoxLayout()
+        self.header_layout = QHBoxLayout()
+        self.header_layout.setContentsMargins(0, 0, 0, 0)
         self.toggle_hidden = QToolButton(text=header_text)
         self.toggle_hidden.setCheckable(True)
         self.toggle_hidden.setChecked(True)
@@ -338,7 +340,9 @@ class CollapsibleWidget(QWidget):
         self.collapsing_widget = QWidget()
         self.collapsing_layout = QVBoxLayout(self.collapsing_widget)
 
-        self.core_layout.addWidget(self.toggle_hidden)
+        self.header_layout.addWidget(self.toggle_hidden)
+        self.header_layout.addStretch()
+        self.core_layout.addLayout(self.header_layout)
         self.core_layout.addWidget(self.collapsing_widget)
         self.setLayout(self.core_layout)
 

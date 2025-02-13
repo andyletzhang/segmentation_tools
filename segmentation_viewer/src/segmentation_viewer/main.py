@@ -1482,43 +1482,34 @@ class MainWidget(QMainWindow):
             return
 
     def _highlight_mitoses(self):
-        if hasattr(self.stack, 'tracked_centroids'):
-            if not hasattr(self.stack, 'mitoses'):
-                return
-
-            # get all mitoses within n frames of the current frame
-            tail_length = 5
-
-            mitoses = self.stack.mitoses[abs(self.stack.mitoses.frame - self.frame_number) <= tail_length]
-
-            self.canvas.clear_overlay('tracking')
-            if len(mitoses) == 0:
-                return
-
-            for _, m in mitoses.iterrows():
-                mitosis_frame = m['frame']
-                mother, daughter1, daughter2 = (self.cell_from_particle(m[p]) for p in ['mother', 'daughter1', 'daughter2'])
-                if mother is not None:
-                    alpha = 1 - (mitosis_frame - self.frame_number + 1) / (tail_length + 1)
-                    self.canvas.add_cell_highlight(
-                        mother, color='red', alpha=alpha, layer='tracking', img_type='outlines', seg_alpha=True
-                    )
-                else:
-                    if daughter1 is not None:
-                        alpha = 1 - (self.frame_number - mitosis_frame + 1) / (tail_length + 1)
-                        self.canvas.add_cell_highlight(
-                            daughter1, color='lime', alpha=alpha, img_type='outlines', layer='tracking', seg_alpha=True
-                        )
-                    if daughter2 is not None:
-                        alpha = 1 - (self.frame_number - mitosis_frame + 1) / (tail_length + 1)
-                        self.canvas.add_cell_highlight(
-                            daughter2, color='lime', alpha=alpha, img_type='outlines', layer='tracking', seg_alpha=True
-                        )
+        if not hasattr(self.stack, 'mitoses'):
             return
 
-        else:
-            self.statusBar().showMessage('No tracked centroids found.', 2000)
+        # get all mitoses within n frames of the current frame
+        tail_length = 5
+
+        mitoses = self.stack.mitoses[abs(self.stack.mitoses.frame - self.frame_number) <= tail_length]
+
+        self.canvas.clear_overlay('tracking')
+        if len(mitoses) == 0:
             return
+
+        def highlight_timepoint(cell, color, t1, t2):
+            dt = t2 - t1
+            if dt >= 0:
+                alpha = 1 - (dt + 1) / (tail_length + 1)
+                self.canvas.add_cell_highlight(cell, color=color, alpha=alpha, layer='tracking', img_type='outlines', seg_alpha=True)
+
+        for _, m in mitoses.iterrows():
+            mitosis_frame = m['frame']
+            mother, daughter1, daughter2 = (self.cell_from_particle(m[p]) for p in ['mother', 'daughter1', 'daughter2'])
+            if mother is not None:
+                highlight_timepoint(mother, 'red', self.frame_number, mitosis_frame)
+            if daughter1 is not None:
+                highlight_timepoint(daughter1, 'lime', mitosis_frame, self.frame_number)
+            if daughter2 is not None:
+                highlight_timepoint(daughter2, 'lime', mitosis_frame, self.frame_number)
+        return
 
     def _highlight_track_ends(self):
         if hasattr(self.stack, 'tracked_centroids'):

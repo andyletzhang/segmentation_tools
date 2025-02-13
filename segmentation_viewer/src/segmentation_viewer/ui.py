@@ -433,7 +433,6 @@ class LeftToolbar(QScrollArea):
         self.FUCCI_dropdown.addItems(['None', 'Green', 'Red', 'All'])
         FUCCI_overlay_layout.addWidget(overlay_label)
         FUCCI_overlay_layout.addWidget(self.FUCCI_dropdown)
-        self.FUCCI_checkbox = QCheckBox('Show FUCCI Channel', self)
         # clear FUCCI, propagate FUCCI
         self.propagate_FUCCI_checkbox = QCheckBox('Propagate FUCCI', self)
         self.propagate_FUCCI_checkbox.setEnabled(False)
@@ -450,9 +449,8 @@ class LeftToolbar(QScrollArea):
         measure_FUCCI_layout.addLayout(FUCCI_button_layout)
 
         annotate_FUCCI_layout.addLayout(FUCCI_overlay_layout)
-        annotate_FUCCI_layout.addWidget(self.FUCCI_checkbox)
-        annotate_FUCCI_layout.addSpacerItem(create_vertical_spacer())
         annotate_FUCCI_layout.addWidget(self.propagate_FUCCI_checkbox)
+        annotate_FUCCI_layout.addSpacerItem(create_vertical_spacer())
         annotate_FUCCI_layout.addLayout(clear_FUCCI_layout)
 
         FUCCI_tab_layout.addWidget(get_intensities_button)
@@ -463,7 +461,6 @@ class LeftToolbar(QScrollArea):
         get_intensities_button.clicked.connect(self.main_window.cell_red_green_intensities)
         get_tracked_FUCCI_button.clicked.connect(self.main_window.get_tracked_FUCCI)
         self.FUCCI_dropdown.currentIndexChanged.connect(self.main_window._FUCCI_overlay_changed)
-        self.FUCCI_checkbox.stateChanged.connect(self.main_window._update_display)
         FUCCI_frame_button.clicked.connect(self.main_window._measure_FUCCI_frame)
         FUCCI_stack_button.clicked.connect(self.main_window._measure_FUCCI_stack)
         self.propagate_FUCCI_checkbox.stateChanged.connect(self.main_window._propagate_FUCCI_toggled)

@@ -132,9 +132,12 @@ class ScriptWindow(QMainWindow):
             obj = eval(identifier, self.global_env, self.local_env)
         except Exception:
             pass  # Ignore evaluation errors
-
-        if obj and hasattr(obj, '__doc__'):
-            QToolTip.showText(self.mapToGlobal(pos) + QPoint(10, 10), obj.__doc__.strip(), self)
+        
+        try:
+            if obj and hasattr(obj, '__doc__'):
+                QToolTip.showText(self.mapToGlobal(pos) + QPoint(10, 10), obj.__doc__.strip(), self)
+        except Exception: # couldn't pull up documentation, ignore
+            pass
 
         super().mouseMoveEvent(event)
 

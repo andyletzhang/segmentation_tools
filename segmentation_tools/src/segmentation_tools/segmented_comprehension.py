@@ -564,15 +564,26 @@ class TimeStack(SegmentedStack):
         return self.velocities
 
     # -------------Cell Cycle-------------
-    def propagate_FUCCI_labels(self):
+    def propagate_FUCCI_labels(self, progress=lambda x: x):
         """
         propagates FUCCI data forward in time by copying the last observed value.
         """
-        t = self.tracked_centroids
-        for ID in np.unique(t['particle']):
-            cell_cycle = self.get_particle_attr(ID, 'cycle_stage', fill_value=0)
+        t = self.tracked_centroids.copy().sort_values(['frame', 'cell_number'])
+
+        # get all cell cycle data
+        cell_cycles = []
+        for frame in progress(self.frames):
+            cell_cycles.extend(frame.get_cell_attrs('cycle_stage'))
+        t['cell_cycle'] = cell_cycles
+
+        # identify cells with cell cycle labels
+        to_propagate = t.groupby('particle')['cell_cycle'].max() != 0
+        to_propagate = to_propagate[to_propagate].index
+
+        for particle in to_propagate:
+            cell_cycle = t[t.particle == particle]['cell_cycle'].values
             propagated_cell_cycle = np.maximum.accumulate(cell_cycle)
-            self.set_particle_attr(ID, 'cycle_stage', propagated_cell_cycle)
+            self.set_particle_attr(particle, 'cycle_stage', propagated_cell_cycle)
 
     def measure_FUCCI_by_transitions(self, green_threshold=-10, G2_peak_prominence=0.005, progress=lambda x: x):
         from scipy.signal import find_peaks
@@ -715,15 +726,7 @@ class TimeStack(SegmentedStack):
         return t
 
     # -------------Cell Divisions-------------
-    def get_mitoses(
-        self,
-        persistence_threshold=0,
-        distance_threshold=1.5,
-        weights=None,
-        biases=None,
-        score_cutoff=1,
-        **kwargs,
-    ):
+    def get_mitoses(self, persistence_threshold=0, distance_threshold=1.5, weights=None, biases=None, score_cutoff=1, **kwargs):
         """
         Detect potential mitotic events in the cell tracking data.
 
@@ -742,15 +745,12 @@ class TimeStack(SegmentedStack):
         if not hasattr(self, 'tracked_centroids'):
             self.track_centroids(**kwargs)
 
-        mitosis_df = get_viable_mitoses(
-            self,
-            distance_threshold=distance_threshold,
-            persistence_threshold=persistence_threshold
-        )
-        
+        mitosis_df = get_viable_mitoses(self, distance_threshold=distance_threshold, persistence_threshold=persistence_threshold)
+
         self.mitosis_scores = get_mitosis_scores(mitosis_df, weights=weights, biases=biases)
         self.mitoses = threshold_mitoses(self.mitosis_scores, threshold=score_cutoff)
         return self.mitoses
+
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
 

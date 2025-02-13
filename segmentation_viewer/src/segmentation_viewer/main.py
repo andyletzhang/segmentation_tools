@@ -1118,7 +1118,7 @@ class MainWidget(QMainWindow):
             return
 
         self._convert_red_green()
-        self.stack.propagate_FUCCI_labels()
+        self.stack.propagate_FUCCI_labels(progress=self._progress_bar)
         for frame in self.stack.frames:
             self._get_red_green(frame)
         self._FUCCI_overlay()

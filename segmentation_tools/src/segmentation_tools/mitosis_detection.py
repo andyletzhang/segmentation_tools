@@ -5,30 +5,39 @@ from itertools import combinations
 from segmentation_tools.networks import min_weighted_independent_set
 
 # Default weights for mitosis scoring
-default_weights = (40.79220969, 8.12982495, 0.20812352, 2.54951311, 32.51929981)
+default_weights = (40.79220969, 8.12982495, 2.0, 0.20812352, 2.54951311, 32.51929981)
 # Default biases for mitosis scoring
-default_biases = (0.1, 0.1, 0, 0, 0)
+default_biases = (0.1, 0.1, 0, 0, 0, 0)
 
 
-def get_viable_mitoses(stack, distance_threshold=1.5, persistence_threshold=0, weights=[1, 1, 1, 1, 1], biases=None):
+def get_viable_mitoses(stack, distance_threshold=1.5, persistence_threshold=0):
     """
     Detect mitosis events in a stack of segmented frames.
     """
-    weights = np.array(weights) * default_weights
-    if not biases:
-        biases = default_biases
 
     mitosis_candidates = get_division_candidates(stack, distance_threshold, persistence_threshold)
     mitosis_df = pd.concat(
         [evaluate_mitosis(stack, mother, daughters) for mother, daughters in mitosis_candidates.items()], ignore_index=True
     )
+    return mitosis_df
+
+
+def get_mitosis_scores(mitosis_df, weights=[1, 1, 1, 1, 1, 1], biases=None):
+    weights = np.array(weights) * default_weights
+    if biases is None:
+        biases = default_biases
     mitosis_df['score'] = mitosis_score(
-        mitosis_df[['mother_circ', 'daughter_circ', 'distance_diff', 'angle', 'CoM_displacement']].values,
+        mitosis_df[['mother_circ', 'daughter_circ', 'daughter_distance', 'distance_diff', 'angle', 'CoM_displacement']].values,
         weights=weights,
         biases=biases,
     ).sum(axis=1)
 
     return mitosis_df
+
+
+def threshold_mitoses(mitosis_df, threshold=1):
+    mitosis_df = mitosis_df[mitosis_df['score'] < threshold]
+    return resolve_conflicts(mitosis_df)
 
 
 def get_division_candidates(stack, distance_threshold=1.5, persistence_threshold=0):
@@ -140,6 +149,8 @@ def evaluate_mitosis(stack, mother, daughters):
     pair_angle = np.abs(np.diff(daughter_angles[daughter_pairs] / np.pi, axis=1).flatten() % 2 - 1)
     pair_circ = np.mean(daughter_circs[daughter_pairs], axis=1)
     pair_CoM_displacement = np.linalg.norm(pair_CoM - mother_centroid, axis=1) / mother_size
+    centroid_pairs=daughter_centroids[daughter_pairs]
+    pair_distance = np.abs(1 - np.linalg.norm(centroid_pairs[:,1]-centroid_pairs[:,0], axis=1).flatten() / mother_size)
     pair_distance_diff = np.abs(np.diff(daughter_distances[daughter_pairs]).flatten() / mother_size)
     mother_circs = np.array([mother_circ] * len(daughter_pairs))
 
@@ -147,11 +158,12 @@ def evaluate_mitosis(stack, mother, daughters):
     return pd.DataFrame(
         {
             'mother': [mother] * len(daughter_pairs),
-            'frame': [mother_cell[-1].frame+1] * len(daughter_pairs),
+            'frame': [mother_cell[-1].frame + 1] * len(daughter_pairs),
             'daughter1': daughter1,
             'daughter2': daughter2,
             'mother_circ': mother_circs,
             'daughter_circ': pair_circ,
+            'daughter_distance': pair_distance,
             'distance_diff': pair_distance_diff,
             'angle': pair_angle,
             'CoM_displacement': pair_CoM_displacement,

@@ -611,9 +611,11 @@ class LeftToolbar(QScrollArea):
         clear_tracking_button = QPushButton('Clear Tracking', self)
 
         get_mitoses_button = QPushButton('Get Mitoses', self)
+        apply_new_weights_button = QPushButton('Apply New Weights', self)
         get_mitoses_button.clicked.connect(self.main_window._get_mitoses_pressed)
+        apply_new_weights_button.clicked.connect(self.main_window._apply_new_weights_pressed)
 
-        self.mitosis_inputs = [QLineEdit(self, placeholderText=text) for text in ['1.5', '1', '1', '1', '1', '1', '1']]
+        self.mitosis_inputs = [QLineEdit(self, placeholderText=text) for text in ['1.5', '1', '1', '1', '1', '1', '1', '1']]
         self.mitoses_config_menu = QFormLayout()
         for label, line in zip(
             [
@@ -621,6 +623,7 @@ class LeftToolbar(QScrollArea):
                 'Score Cutoff:',
                 'Mother Circularity:',
                 'Daughter Circularity:',
+                'Centroid Distance:',
                 'Centroid Asymmetry:',
                 'Centroid Angle:',
                 'CoM Displacement:',
@@ -646,6 +649,7 @@ class LeftToolbar(QScrollArea):
 
         mitoses_widget.core_layout.addWidget(get_mitoses_button)
         mitoses_widget.addLayout(self.mitoses_config_menu)
+        mitoses_widget.addWidget(apply_new_weights_button)
         mitoses_widget.hide_content()
 
         tracking_tab_layout.addLayout(highlight_tracking_layout)
@@ -836,7 +840,7 @@ class LeftToolbar(QScrollArea):
     @property
     def mitosis_params(self):
         out = []
-        for config, default in zip(self.mitosis_inputs, (1.5, 1, 1, 1, 1, 1, 1)):
+        for config, default in zip(self.mitosis_inputs, (1.5, 1, 1, 1, 1, 1, 1, 1)):
             text = config.text()
             if text == '':
                 out.append(default)

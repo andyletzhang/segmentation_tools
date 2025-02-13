@@ -722,7 +722,6 @@ class TimeStack(SegmentedStack):
         weights=None,
         biases=None,
         score_cutoff=1,
-        progress=lambda x: x,
         **kwargs,
     ):
         """
@@ -738,23 +737,20 @@ class TimeStack(SegmentedStack):
         Returns:
             list: List of potential mitotic events, each represented as a DataFrame containing information about mother and daughter cells.
         """
-        from .mitosis_detection import get_viable_mitoses, resolve_conflicts
+        from .mitosis_detection import get_viable_mitoses, get_mitosis_scores, threshold_mitoses
 
         if not hasattr(self, 'tracked_centroids'):
             self.track_centroids(**kwargs)
 
-        self.mitosis_scores = get_viable_mitoses(
+        mitosis_df = get_viable_mitoses(
             self,
             distance_threshold=distance_threshold,
-            persistence_threshold=persistence_threshold,
-            weights=weights,
-            biases=biases,
+            persistence_threshold=persistence_threshold
         )
         
-        mitoses = self.mitosis_scores[self.mitosis_scores['score'] < score_cutoff]
-        self.mitoses = resolve_conflicts(mitoses)[['mother', 'daughter1', 'daughter2', 'frame']].sort_index()
+        self.mitosis_scores = get_mitosis_scores(mitosis_df, weights=weights, biases=biases)
+        self.mitoses = threshold_mitoses(self.mitosis_scores, threshold=score_cutoff)
         return self.mitoses
-
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
 

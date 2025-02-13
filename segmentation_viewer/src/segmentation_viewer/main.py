@@ -1336,12 +1336,27 @@ class MainWidget(QMainWindow):
         score_cutoff : float
             The minimum score for a mitosis to be considered valid. Defaults to 1.
         weights : list of five floats
-            The weights to use for the mitosis scoring function. Defaults to [1, 1, 1, 1, 1].
+            The weights to use for the mitosis scoring function. Defaults to [1, 1, 1, 1, 1, 1].
             Weights correspond to the following features:
             [mother_circularity, daughter_circularities, daughter_centroid_asymmetry, daughter_angle, center_of_mass_displacement]
         """
 
-        self.stack.get_mitoses(progress=self._progress_bar, **kwargs)
+        self.stack.get_mitoses(**kwargs)
+
+    def _apply_new_weights_pressed(self):
+        if not self.file_loaded:
+            return
+        distance_threshold, score_cutoff, weights = self.left_toolbar.mitosis_params
+        if not hasattr(self.stack, 'mitosis_scores'):
+            # get mitosis scores if they don't already exist
+            self.get_mitoses(distance_threshold=distance_threshold, score_cutoff=score_cutoff, weights=weights)
+        else:
+            # recompute mitosis scores with new weights
+            from segmentation_tools.mitosis_detection import get_mitosis_scores, threshold_mitoses
+            self.stack.mitosis_scores = get_mitosis_scores(self.stack.mitosis_scores, weights=weights)
+            self.stack.mitoses = threshold_mitoses(self.stack.mitosis_scores, threshold=score_cutoff)
+            
+        self._update_tracking_overlay()
 
     def _update_tracking_overlay(self):
         sender = self.sender()

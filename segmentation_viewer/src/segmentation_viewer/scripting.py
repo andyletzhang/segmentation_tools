@@ -30,30 +30,12 @@ class InterruptInjector(ast.NodeTransformer):
 
     def visit_For(self, node):
         """Inject check_interrupt() at the start of for loops."""
-        node.body.insert(
-            0,
-            ast.Expr(
-                value=ast.Call(
-                    func=ast.Name(id="check_interrupt", ctx=ast.Load()),
-                    args=[],
-                    keywords=[],
-                )
-            ),
-        )
+        node.body.insert(0, ast.Expr(value=ast.Call(func=ast.Name(id='check_interrupt', ctx=ast.Load()), args=[], keywords=[])))
         return self.generic_visit(node)
 
     def visit_While(self, node):
         """Inject check_interrupt() at the start of while loops."""
-        node.body.insert(
-            0,
-            ast.Expr(
-                value=ast.Call(
-                    func=ast.Name(id="check_interrupt", ctx=ast.Load()),
-                    args=[],
-                    keywords=[],
-                )
-            ),
-        )
+        node.body.insert(0, ast.Expr(value=ast.Call(func=ast.Name(id='check_interrupt', ctx=ast.Load()), args=[], keywords=[])))
         return self.generic_visit(node)
 
 
@@ -61,11 +43,9 @@ class ScriptWindow(QMainWindow):
     def __init__(self, parent=None, local_env=None, global_env=None):
         super().__init__()
         self.main_window = parent
-        icon_path = importlib.resources.files("segmentation_viewer.assets").joinpath(
-            "script_editor.png"
-        )
+        icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('script_editor.png')
         self.setWindowIcon(QIcon(str(icon_path)))
-        self.setWindowTitle("Script Editor")
+        self.setWindowTitle('Script Editor')
         self.setGeometry(100, 100, 800, 500)
         self.script_path = None
         self._setup_menu()
@@ -74,10 +54,10 @@ class ScriptWindow(QMainWindow):
         self.local_env = local_env if local_env is not None else {}
         self.global_env = global_env if global_env is not None else {}
 
-        self.global_env["script_window"] = self
+        self.global_env['script_window'] = self
 
         for name in dir(self.main_window):
-            if not name.startswith("_") and not name.endswith("Event"):
+            if not name.startswith('_') and not name.endswith('Event'):
                 try:
                     attr = getattr(self.main_window, name)
                 except AttributeError:
@@ -96,10 +76,10 @@ class ScriptWindow(QMainWindow):
         layout.addWidget(self.text_edit)
 
         run_interrupt_layout = QHBoxLayout()
-        self.execute_button = QPushButton("Run", self)
+        self.execute_button = QPushButton('Run', self)
         self.execute_button.clicked.connect(self.execute_script)
-        self.interrupt_button = QPushButton("Interrupt", self)
-        self.execute_button.setShortcut("Ctrl+Return")
+        self.interrupt_button = QPushButton('Interrupt', self)
+        self.execute_button.setShortcut('Ctrl+Return')
         self.interrupt_button.clicked.connect(self.interrupt_execution)
         run_interrupt_layout.addStretch()
         run_interrupt_layout.addWidget(self.execute_button)
@@ -114,19 +94,13 @@ class ScriptWindow(QMainWindow):
     def mouseMoveEvent(self, event):
         """Show a tooltip with the docstring of the word under the mouse."""
         pos = event.pos()
-        char_pos = self.text_edit.SendScintilla(
-            QsciScintilla.SCI_POSITIONFROMPOINT, pos.x(), pos.y()
-        )
+        char_pos = self.text_edit.SendScintilla(QsciScintilla.SCI_POSITIONFROMPOINT, pos.x(), pos.y())
 
         if char_pos < 0:
             QToolTip.hideText()
             return  # No valid character under the mouse
-        char_x = self.text_edit.SendScintilla(
-            QsciScintilla.SCI_POINTXFROMPOSITION, 0, char_pos
-        )
-        char_y = self.text_edit.SendScintilla(
-            QsciScintilla.SCI_POINTYFROMPOSITION, 0, char_pos
-        )
+        char_x = self.text_edit.SendScintilla(QsciScintilla.SCI_POINTXFROMPOSITION, 0, char_pos)
+        char_y = self.text_edit.SendScintilla(QsciScintilla.SCI_POINTYFROMPOSITION, 0, char_pos)
 
         if np.abs(pos.x() - char_x) > 10 or np.abs(pos.y() - char_y) > 10:
             QToolTip.hideText()
@@ -138,16 +112,14 @@ class ScriptWindow(QMainWindow):
             length = len(text)
 
             # Expand left while within bounds and characters are valid
-            while start > 0 and (text[start - 1].isalnum() or text[start - 1] in "._"):
+            while start > 0 and (text[start - 1].isalnum() or text[start - 1] in '._'):
                 start -= 1
 
             # Expand right while within bounds and characters are valid
-            while end < length and (text[end].isalnum() or text[end] in "._"):
+            while end < length and (text[end].isalnum() or text[end] in '._'):
                 end += 1
 
-            return (
-                text[start:end] if start != end else None
-            )  # Avoid returning empty strings
+            return text[start:end] if start != end else None  # Avoid returning empty strings
 
         identifier = extract_identifier(self.text_edit.text(), char_pos)
         if not identifier:
@@ -161,25 +133,21 @@ class ScriptWindow(QMainWindow):
         except Exception:
             pass  # Ignore evaluation errors
 
-        if obj and hasattr(obj, "__doc__"):
-            QToolTip.showText(
-                self.mapToGlobal(pos) + QPoint(10, 10), obj.__doc__.strip(), self
-            )
+        if obj and hasattr(obj, '__doc__'):
+            QToolTip.showText(self.mapToGlobal(pos) + QPoint(10, 10), obj.__doc__.strip(), self)
 
         super().mouseMoveEvent(event)
 
     @property
     def scripts_path(self):
-        if hasattr(self, "_scripts_path"):
+        if hasattr(self, '_scripts_path'):
             return self._scripts_path.as_posix()
         else:
             from pathlib import Path
 
             from platformdirs import user_documents_dir
 
-            self._scripts_path = Path(user_documents_dir()).joinpath(
-                "segmentation_viewer/scripts"
-            )
+            self._scripts_path = Path(user_documents_dir()).joinpath('segmentation_viewer/scripts')
             self._scripts_path.mkdir(parents=True, exist_ok=True)
             return self._scripts_path.as_posix()
 
@@ -188,18 +156,10 @@ class ScriptWindow(QMainWindow):
 
         self.menu_bar = self.menuBar()
         # FILE
-        self.file_menu = self.menu_bar.addMenu("File")
-        self.file_menu.addAction(
-            create_action("Open Script", self.load_script, self, "Ctrl+O")
-        )
-        self.file_menu.addAction(
-            create_action("Save Script", self.save_script, self, "Ctrl+S")
-        )
-        self.file_menu.addAction(
-            create_action(
-                "Save Script As...", self.save_script_as, self, "Ctrl+Shift+S"
-            )
-        )
+        self.file_menu = self.menu_bar.addMenu('File')
+        self.file_menu.addAction(create_action('Open Script', self.load_script, self, 'Ctrl+O'))
+        self.file_menu.addAction(create_action('Save Script', self.save_script, self, 'Ctrl+S'))
+        self.file_menu.addAction(create_action('Save Script As...', self.save_script_as, self, 'Ctrl+Shift+S'))
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
@@ -217,33 +177,23 @@ class ScriptWindow(QMainWindow):
         self.text_edit.setLexer(lexer)
 
         # Set a readable font
-        font = QFont("Consolas", 12)
+        font = QFont('Consolas', 12)
         self.text_edit.setFont(font)
         lexer.setFont(font)
         # Background color
-        lexer.setPaper(QColor("#2e2e2e"))  # Dark background
-        lexer.setColor(QColor("#ffffff"))  # Default text color
+        lexer.setPaper(QColor('#2e2e2e'))  # Dark background
+        lexer.setColor(QColor('#ffffff'))  # Default text color
 
         # Syntax Highlighting Colors
-        lexer.setColor(
-            QColor("#f0f0f0"), QsciLexerPython.Default
-        )  # Default Text (white)
-        lexer.setColor(QColor("#569cd6"), QsciLexerPython.Keyword)  # Keywords (blue)
-        lexer.setColor(QColor("#4ec9b0"), QsciLexerPython.ClassName)  # Classes (cyan)
-        lexer.setColor(
-            QColor("#dcdcaa"), QsciLexerPython.FunctionMethodName
-        )  # Function names (yellow)
-        lexer.setColor(QColor("#6a9955"), QsciLexerPython.Comment)  # Comments (green)
-        lexer.setColor(
-            QColor("#b5cea8"), QsciLexerPython.Number
-        )  # Numbers (light green)
-        lexer.setColor(
-            QColor("#c586c0"), QsciLexerPython.Decorator
-        )  # Decorators (purple)
-        lexer.setColor(
-            QColor("#ce9178"), QsciLexerPython.SingleQuotedString
-        )  # Strings (orange)
-        lexer.setColor(QColor("#ce9178"), QsciLexerPython.DoubleQuotedString)
+        lexer.setColor(QColor('#f0f0f0'), QsciLexerPython.Default)  # Default Text (white)
+        lexer.setColor(QColor('#569cd6'), QsciLexerPython.Keyword)  # Keywords (blue)
+        lexer.setColor(QColor('#4ec9b0'), QsciLexerPython.ClassName)  # Classes (cyan)
+        lexer.setColor(QColor('#dcdcaa'), QsciLexerPython.FunctionMethodName)  # Function names (yellow)
+        lexer.setColor(QColor('#6a9955'), QsciLexerPython.Comment)  # Comments (green)
+        lexer.setColor(QColor('#b5cea8'), QsciLexerPython.Number)  # Numbers (light green)
+        lexer.setColor(QColor('#c586c0'), QsciLexerPython.Decorator)  # Decorators (purple)
+        lexer.setColor(QColor('#ce9178'), QsciLexerPython.SingleQuotedString)  # Strings (orange)
+        lexer.setColor(QColor('#ce9178'), QsciLexerPython.DoubleQuotedString)
 
         # Enable auto-indentation (new lines follow previous indentation)
         self.text_edit.setAutoIndent(True)
@@ -258,22 +208,20 @@ class ScriptWindow(QMainWindow):
         self.text_edit.setIndentationGuides(True)
 
         # Set caret (cursor) color
-        self.text_edit.setCaretForegroundColor(QColor("#ffffff"))
+        self.text_edit.setCaretForegroundColor(QColor('#ffffff'))
 
         # Enable line numbers
         self.text_edit.setMarginType(0, QsciScintilla.MarginType.NumberMargin)
-        self.text_edit.setMarginWidth(0, "0000")
-        self.text_edit.setMarginsForegroundColor(QColor("#ffffff"))  # Line number color
-        self.text_edit.setMarginsBackgroundColor(
-            QColor("#3e3e3e")
-        )  # Line number background
+        self.text_edit.setMarginWidth(0, '0000')
+        self.text_edit.setMarginsForegroundColor(QColor('#ffffff'))  # Line number color
+        self.text_edit.setMarginsBackgroundColor(QColor('#3e3e3e'))  # Line number background
 
         # Enable brace matching
         self.text_edit.setBraceMatching(QsciScintilla.BraceMatch.SloppyBraceMatch)
-        self.text_edit.setMatchedBraceBackgroundColor(QColor("#2e2e2e"))
-        self.text_edit.setMatchedBraceForegroundColor(QColor("#74d7ec"))
-        self.text_edit.setUnmatchedBraceBackgroundColor(QColor("#2e2e2e"))
-        self.text_edit.setUnmatchedBraceForegroundColor(QColor("#ff6b6b"))
+        self.text_edit.setMatchedBraceBackgroundColor(QColor('#2e2e2e'))
+        self.text_edit.setMatchedBraceForegroundColor(QColor('#74d7ec'))
+        self.text_edit.setUnmatchedBraceBackgroundColor(QColor('#2e2e2e'))
+        self.text_edit.setUnmatchedBraceForegroundColor(QColor('#ff6b6b'))
 
         self.initialize_auto_completion(lexer)
 
@@ -294,13 +242,11 @@ class ScriptWindow(QMainWindow):
 
         # Add Python built-ins
         for builtin in dir(builtins):
-            if not builtin.startswith("_"):  # Skip private built-ins
+            if not builtin.startswith('_'):  # Skip private built-ins
                 api.add(builtin)
 
         # Enable both API-based and document-based completion
-        self.text_edit.setAutoCompletionSource(
-            QsciScintilla.AutoCompletionSource.AcsAll
-        )
+        self.text_edit.setAutoCompletionSource(QsciScintilla.AutoCompletionSource.AcsAll)
 
         # Show completion after 2 characters (more practical than 1)
         self.text_edit.setAutoCompletionThreshold(2)
@@ -315,38 +261,34 @@ class ScriptWindow(QMainWindow):
         api.prepare()
 
     def load_script(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Open Script", self.scripts_path, "Python Files (*.py)"
-        )
+        file_path, _ = QFileDialog.getOpenFileName(self, 'Open Script', self.scripts_path, 'Python Files (*.py)')
         if file_path:
             try:
-                with open(file_path, "r") as file:
+                with open(file_path, 'r') as file:
                     self.text_edit.setText(file.read())
                 self.script_path = file_path
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to load script:\n{e}")
+                QMessageBox.critical(self, 'Error', f'Failed to load script:\n{e}')
 
     def save_script(self):
         if not self.script_path:
             self.save_script_as()
         else:
             try:
-                with open(self.script_path, "w") as file:
+                with open(self.script_path, 'w') as file:
                     file.write(self.text_edit.text())
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to save script:\n{e}")
+                QMessageBox.critical(self, 'Error', f'Failed to save script:\n{e}')
 
     def save_script_as(self):
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Script", self.scripts_path, "Python Files (*.py)"
-        )
+        file_path, _ = QFileDialog.getSaveFileName(self, 'Save Script', self.scripts_path, 'Python Files (*.py)')
         if file_path:
             try:
-                with open(file_path, "w") as file:
+                with open(file_path, 'w') as file:
                     file.write(self.text_edit.text())
                 self.script_path = file_path
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to save script:\n{e}")
+                QMessageBox.critical(self, 'Error', f'Failed to save script:\n{e}')
 
     def execute_script(self):
         self.is_executing = True
@@ -359,11 +301,9 @@ class ScriptWindow(QMainWindow):
             """Checks if execution should be interrupted."""
             QApplication.processEvents()  # Allow for user interaction
             if self.execution_interrupted:
-                raise ExecutionInterrupted("Script execution interrupted by user.")
+                raise ExecutionInterrupted('Script execution interrupted by user.')
 
-        global_env["check_interrupt"] = (
-            check_interrupt  # Inject interrupt check into the execution environment
-        )
+        global_env['check_interrupt'] = check_interrupt  # Inject interrupt check into the execution environment
         try:
             # Parse the script and modify its AST
             user_code = self.text_edit.text()
@@ -373,19 +313,17 @@ class ScriptWindow(QMainWindow):
             transformer = InterruptInjector()
             modified_ast = transformer.visit(parsed_ast)
             ast.fix_missing_locations(modified_ast)
-            compiled_code = compile(modified_ast, "<user_script>", "exec")
+            compiled_code = compile(modified_ast, '<user_script>', 'exec')
             exec(compiled_code, global_env, local_env)
         except ExecutionInterrupted:
-            QMessageBox.information(
-                self, "Execution Stopped", "Script execution was interrupted."
-            )
+            QMessageBox.information(self, 'Execution Stopped', 'Script execution was interrupted.')
         except Exception as e:
-            QMessageBox.critical(self, "Execution Error", f"Error:\n{e}")
+            QMessageBox.critical(self, 'Execution Error', f'Error:\n{e}')
         finally:
             self.is_executing = False
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = ScriptWindow()
     window.show()

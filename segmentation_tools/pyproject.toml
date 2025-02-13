@@ -28,6 +28,7 @@ dependencies = [
     "numba",
     "dask==2024.8",
     "zarr==2.13",
+    "pulp",
 ]
 
 [build-system]
@@ -36,3 +37,11 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 130
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+skip-magic-trailing-comma = true  # Reduces some line breaks

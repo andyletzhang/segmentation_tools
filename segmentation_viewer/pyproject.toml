@@ -27,3 +27,11 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "segmentation_viewer" = ["assets/*"]
+
+[tool.ruff]
+line-length = 130
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+skip-magic-trailing-comma = true  # Reduces some line breaks

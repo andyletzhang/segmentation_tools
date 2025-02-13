@@ -2,23 +2,8 @@ import fastremap
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import QPointF, Qt
-from PyQt6.QtGui import (
-    QBrush,
-    QColor,
-    QCursor,
-    QImage,
-    QPainter,
-    QPainterPath,
-    QPen,
-    QPolygonF,
-)
-from PyQt6.QtWidgets import (
-    QGraphicsPathItem,
-    QGraphicsPolygonItem,
-    QGraphicsScene,
-    QHBoxLayout,
-    QWidget,
-)
+from PyQt6.QtGui import QBrush, QColor, QCursor, QImage, QPainter, QPainterPath, QPen, QPolygonF
+from PyQt6.QtWidgets import QGraphicsPathItem, QGraphicsPolygonItem, QGraphicsScene, QHBoxLayout, QWidget
 from shapely.geometry import LineString
 from shapely.ops import polygonize, unary_union
 
@@ -31,19 +16,19 @@ except ImportError:
     import numpy as xp
     from skimage.color import hsv2rgb, rgb2hsv
 
-    Warning("cupy and/or cucim not found. Inverted contrast may be slow.")
+    Warning('cupy and/or cucim not found. Inverted contrast may be slow.')
     on_gpu = False
 
 
 class PyQtGraphCanvas(QWidget):
-    def __init__(self, parent=None, cell_n_colors=10, cell_cmap="tab10"):
+    def __init__(self, parent=None, cell_n_colors=10, cell_cmap='tab10'):
         from matplotlib import colormaps
 
         super().__init__(parent)
         self.main_window = parent
-        self.selected_cell_color = "white"
+        self.selected_cell_color = 'white'
         self.selected_cell_alpha = 0.3
-        self.outlines_color = "white"
+        self.outlines_color = 'white'
         self.outlines_alpha = 0.5
         self.masks_alpha = 0.5
 
@@ -57,8 +42,8 @@ class PyQtGraphCanvas(QWidget):
         plot_layout.setContentsMargins(0, 0, 0, 0)
 
         # Create a PlotWidget for the image and segmentation views
-        self.img_plot = SegPlot(title="Image", border="w", parent=self)
-        self.seg_plot = SegPlot(title="Segmentation", border="w", parent=self)
+        self.img_plot = SegPlot(title='Image', border='w', parent=self)
+        self.seg_plot = SegPlot(title='Segmentation', border='w', parent=self)
 
         plot_layout.addWidget(self.img_plot)
         plot_layout.addWidget(self.seg_plot)
@@ -69,20 +54,13 @@ class PyQtGraphCanvas(QWidget):
         self.seg_data = self.img_data.copy()
 
         # Plot the data
-        self.img = RGB_ImageItem(
-            img_data=self.img_data, plot=self.img_plot, parent=self
-        )
+        self.img = RGB_ImageItem(img_data=self.img_data, plot=self.img_plot, parent=self)
         self.seg = pg.ImageItem(self.seg_data)
         self.img_outline_overlay = pg.ImageItem()
         self.seg_stat_overlay = pg.ImageItem()
-        stat_overlay_lut = get_matplotlib_LUT("viridis")
+        stat_overlay_lut = get_matplotlib_LUT('viridis')
         self.seg_stat_overlay.setLookupTable(stat_overlay_lut)
-        self.cb = pg.ColorBarItem(
-            interactive=False,
-            orientation="horizontal",
-            colorMap="viridis",
-            width=15,
-        )
+        self.cb = pg.ColorBarItem(interactive=False, orientation='horizontal', colorMap='viridis', width=15)
         self.cb.setFixedWidth(100)
         self.cb.setImageItem(self.seg_stat_overlay)
         self.cb.setVisible(False)
@@ -116,16 +94,8 @@ class PyQtGraphCanvas(QWidget):
         self.seg_plot.addItem(self.seg)
 
         # Set initial zoom levels
-        self.img_plot.setRange(
-            xRange=[0, self.img_data.shape[1]],
-            yRange=[0, self.img_data.shape[0]],
-            padding=0,
-        )
-        self.seg_plot.setRange(
-            xRange=[0, self.seg_data.shape[1]],
-            yRange=[0, self.seg_data.shape[0]],
-            padding=0,
-        )
+        self.img_plot.setRange(xRange=[0, self.img_data.shape[1]], yRange=[0, self.img_data.shape[0]], padding=0)
+        self.seg_plot.setRange(xRange=[0, self.seg_data.shape[1]], yRange=[0, self.seg_data.shape[0]], padding=0)
 
         # Connect the range change signals to the custom slots
         self.img_plot.sigRangeChanged.connect(self.sync_seg_plot)
@@ -174,12 +144,10 @@ class PyQtGraphCanvas(QWidget):
         for layer in self.mask_overlay:
             layer.setVisible(self.main_window.masks_visible)
 
-        if not hasattr(self.main_window.frame, "stored_mask_overlay"):
+        if not hasattr(self.main_window.frame, 'stored_mask_overlay'):
             self.draw_masks()
         else:
-            for layer, overlay in zip(
-                self.mask_overlay, self.main_window.frame.stored_mask_overlay
-            ):
+            for layer, overlay in zip(self.mask_overlay, self.main_window.frame.stored_mask_overlay):
                 layer.setImage(overlay)
 
     def random_cell_color(self, n=1):
@@ -203,20 +171,16 @@ class PyQtGraphCanvas(QWidget):
             alpha = self.masks_alpha
         # get cell colors
         try:
-            cell_colors = self.main_window.frame.get_cell_attrs(
-                "color_ID"
-            )  # retrieve the stored colors for each cell
+            cell_colors = self.main_window.frame.get_cell_attrs('color_ID')  # retrieve the stored colors for each cell
         except AttributeError:
             # from monolayer_tracking.networks import color_masks, greedy_color # generate pseudo-random colors
             # random_colors=color_masks(self.main_window.frame.masks)
             cell_colors = self.random_cell_color(self.main_window.frame.masks.max())
-            self.main_window.frame.set_cell_attr("color_ID", cell_colors)
+            self.main_window.frame.set_cell_attr('color_ID', cell_colors)
 
         # highlight all cells with the specified colors
         cell_indices = fastremap.unique(self.main_window.frame.masks)[1:] - 1
-        img_masks, seg_masks = self.highlight_cells(
-            cell_indices, alpha=alpha, cell_colors=cell_colors, layer="mask"
-        )
+        img_masks, seg_masks = self.highlight_cells(cell_indices, alpha=alpha, cell_colors=cell_colors, layer='mask')
 
         return img_masks, seg_masks
 
@@ -229,14 +193,7 @@ class PyQtGraphCanvas(QWidget):
         self.tracking_overlay[1].clear()
 
     def highlight_cells(
-        self,
-        cell_indices,
-        layer="selection",
-        alpha=None,
-        color=None,
-        cell_colors=None,
-        img_type="masks",
-        seg_type="masks",
+        self, cell_indices, layer='selection', alpha=None, color=None, cell_colors=None, img_type='masks', seg_type='masks'
     ):
         from matplotlib.colors import to_rgb
 
@@ -248,7 +205,7 @@ class PyQtGraphCanvas(QWidget):
         masks = self.main_window.frame.masks
 
         layer = getattr(
-            self, f"{layer}_overlay"
+            self, f'{layer}_overlay'
         )  # get the specified overlay layer: selection for highlighting, mask for colored masks
 
         if cell_colors is None:  # single color mode
@@ -256,9 +213,7 @@ class PyQtGraphCanvas(QWidget):
             mask_overlay = np.isin(masks - 1, cell_indices)[..., np.newaxis] * color
 
         else:  # multi-color mode
-            num_labels = (
-                masks.max() + 1
-            )  # number of unique labels (including background)
+            num_labels = masks.max() + 1  # number of unique labels (including background)
             mask_overlay = np.zeros((*masks.shape, 4))
             cell_colors = np.array([[*to_rgb(c), alpha] for c in cell_colors])
             color_map = np.zeros((num_labels, 4))
@@ -268,9 +223,9 @@ class PyQtGraphCanvas(QWidget):
 
         opaque_mask = mask_overlay.copy()
         opaque_mask[mask_overlay[..., -1] != 0, -1] = 1
-        if img_type == "outlines":
+        if img_type == 'outlines':
             mask_overlay[self.main_window.frame.outlines == 0] = 0
-        if seg_type == "outlines":
+        if seg_type == 'outlines':
             opaque_mask[self.main_window.frame.outlines == 0] = 0
 
         mask_overlay = self.image_transform(mask_overlay)
@@ -289,11 +244,11 @@ class PyQtGraphCanvas(QWidget):
         self,
         cell_index,
         frame=None,
-        layer="selection",
+        layer='selection',
         alpha=None,
         color=None,
-        img_type="masks",
-        seg_type="masks",
+        img_type='masks',
+        seg_type='masks',
         seg_alpha=False,
     ):
         from matplotlib.colors import to_rgb
@@ -313,27 +268,25 @@ class PyQtGraphCanvas(QWidget):
 
         if frame == self.main_window.frame:
             drawing_layers = True
-            layer_overlay = getattr(self, f"{layer}_overlay")
+            layer_overlay = getattr(self, f'{layer}_overlay')
             for layer_item in layer_overlay:
                 if layer_item.image is None:  # initialize the overlay
                     layer_item.image = np.zeros(cell_mask.shape + (4,))
             overlays = [layer_overlay[0].image, layer_overlay[1].image]
         else:
-            if layer != "mask":
+            if layer != 'mask':
                 Warning(
-                    f"Only mask overlay can be drawn on stored frames, but add_cell_highlight was called with layer {layer}. Proceeding with mask overlay."
+                    f'Only mask overlay can be drawn on stored frames, but add_cell_highlight was called with layer {layer}. Proceeding with mask overlay.'
                 )
-            layer = "mask"
+            layer = 'mask'
             drawing_layers = False
-            if hasattr(frame, "stored_mask_overlay"):
+            if hasattr(frame, 'stored_mask_overlay'):
                 overlays = frame.stored_mask_overlay
             else:
-                Warning(
-                    f"No stored mask overlay found for frame {frame.frame_number}. No cell highlight will be drawn."
-                )
+                Warning(f'No stored mask overlay found for frame {frame.frame_number}. No cell highlight will be drawn.')
                 return
 
-        if isinstance(color, str) and color == "none":
+        if isinstance(color, str) and color == 'none':
             # remove the cell from the overlay
             overlays[0][cell_mask] = 0
             overlays[1][cell_mask] = 0
@@ -347,7 +300,7 @@ class PyQtGraphCanvas(QWidget):
             # get bounding box of cell mask
             xmin, xmax, ymin, ymax = self.get_bounding_box(cell_mask)
             if xmin is None:
-                raise IndexError(f"No pixels found for cell number {cell_index}.")
+                raise IndexError(f'No pixels found for cell number {cell_index}.')
 
             cell_mask_bbox = cell_mask[xmin:xmax, ymin:ymax]
             # Get the mask for the specified cell
@@ -357,20 +310,16 @@ class PyQtGraphCanvas(QWidget):
             if not seg_alpha:
                 seg_cell_mask[cell_mask_bbox, -1] = 1
 
-            if img_type == "outlines" or seg_type == "outlines":
+            if img_type == 'outlines' or seg_type == 'outlines':
                 outlines = self.get_mask_boundary(cell_mask_bbox)
-                if img_type == "outlines":
+                if img_type == 'outlines':
                     img_cell_mask[~outlines] = 0
-                if seg_type == "outlines":
+                if seg_type == 'outlines':
                     seg_cell_mask[~outlines] = 0
 
             # Add the cell mask to the existing overlay
-            overlays[0][xmin:xmax, ymin:ymax][cell_mask_bbox] = img_cell_mask[
-                cell_mask_bbox
-            ]
-            overlays[1][xmin:xmax, ymin:ymax][cell_mask_bbox] = seg_cell_mask[
-                cell_mask_bbox
-            ]
+            overlays[0][xmin:xmax, ymin:ymax][cell_mask_bbox] = img_cell_mask[cell_mask_bbox]
+            overlays[1][xmin:xmax, ymin:ymax][cell_mask_bbox] = seg_cell_mask[cell_mask_bbox]
 
         # Update the overlay images
         if drawing_layers:
@@ -378,7 +327,7 @@ class PyQtGraphCanvas(QWidget):
             layer_overlay[1].setImage(overlays[1])
 
         # store mask overlays if layer is mask
-        if layer == "mask":
+        if layer == 'mask':
             frame.stored_mask_overlay = overlays
 
         return
@@ -406,7 +355,7 @@ class PyQtGraphCanvas(QWidget):
         # UTIL
         from skimage.segmentation import find_boundaries
 
-        boundaries = find_boundaries(mask, mode="inner")
+        boundaries = find_boundaries(mask, mode='inner')
         return boundaries
 
     def clear_selection_overlay(self):
@@ -495,22 +444,14 @@ class PyQtGraphCanvas(QWidget):
         """Sync the image plot view range with the segmentation plot."""
 
         self.img_plot.blockSignals(True)
-        self.img_plot.setRange(
-            xRange=self.seg_plot.viewRange()[0],
-            yRange=self.seg_plot.viewRange()[1],
-            padding=0,
-        )
+        self.img_plot.setRange(xRange=self.seg_plot.viewRange()[0], yRange=self.seg_plot.viewRange()[1], padding=0)
         self.img_plot.blockSignals(False)
 
     def sync_seg_plot(self, view_box):
         """Sync the segmentation plot view range with the image plot."""
 
         self.seg_plot.blockSignals(True)
-        self.seg_plot.setRange(
-            xRange=self.img_plot.viewRange()[0],
-            yRange=self.img_plot.viewRange()[1],
-            padding=0,
-        )
+        self.seg_plot.setRange(xRange=self.img_plot.viewRange()[0], yRange=self.img_plot.viewRange()[1], padding=0)
         self.seg_plot.blockSignals(False)
 
 
@@ -554,7 +495,7 @@ class RGB_ImageItem:
             self.scene.addItem(item)
             item.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
 
-        self.setLookupTable("RGB")
+        self.setLookupTable('RGB')
 
         self.img_item = pg.ImageItem(self.image(), levels=(0, 255))
         plot.addItem(self.img_item)
@@ -572,9 +513,7 @@ class RGB_ImageItem:
         ptr = output_img.bits()
 
         ptr.setsize(output_img.sizeInBytes())
-        composite_array = np.array(ptr).reshape(
-            (height, width, 4)
-        )  # Format_RGB32 includes alpha
+        composite_array = np.array(ptr).reshape((height, width, 4))  # Format_RGB32 includes alpha
         rgb_array = composite_array[..., :3][..., ::-1]
 
         if self.canvas.is_inverted:
@@ -591,18 +530,10 @@ class RGB_ImageItem:
             self.red.setImage(self.img_data)
             self.green.clear()
             self.blue.clear()
-            self.setLookupTable("gray")
+            self.setLookupTable('gray')
         else:  # RGB image
-            if (
-                self.img_data.shape[-1] == 2
-            ):  # two channels--assume RG and convert to RGB
-                self.img_data = np.concatenate(
-                    (
-                        self.img_data,
-                        np.zeros((*self.img_data.shape[:-1], 1), dtype=np.uint8),
-                    ),
-                    axis=-1,
-                )
+            if self.img_data.shape[-1] == 2:  # two channels--assume RG and convert to RGB
+                self.img_data = np.concatenate((self.img_data, np.zeros((*self.img_data.shape[:-1], 1), dtype=np.uint8)), axis=-1)
             self.red.setImage(self.img_data[..., 0])
             self.green.setImage(self.img_data[..., 1])
             self.blue.setImage(self.img_data[..., 2])
@@ -611,9 +542,9 @@ class RGB_ImageItem:
 
     def toggle_grayscale(self):
         if self.show_grayscale:
-            self.setLookupTable("gray")
+            self.setLookupTable('gray')
         else:
-            self.setLookupTable("RGB")
+            self.setLookupTable('RGB')
 
     def setLevels(self, levels):
         """Update the levels of the image items based on the sliders."""
@@ -624,18 +555,14 @@ class RGB_ImageItem:
     def create_lut(self, color):
         lut = np.zeros((256, 3), dtype=np.ubyte)
         for i in range(256):
-            lut[i] = [
-                color.red() * i // 255,
-                color.green() * i // 255,
-                color.blue() * i // 255,
-            ]
+            lut[i] = [color.red() * i // 255, color.green() * i // 255, color.blue() * i // 255]
         return lut
 
     def setLookupTable(self, lut_style):
         """Set the lookup table for the image items."""
-        if lut_style == "gray":
+        if lut_style == 'gray':
             luts = self.gray_lut()
-        elif lut_style == "RGB":
+        elif lut_style == 'RGB':
             luts = self.RGB_lut()
 
         for item, lut in zip([self.red, self.green, self.blue], luts):
@@ -645,11 +572,7 @@ class RGB_ImageItem:
         return [self.create_lut(QColor(255, 255, 255))] * 3
 
     def RGB_lut(self):
-        return [
-            self.create_lut(QColor(255, 0, 0)),
-            self.create_lut(QColor(0, 255, 0)),
-            self.create_lut(QColor(255, 255, 255)),
-        ]
+        return [self.create_lut(QColor(255, 0, 0)), self.create_lut(QColor(0, 255, 0)), self.create_lut(QColor(255, 255, 255))]
 
     def set_grayscale(self, grayscale):
         self.show_grayscale = grayscale

@@ -10,14 +10,12 @@ from PyQt6.QtWidgets import QLineEdit, QMainWindow, QTextEdit, QVBoxLayout, QWid
 class CommandLineWindow(QMainWindow):
     def __init__(self, parent=None, globals_dict={}, locals_dict={}):
         super().__init__()
-        icon_path = importlib.resources.files("segmentation_viewer.assets").joinpath("terminal_icon.png")
+        icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('terminal_icon.png')
         self.setWindowIcon(QIcon(str(icon_path)))
-        self.setWindowTitle("Command Line")
+        self.setWindowTitle('Command Line')
 
         # Add the CommandLineWidget to the new window
-        self.cli = CommandLineWidget(
-            parent=self, globals_dict=globals_dict, locals_dict=locals_dict
-        )
+        self.cli = CommandLineWidget(parent=self, globals_dict=globals_dict, locals_dict=locals_dict)
         self.setCentralWidget(self.cli)
 
         # Set the window size and show the window
@@ -66,7 +64,7 @@ class CommandLineWidget(QWidget):
         self.locals_dict = locals_dict
 
         # Prompt for commands
-        self.prompt = ">>> "
+        self.prompt = '>>> '
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -111,9 +109,7 @@ class CommandLineWidget(QWidget):
             self.terminal_display.append(self.prompt + command)
 
             # Execute the command and show the result
-            self.worker = CodeExecutionWorker(
-                command, self.globals_dict, self.locals_dict
-            )
+            self.worker = CodeExecutionWorker(command, self.globals_dict, self.locals_dict)
             self.worker.execution_done.connect(self.on_code_execution_done)
             self.worker.start()
             # block text input until the command is executed
@@ -126,7 +122,7 @@ class CommandLineWidget(QWidget):
             self.terminal_display.append(output)
             self.terminal_display.moveCursor(QTextCursor.End)
         if error:
-            self.terminal_display.append(f"Error: {error}")
+            self.terminal_display.append(f'Error: {error}')
             self.terminal_display.moveCursor(QTextCursor.End)
 
         # Re-enable the command input box
@@ -147,7 +143,7 @@ class CodeExecutionWorker(QThread):
     def run(self):
         # Create a buffer to capture stdout
         output_buffer = io.StringIO()
-        error = ""
+        error = ''
 
         # Redirect stdout to the buffer
         sys_stdout = sys.stdout
@@ -158,19 +154,19 @@ class CodeExecutionWorker(QThread):
         try:
             # First attempt eval (for expressions)
             output = str(eval(self.code, self.globals_dict, self.locals_dict))
-            error = ""
+            error = ''
 
         except SyntaxError:
             # If it’s not an expression, run it as a statement using exec
             try:
                 exec(self.code, self.globals_dict, self.locals_dict)
-                output = ""  # No output for statements
+                output = ''  # No output for statements
             except Exception as e:
-                output = ""
+                output = ''
                 error = str(e)
 
         except Exception as e:
-            output = ""
+            output = ''
             error = str(e)
 
         finally:
@@ -178,7 +174,7 @@ class CodeExecutionWorker(QThread):
             sys.stdout = sys_stdout
             sys.stderr = sys.stderr
 
-        if not output or output == "None":
+        if not output or output == 'None':
             output = output_buffer.getvalue()
         output_buffer.close()
 

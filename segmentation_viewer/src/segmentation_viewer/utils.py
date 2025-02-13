@@ -10,13 +10,13 @@ def create_action(name, func, parent=None, shortcut=None):
 
 
 def load_stylesheet(file_path):
-    with open(file_path, "r") as f:
+    with open(file_path, 'r') as f:
         return f.read()
 
 
 def create_html_table(labels, values):
     if len(labels) != len(values):
-        raise ValueError("Labels and values must be of the same length")
+        raise ValueError('Labels and values must be of the same length')
 
     html = """
     <table style="border-collapse: collapse; width: 100%;">

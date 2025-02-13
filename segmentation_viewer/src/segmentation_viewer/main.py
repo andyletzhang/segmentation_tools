@@ -50,11 +50,11 @@ from .ui import LeftToolbar, labeled_LUT_slider
 from .utils import create_html_table, load_stylesheet
 
 # high priority
+# TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
+# ndimage labeled measurements on any of these attributes to create new ones
 # TODO: change RGB_ImageItem LUTs in settings (new settings dialog?)
 # add LUTs to config file
 # TODO: export segplot as gif
-# TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
-# ndimage labeled measurements on any of these attributes to create new ones
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
 # TODO: File -> export heights tif, import heights tif
@@ -107,6 +107,7 @@ class MainWidget(QMainWindow):
         self.cancel_iter = False  # flag to cancel progress bar iteration
         self.is_iterating = False
         self.circle_mask = None
+        self.mitosis_mode = 0
 
         # Status bar
         self.status_cell = QLabel('Selected Cell: None', self)
@@ -136,6 +137,7 @@ class MainWidget(QMainWindow):
         # Main layout
         main_widget = QSplitter()
         self.setCentralWidget(main_widget)
+        self._init_actions()
 
         self.canvas_widget = QWidget()
         canvas_VBoxLayout = QVBoxLayout(self.canvas_widget)
@@ -177,7 +179,6 @@ class MainWidget(QMainWindow):
 
         self._load_config()
         self._apply_overlay_settings()
-        self._get_menu_bar()
 
         # ----------------Connections----------------
         self.frame_slider.valueChanged.connect(self.change_current_frame)
@@ -187,62 +188,79 @@ class MainWidget(QMainWindow):
         self.canvas.img_plot.scene().sigMouseClicked.connect(self._on_click)
         self.canvas.seg_plot.scene().sigMouseClicked.connect(self._on_click)
 
-    def _get_menu_bar(self):
-        # Menu bar
+    def _init_actions(self):
         from .utils import create_action
 
-        self.menu_bar = self.menuBar()
+        file_actions = {
+            'Open File(s)': (self._open_files, 'Ctrl+O'),
+            'Open Folder': (self._open_folder, 'Ctrl+Shift+O'),
+            'Save': (self._save, 'Ctrl+S'),
+            'Save As...': (self._save_as, 'Ctrl+Shift+S'),
+            'Export CSV...': (self._export_csv, 'Ctrl+Shift+E'),
+            'Import Images...': (self.import_images, None),
+            'Exit': (self.close, 'Ctrl+Q'),
+        }
+        edit_actions = {
+            'Clear Masks': (self.clear_masks, None),
+            'Generate Outlines': (self._generate_outlines, None),
+            'Mend Gaps': (self._mend_gaps, None),
+            'Remove Edge Masks': (self._remove_edge_masks, None),
+        }
+        view_actions = {
+            'Reset View': (self._reset_view, None),
+            'Show Grayscale': (self._toggle_grayscale, None),
+            'Invert Contrast': (self._toggle_inverted, 'I'),
+            'Overlay Settings...': (self._open_overlay_settings, None),
+            'Window Screenshot': (self.save_screenshot, None),
+            'Save Stack GIF': (self._save_stack_gif, None),
+        }
+        image_actions = {
+            'Reorder Channels...': (self.reorder_channels, None),
+            'Rotate Stack Clockwise': (self.rotate_clockwise, None),
+            'Rotate Stack Counterclockwise': (self.rotate_counterclockwise, None),
+        }
+        stack_actions = {'Delete Frame': (self.delete_frame, None), 'Make Substack...': (self.make_substack, None)}
+        scripts_actions = {
+            'Open Command Line': (self._open_command_line, None),
+            'Open Script Editor': (self._open_script_editor, None),
+        }
+        help_actions = {'Pull Updates': (self._update_packages, None)}
+        other_actions = {
+            # Keyboard Shortcuts
+            'Add Mitosis': (self._add_mitosis, 'Ctrl+M'),
+            'Delete Mitosis': (self._delete_mitosis, 'Ctrl+Shift+M'),
+            # Other Actions
+            'Calibrate Diameter': (self._calibrate_diameter, None),
+            'Segment Frame': (self._segment_frame, None),
+            'Segment Stack': (self._segment_stack, None),
+            'Clear FUCCI Frame': (self._clear_FUCCI_frame, None),
+            'Clear FUCCI Stack': (self._clear_FUCCI_stack, None),
+            'Measure Volumes': (self._measure_volumes, None),
+            'Measure Heights': (self._measure_heights, None),
+            'Get Coverslip Height': (self._calibrate_coverslip_height, None),
+            'Get Spherical Volumes': (self._compute_spherical_volumes, None),
+            'Get Mitoses': (self._get_mitoses, None),
+            'Apply Mitosis Weights': (self._apply_new_weights, None),
+            'Track Centroids': (self._track_centroids, None),
+            'Load Tracking': (self._load_tracking, None),
+        }
 
-        # FILE
-        self.file_menu = self.menu_bar.addMenu('File')
-        self.file_menu.addAction(create_action('Open File(s)', self._open_files, self, 'Ctrl+O'))
-        self.file_menu.addAction(create_action('Open Folder', self._open_folder_dialog, self, 'Ctrl+Shift+O'))
-        self.file_menu.addAction(create_action('Save', self._save_segmentation, self, 'Ctrl+S'))
-        self.file_menu.addAction(create_action('Save As', self._save_as_segmentation, self, 'Ctrl+Shift+S'))
-        self.file_menu.addAction(create_action('Export CSV...', self._export_csv_pressed, self, 'Ctrl+Shift+E'))
-        self.file_menu.addAction(create_action('Import Image(s)', self.import_images, self))
-        self.file_menu.addAction(create_action('Exit', self.close, self, 'Ctrl+Q'))
-        # self.file_menu.addAction(create_action("Import Masks...", self.import_masks, self))
+        # Create Menu Bar
+        for menu, actions in zip(
+            ['File', 'Edit', 'View', 'Image', 'Stack', 'Scripts', 'Help'],
+            [file_actions, edit_actions, view_actions, image_actions, stack_actions, scripts_actions, help_actions],
+        ):
+            current_menu = self.menuBar().addMenu(menu)
+            for key, (function, shortcut) in actions.items():
+                action = create_action(key, function, self, shortcut)
+                setattr(self, f'{function.__name__}_action', action)
+                current_menu.addAction(action)
 
-        # EDIT
-        self.edit_menu = self.menu_bar.addMenu('Edit')
-        # self.edit_menu.addAction(create_action("Undo", self.undo, self, 'Ctrl+Z'))
-        # self.edit_menu.addAction(create_action("Redo", self.redo, self, 'Ctrl+Shift+Z'))
-        self.edit_menu.addAction(create_action('Clear Masks', self.clear_masks, self))
-        self.edit_menu.addAction(create_action('Generate Outlines', self._generate_outlines_pressed, self))
-        self.edit_menu.addAction(create_action('Mend Gaps', self.mend_gaps, self))
-        self.edit_menu.addAction(create_action('Remove Edge Masks', self.remove_edge_masks, self))
-
-        # VIEW
-        self.view_menu = self.menu_bar.addMenu('View')
-        self.view_menu.addAction(create_action('Reset View', self._reset_view, self))
-        self.view_menu.addAction(create_action('Show Grayscale', self.left_toolbar.toggle_grayscale, self))
-        self.view_menu.addAction(create_action('Invert Contrast', self.left_toolbar.toggle_inverted, self, 'I'))
-        self.view_menu.addAction(create_action('Overlay Settings...', self._open_overlay_settings, self))
-        self.view_menu.addAction(create_action('Window Screenshot', self.save_screenshot, self))
-        self.view_menu.addAction(create_action('Save Stack GIF', self._save_stack_gif_pressed, self))
-        # self.view_menu.addAction(create_action("Segmentation Plot", self.toggle_segmentation_plot, self))
-
-        # IMAGE
-        self.image_menu = self.menu_bar.addMenu('Image')
-        self.image_menu.addAction(create_action('Reorder Channels', self.reorder_channels, self))
-        self.image_menu.addAction(create_action('Rotate Clockwise', self.rotate_clockwise, self))
-        self.image_menu.addAction(create_action('Rotate Counterclockwise', self.rotate_counterclockwise, self))
-        # self.image_menu.addAction(create_action("Set Voxel Size", self.voxel_size_prompt, self))
-
-        # STACK
-        self.stack_menu = self.menu_bar.addMenu('Stack')
-        self.stack_menu.addAction(create_action('Delete frame', self.delete_frame, self))
-        self.stack_menu.addAction(create_action('Make substack...', self.make_substack, self))
-
-        # SCRIPTS
-        self.script_menu = self.menu_bar.addMenu('Scripts')
-        self.script_menu.addAction(create_action('Open Command Line', self._open_command_line, self))
-        self.script_menu.addAction(create_action('Run Script...', self._open_script_editor, self))
-
-        # HELP
-        self.help_menu = self.menu_bar.addMenu('Help')
-        self.help_menu.addAction(create_action('Pull updates', self._update_packages, self))
+        # Create Other Actions
+        for key, (function, shortcut) in other_actions.items():
+            action = create_action(key, function, self, shortcut)
+            setattr(self, f'{function.__name__}_action', action)
+            self.addAction(action)
 
     def _load_config(self):
         from platformdirs import user_config_dir
@@ -758,7 +776,7 @@ class MainWidget(QMainWindow):
 
         self.select_cell(particle=particle)
 
-    def _mend_gaps_pressed(self):
+    def _mend_gaps(self):
         if not self.file_loaded:
             return
         if self.left_toolbar.segment_on_stack.isChecked():
@@ -791,7 +809,7 @@ class MainWidget(QMainWindow):
             if mended and hasattr(frame, 'stored_mask_overlay'):
                 del frame.stored_mask_overlay
 
-    def _remove_edge_masks_pressed(self):
+    def _remove_edge_masks(self):
         if not self.file_loaded:
             return
         if self.left_toolbar.segment_on_stack.isChecked():
@@ -855,7 +873,7 @@ class MainWidget(QMainWindow):
         self.circle_mask.setBrush(pg.mkBrush(color='#4A90E2'))
         self.canvas.img_plot.addItem(self.circle_mask)
 
-    def _calibrate_diameter_pressed(self):
+    def _calibrate_diameter(self):
         channels = self.left_toolbar.segmentation_channels
         diam = self.calibrate_cell_diameter(self.frame.img, channels)
 
@@ -901,7 +919,7 @@ class MainWidget(QMainWindow):
 
         return diam
 
-    def _segment_frame_pressed(self):
+    def _segment_frame(self):
         if not self.file_loaded:
             return
 
@@ -921,7 +939,7 @@ class MainWidget(QMainWindow):
         self._update_display()
         self._FUCCI_overlay()
 
-    def _segment_stack_pressed(self):
+    def _segment_stack(self):
         if not self.file_loaded:
             return
 
@@ -1017,7 +1035,7 @@ class MainWidget(QMainWindow):
         if length is None:
             length = len(iterable)
 
-        if length == 1:
+        if length <= 1:
             return iterable
         else:
             # Initialize tqdm progress bar
@@ -1123,12 +1141,12 @@ class MainWidget(QMainWindow):
             self._get_red_green(frame)
         self._FUCCI_overlay()
 
-    def _clear_FUCCI_frame_pressed(self):
+    def _clear_FUCCI_frame(self):
         if not self.file_loaded:
             return
         self.clear_FUCCI([self.frame])
 
-    def _clear_FUCCI_stack_pressed(self):
+    def _clear_FUCCI_stack(self):
         if not self.file_loaded:
             return
         self.clear_FUCCI(self.stack.frames)
@@ -1301,7 +1319,7 @@ class MainWidget(QMainWindow):
             return
 
         del self.stack.tracked_centroids
-        self.canvas.clear_tracking_overlay()
+        self.canvas.clear_overlay('tracking')
         self._clear_particle_statistic()
         self._random_recolor()  # recolor masks to signify unlinking
 
@@ -1316,7 +1334,7 @@ class MainWidget(QMainWindow):
 
         self.canvas.draw_masks()
 
-    def _delete_mitosis_pressed(self):
+    def _delete_mitosis(self):
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'mitoses'):
@@ -1324,18 +1342,77 @@ class MainWidget(QMainWindow):
         candidate_particle = self.selected_particle_n
         if candidate_particle is None:
             return
-        idx, col=np.where(self.stack.mitoses[['mother','daughter1','daughter2']]==candidate_particle)
-        if len(idx)==0: # not in mitoses
+        idx, col = np.where(self.stack.mitoses[['mother', 'daughter1', 'daughter2']] == candidate_particle)
+        if len(idx) == 0:  # not in mitoses
             return
-        elif len(idx)==1:
-            idx=idx[0]
+        elif len(idx) == 1:
+            idx = idx[0]
         else:
-            idx=idx[np.argmin(col)]
-        
-        self.stack.mitoses.drop(self.stack.mitoses.index[idx],inplace=True)
+            idx = idx[np.argmin(col)]
+
+        self.stack.mitoses.drop(self.stack.mitoses.index[idx], inplace=True)
         self._update_tracking_overlay()
 
-    def _get_mitoses_pressed(self):
+    def _add_mitosis(self, event=None):
+        print('Add mitosis')
+        if not self.file_loaded:
+            return
+        if not hasattr(self.stack, 'tracked_centroids'):
+            self.statusBar().showMessage("Can't create mitoses without tracking data.", 2000)
+            return
+
+        if not self.mitosis_mode:
+            self._start_mitosis(frame_number=self.frame_number + 1)  # assume pressed on last frame of mother cell
+        else:
+            self._cancel_mitosis()
+
+    def _start_mitosis(self, frame_number=None):
+        if frame_number is None:
+            frame_number = self.frame_number
+        self.mitosis_mode = 1
+        self.current_mitosis = {'frame': frame_number}
+        print(f'Starting mitosis at frame {frame_number}.\nSelect mother cell.')
+
+    def _mitosis_selected(self, particle_n):
+        if not hasattr(self, 'current_mitosis'):
+            return
+        keys = ['mother', 'daughter1', 'daughter2']
+        key = keys[self.mitosis_mode - 1]
+        self.current_mitosis[key] = particle_n
+        print(f'Selected {key} cell: {particle_n}.')
+        if self.mitosis_mode == 3:
+            self._end_mitosis()
+            return
+
+        if particle_n is not None:
+            if key.startswith('mother'):
+                color = 'red'
+            else:
+                color = 'lime'
+            self.canvas.add_cell_highlight(
+                self.cell_from_particle(particle_n), color=color, layer='mitosis', alpha=self.canvas.masks_alpha
+            )
+        print(f'Select {keys[self.mitosis_mode]} cell.')
+        self.mitosis_mode += 1
+
+    def _cancel_mitosis(self):
+        if not hasattr(self, 'current_mitosis'):
+            return
+        self.mitosis_mode = 0
+        del self.current_mitosis
+        print('Add mitosis cancelled.')
+
+    def _end_mitosis(self):
+        if not hasattr(self, 'current_mitosis'):
+            return
+
+        self.stack.add_mitosis(self.current_mitosis)
+        print(f'Added mitosis {self.current_mitosis}')
+        self.canvas.clear_overlay('mitosis')
+        self.mitosis_mode = 0
+        del self.current_mitosis
+
+    def _get_mitoses(self):
         if not self.file_loaded:
             return
         distance_threshold, score_cutoff, weights = self.left_toolbar.mitosis_params
@@ -1361,7 +1438,7 @@ class MainWidget(QMainWindow):
 
         self.stack.get_mitoses(**kwargs)
 
-    def _apply_new_weights_pressed(self):
+    def _apply_new_weights(self):
         if not self.file_loaded:
             return
         distance_threshold, score_cutoff, weights = self.left_toolbar.mitosis_params
@@ -1371,9 +1448,13 @@ class MainWidget(QMainWindow):
         else:
             # recompute mitosis scores with new weights
             from segmentation_tools.mitosis_detection import get_mitosis_scores, threshold_mitoses
+
             self.stack.mitosis_scores = get_mitosis_scores(self.stack.mitosis_scores, weights=weights)
-            self.stack.mitoses = threshold_mitoses(self.stack.mitosis_scores, threshold=score_cutoff)
-            
+            mitoses = threshold_mitoses(self.stack.mitosis_scores, threshold=score_cutoff)
+            self.stack.mitoses = mitoses.astype(
+                {'mother': 'Int64', 'daughter1': 'Int64', 'daughter2': 'Int64'}
+            )  # nullable integer columns
+
         self._update_tracking_overlay()
 
     def _update_tracking_overlay(self):
@@ -1389,7 +1470,7 @@ class MainWidget(QMainWindow):
             self.left_toolbar.highlight_track_ends_button.setChecked(False)
 
         if not self.file_loaded or self.left_toolbar.tabbed_widget.currentIndex() != 2:
-            self.canvas.clear_tracking_overlay()
+            self.canvas.clear_overlay('tracking')
             return
         else:
             if self.left_toolbar.highlight_track_ends_button.isChecked():
@@ -1397,7 +1478,7 @@ class MainWidget(QMainWindow):
             elif self.left_toolbar.highlight_mitoses_button.isChecked():
                 self._highlight_mitoses()
             else:
-                self.canvas.clear_tracking_overlay()
+                self.canvas.clear_overlay('tracking')
             return
 
     def _highlight_mitoses(self):
@@ -1410,7 +1491,7 @@ class MainWidget(QMainWindow):
 
             mitoses = self.stack.mitoses[abs(self.stack.mitoses.frame - self.frame_number) <= tail_length]
 
-            self.canvas.clear_tracking_overlay()
+            self.canvas.clear_overlay('tracking')
             if len(mitoses) == 0:
                 return
 
@@ -1469,7 +1550,7 @@ class MainWidget(QMainWindow):
             )
 
         else:
-            self.canvas.clear_tracking_overlay()
+            self.canvas.clear_overlay('tracking')
 
     def _canvas_wheelEvent(self, event):
         if not self.file_loaded:
@@ -1511,7 +1592,7 @@ class MainWidget(QMainWindow):
             if self.particle_stat_menu.currentText() == cell_attr:
                 self._plot_particle_statistic()
 
-    def _measure_volumes_pressed(self):
+    def _measure_volumes(self):
         if not self.file_loaded:
             return
         if self.left_toolbar.volumes_on_stack.isChecked():
@@ -1561,7 +1642,7 @@ class MainWidget(QMainWindow):
                 frame.scale = 0.1625  # 40x objective with 0.325 µm/pixel camera
             frame.get_volumes()
 
-    def _calibrate_coverslip_height_pressed(self):
+    def _calibrate_coverslip_height(self):
         if not self.file_loaded:
             return
         if self.left_toolbar.volumes_on_stack.isChecked():
@@ -1609,7 +1690,7 @@ class MainWidget(QMainWindow):
             frame.coverslip_height = coverslip_height
         return coverslip_height
 
-    def _measure_heights_pressed(self):
+    def _measure_heights(self):
         if not self.file_loaded:
             return
         if self.left_toolbar.volumes_on_stack.isChecked():
@@ -1625,7 +1706,7 @@ class MainWidget(QMainWindow):
 
         coverslip_height = self.left_toolbar.coverslip_height.text()
         if coverslip_height == '':
-            self._calibrate_coverslip_height_pressed()
+            self._calibrate_coverslip_height()
             coverslip_height = self.left_toolbar.coverslip_height.text()
         coverslip_height = float(coverslip_height)
 
@@ -1662,7 +1743,7 @@ class MainWidget(QMainWindow):
                 if coverslip_height:
                     frame.coverslip_height = coverslip_height
 
-    def _compute_spherical_volumes_pressed(self):
+    def _compute_spherical_volumes(self):
         if not self.file_loaded:
             return
 
@@ -1748,7 +1829,7 @@ class MainWidget(QMainWindow):
 
             # or clear highlight
             else:
-                self.canvas.clear_selection_overlay()  # no tracking data, clear highlights
+                self.canvas.clear_overlay('selection')  # no tracking data, clear highlights
 
         if len(self.frame.cells) > 0 and not hasattr(self.frame.cells[0], 'green'):
             self._get_red_green()
@@ -1835,7 +1916,7 @@ class MainWidget(QMainWindow):
             self.status_tracking_ID.setText(f'Tracking ID: {tracking_ID}')
             self.selected_particle_prompt.setText(str(tracking_ID))
 
-    def _track_centroids_pressed(self):
+    def _track_centroids(self):
         if not self.file_loaded:
             return
 
@@ -1863,6 +1944,7 @@ class MainWidget(QMainWindow):
         self._recolor_tracks()
         self.canvas.draw_masks()
         self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(True)
+        self.left_toolbar.also_save_tracking.setChecked(True)
 
     def track_centroids(self, **kwargs):
         """
@@ -1879,13 +1961,17 @@ class MainWidget(QMainWindow):
             The maximum number of frames a cell can be lost for before being considered a new cell. Defaults to 0.
         """
 
-        for frame in self._progress_bar(self.stack.frames, desc='Generating outlines'):
+        needs_outlines = []
+        for frame in self.stack.frames:
             if not frame.has_outlines:
-                outlines = utils.outlines_list(frame.masks)
-                for cell, outline in zip(frame.cells, outlines):
-                    cell.outline = outline
-                    cell.get_centroid()
-                frame.has_outlines = True
+                needs_outlines.append(frame)
+
+        for frame in self._progress_bar(needs_outlines, desc='Generating outlines'):
+            outlines = utils.outlines_list(frame.masks)
+            for cell, outline in zip(frame.cells, outlines):
+                cell.outline = outline
+                cell.get_centroid()
+            frame.has_outlines = True
 
         self.stack.track_centroids(**kwargs)
 
@@ -1917,6 +2003,9 @@ class MainWidget(QMainWindow):
             return None
         if frame_number is None:
             frame_number = self.frame_number
+        if cell_number is None:
+            return None
+
         return self.stack.particle_from_cell(cell_number, frame_number)
 
     def cell_from_particle(self, particle, frame_number=None):
@@ -1934,6 +2023,8 @@ class MainWidget(QMainWindow):
             return None
         if frame_number is None:
             frame_number = self.frame_number
+        if particle is None:
+            return None
 
         return self.stack.cell_from_particle(particle, frame_number)
 
@@ -2194,7 +2285,7 @@ class MainWidget(QMainWindow):
         self._update_tracking_ID_label(self.selected_particle_n)
         self._plot_particle_statistic()  # put info about the particle in the right toolbar
 
-        self.canvas.clear_selection_overlay()
+        self.canvas.clear_overlay('selection')
 
         if self.selected_cell_n is None:
             self.cell_properties_label.setText('')  # clear the cell attributes table
@@ -2368,13 +2459,13 @@ class MainWidget(QMainWindow):
                 elif self.drawing_cell_split:
                     self._split_cell()
 
-                elif event.modifiers() == Qt.KeyboardModifier.ShiftModifier:  # split particles
+                elif event.modifiers() == Qt.KeyboardModifier.ShiftModifier:  # split selected particle at current frame
                     self.selected_particle_n = self.particle_from_cell(current_cell_n)
                     if self.selected_particle_n is not None:
                         self.split_particle_tracks()
-                elif event.modifiers() == Qt.KeyboardModifier.AltModifier:  # split cells
+                elif event.modifiers() == Qt.KeyboardModifier.AltModifier:  # start drawing cell split line
                     self._start_cell_split(event)
-                else:  # segmentation
+                else:  # start drawing new segmentation ROI
                     self._start_drawing_segmentation(event)
 
             elif event.button() == Qt.MouseButton.LeftButton:
@@ -2385,6 +2476,9 @@ class MainWidget(QMainWindow):
                 elif self.drawing_cell_split:
                     self.cell_split.clearPoints()
                     self.drawing_cell_split = False
+                elif self.mitosis_mode:
+                    self._mitosis_selected(self.particle_from_cell(current_cell_n))
+
                 # cell selection actions
                 if current_cell_n >= 0:
                     if (event.modifiers() & Qt.KeyboardModifier.ControlModifier) and (
@@ -2926,7 +3020,7 @@ class MainWidget(QMainWindow):
         if np.any(mask_number_alignment):
             print(f'{np.sum(mask_number_alignment)} cell masks misalign starting with {np.where(mask_number_alignment)[0][0]}')
 
-    def _generate_outlines_pressed(self):
+    def _generate_outlines(self):
         if not self.file_loaded:
             return
 
@@ -3012,7 +3106,7 @@ class MainWidget(QMainWindow):
         self.stack.save_tracking(file_path)
         print(f'Saved tracking data to {file_path}')
 
-    def _load_tracking_pressed(self):
+    def _load_tracking(self):
         if not self.file_loaded:
             return
         file_path = QFileDialog.getOpenFileName(self, 'Load tracking data...', filter='*.csv')[0]
@@ -3025,7 +3119,7 @@ class MainWidget(QMainWindow):
         self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(True)
         self._recolor_tracks()
 
-    def _save_segmentation(self):
+    def _save(self):
         if not self.file_loaded:
             return
 
@@ -3043,7 +3137,7 @@ class MainWidget(QMainWindow):
 
         print(f'Saved segmentation to {self.stack.name}')
 
-    def _save_as_segmentation(self):
+    def _save_as(self):
         if not self.file_loaded:
             return
 
@@ -3102,7 +3196,7 @@ class MainWidget(QMainWindow):
         frame.to_seg_npy(file_path, write_attrs=write_attrs, overwrite_img=True)
         frame.name = file_path
 
-    def _export_csv_pressed(self):
+    def _export_csv(self):
         if not self.file_loaded:
             return
 
@@ -3228,14 +3322,14 @@ class MainWidget(QMainWindow):
         FUCCI_index = self.FUCCI_dropdown
         overlay_color = ['none', 'g', 'r', 'orange'][FUCCI_index]
         if self.left_toolbar.tabbed_widget.currentIndex() != 1 or FUCCI_index == 0:
-            self.canvas.clear_FUCCI_overlay()  # clear FUCCI overlay during basic selection
+            self.canvas.clear_overlay('FUCCI')  # clear FUCCI overlay during basic selection
             self.FUCCI_mode = False
             return
 
         else:
             self.select_cell(None)
             self.FUCCI_mode = True
-            self.canvas.clear_selection_overlay()  # clear basic selection during FUCCI labeling
+            self.canvas.clear_overlay('selection')  # clear basic selection during FUCCI labeling
             if len(self.frame.cells) == 0:
                 return
             if FUCCI_index == 3:
@@ -3258,12 +3352,12 @@ class MainWidget(QMainWindow):
         self.drawing_cell_split = False
         self.select_cell(None)
         self.FUCCI_dropdown = 0  # clear FUCCI overlay
-        self.canvas.clear_tracking_overlay()
+        self.canvas.clear_overlay('tracking')
         self.seg_overlay_attr.setCurrentIndex(0)  # clear attribute overlay
         self.left_toolbar.RGB_visible = True
         if not self.is_grayscale:
             self.left_toolbar.show_grayscale_checkbox.setChecked(False)
-        self.canvas.clear_selection_overlay()  # remove any selection overlays (highlighting, outlines)
+        self.canvas.clear_overlay('selection')  # remove any selection overlays (highlighting, outlines)
         self.canvas.img_plot.autoRange()
 
         self.histogram_menu.setCurrentIndex(0)
@@ -3292,6 +3386,16 @@ class MainWidget(QMainWindow):
                 self.left_toolbar.tabbed_widget.setCurrentIndex((current_tab + 1) % self.left_toolbar.tabbed_widget.count())
 
         if not self.file_loaded:
+            return
+
+        # Enter key completes cell drawing, mitosis mode
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if self.drawing_cell_roi:
+                self._close_cell_roi()
+            elif self.drawing_cell_split:
+                self._split_cell()
+            elif self.mitosis_mode:
+                self._mitosis_selected(None)  # skip this prompt, advance to next
             return
 
         # Ctrl-key shortcuts
@@ -3347,7 +3451,7 @@ class MainWidget(QMainWindow):
                 self.delete_cell_mask(self.selected_cell_n)
                 self.select_cell(None)
 
-        # cancel drawing, loading
+        # cancel drawing
         if event.key() == Qt.Key.Key_Escape:
             if self.drawing_cell_roi:
                 self.cell_roi.clearPoints()
@@ -3355,6 +3459,10 @@ class MainWidget(QMainWindow):
             if self.drawing_cell_split:
                 self.cell_split.clearPoints()
                 self.drawing_cell_split = False
+            if self.mitosis_mode:
+                self._cancel_mitosis()
+            else:  # deselect cell
+                self.select_cell(None)
 
         # Handle frame navigation with left and right arrow keys
         if event.key() == Qt.Key.Key_Left:
@@ -3382,6 +3490,12 @@ class MainWidget(QMainWindow):
         self.canvas.img_plot.autoRange()
         if not self.is_grayscale:
             self.left_toolbar.show_grayscale_checkbox.setChecked(False)
+
+    def _toggle_grayscale(self):
+        self.left_toolbar.show_grayscale_checkbox.toggle()
+
+    def _toggle_inverted(self):
+        self.left_toolbar.inverted_checkbox.toggle()
 
     def _show_grayscale_toggled(self, event=None):
         if event is None:
@@ -3519,7 +3633,7 @@ class MainWidget(QMainWindow):
         screenshot.save(file_path, 'png')  # Save to file
         print(f'Saved screenshot to {file_path}')
 
-    def _save_stack_gif_pressed(self):
+    def _save_stack_gif(self):
         if not self.file_loaded:
             return
 
@@ -3659,7 +3773,7 @@ class MainWidget(QMainWindow):
         if len(files) > 0:
             self.open_stack(files)
 
-    def _open_folder_dialog(self):
+    def _open_folder(self):
         folder = QFileDialog.getExistingDirectory(self, 'Open folder of segmentation files')
         if folder:
             self.open_stack([folder])

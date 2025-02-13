@@ -265,12 +265,6 @@ class LeftToolbar(QScrollArea):
     def update_display(self):
         self.main_window._update_display()
 
-    def toggle_grayscale(self):
-        self.show_grayscale_checkbox.toggle()
-
-    def toggle_inverted(self):
-        self.inverted_checkbox.toggle()
-
     def add_channel_layout(self, channel_layout):
         self.membrane_channel = QComboBox(self)
         self.membrane_channel_label = QLabel('Membrane Channel:', self)
@@ -372,13 +366,13 @@ class LeftToolbar(QScrollArea):
         segmentation_layout.addWidget(segment_frame_widget)
         segmentation_layout.addWidget(segmentation_utils_widget)
 
-        self.mend_gaps_button.clicked.connect(self.main_window._mend_gaps_pressed)
-        self.remove_edge_masks_button.clicked.connect(self.main_window._remove_edge_masks_pressed)
+        self.mend_gaps_button.clicked.connect(self.main_window._mend_gaps_action.trigger)
+        self.remove_edge_masks_button.clicked.connect(self.main_window._remove_edge_masks_action.trigger)
         self.cell_diameter.textChanged.connect(self.main_window._update_cell_diameter)
-        self.cell_diameter_calibrate.clicked.connect(self.main_window._calibrate_diameter_pressed)
-        self.segment_frame_button.clicked.connect(self.main_window._segment_frame_pressed)
-        self.segment_stack_button.clicked.connect(self.main_window._segment_stack_pressed)
-        generate_outlines_button.clicked.connect(self.main_window._generate_outlines_pressed)
+        self.cell_diameter_calibrate.clicked.connect(self.main_window._calibrate_diameter_action.trigger)
+        self.segment_frame_button.clicked.connect(self.main_window._segment_frame_action.trigger)
+        self.segment_stack_button.clicked.connect(self.main_window._segment_stack_action.trigger)
+        generate_outlines_button.clicked.connect(self.main_window._generate_outlines_action.trigger)
         clear_masks_button.clicked.connect(self.main_window.clear_masks)
 
         return segmentation_tab
@@ -464,8 +458,8 @@ class LeftToolbar(QScrollArea):
         FUCCI_frame_button.clicked.connect(self.main_window._measure_FUCCI_frame)
         FUCCI_stack_button.clicked.connect(self.main_window._measure_FUCCI_stack)
         self.propagate_FUCCI_checkbox.stateChanged.connect(self.main_window._propagate_FUCCI_toggled)
-        clear_frame_button.clicked.connect(self.main_window._clear_FUCCI_frame_pressed)
-        clear_stack_button.clicked.connect(self.main_window._clear_FUCCI_stack_pressed)
+        clear_frame_button.clicked.connect(self.main_window._clear_FUCCI_frame_action.trigger)
+        clear_stack_button.clicked.connect(self.main_window._clear_FUCCI_stack_action.trigger)
 
         return FUCCI_tab
 
@@ -557,10 +551,10 @@ class LeftToolbar(QScrollArea):
         volumes_layout.addLayout(self.get_coverslip_height_layout)
         volumes_layout.addWidget(self.get_spherical_volumes)
 
-        self.volume_button.clicked.connect(self.main_window._measure_volumes_pressed)
-        self.get_heights_button.clicked.connect(self.main_window._measure_heights_pressed)
-        self.get_coverslip_height.clicked.connect(self.main_window._calibrate_coverslip_height_pressed)
-        self.get_spherical_volumes.clicked.connect(self.main_window._compute_spherical_volumes_pressed)
+        self.volume_button.clicked.connect(self.main_window._measure_volumes_action.trigger)
+        self.get_heights_button.clicked.connect(self.main_window._measure_heights_action.trigger)
+        self.get_coverslip_height.clicked.connect(self.main_window._calibrate_coverslip_height_action.trigger)
+        self.get_spherical_volumes.clicked.connect(self.main_window._compute_spherical_volumes_action.trigger)
 
         return self.volumes_tab
 
@@ -603,18 +597,24 @@ class LeftToolbar(QScrollArea):
         delete_head = QPushButton('Head', self)
         delete_tail = QPushButton('Tail', self)
         delete_all = QPushButton('All', self)
+        delete_all.setShortcut('Shift+Delete')
         delete_particle_layout.addWidget(delete_head)
         delete_particle_layout.addWidget(delete_tail)
         delete_particle_layout.addWidget(delete_all)
         clear_tracking_button = QPushButton('Clear Tracking', self, objectName='deleteButton')
 
         get_mitoses_button = QPushButton('Get Mitoses', self)
+        add_mitosis_button = QPushButton('Add Mitosis', self)
         delete_mitosis_button = QPushButton('Delete Mitosis', self)
         self.mitoses_label = QLabel('0 Mitoses', self)
         apply_new_weights_button = QPushButton('Apply New Weights', self)
-        get_mitoses_button.clicked.connect(self.main_window._get_mitoses_pressed)
-        delete_mitosis_button.clicked.connect(self.main_window._delete_mitosis_pressed)
-        apply_new_weights_button.clicked.connect(self.main_window._apply_new_weights_pressed)
+        get_mitoses_button.clicked.connect(self.main_window._get_mitoses_action.trigger)
+        add_mitosis_button.clicked.connect(self.main_window._add_mitosis_action.trigger)
+        delete_mitosis_button.clicked.connect(self.main_window._delete_mitosis_action.trigger)
+        edit_mitoses_layout=QHBoxLayout()
+        edit_mitoses_layout.addWidget(add_mitosis_button)
+        edit_mitoses_layout.addWidget(delete_mitosis_button)
+        apply_new_weights_button.clicked.connect(self.main_window._apply_new_weights_action.trigger)
 
         self.mitosis_inputs = [QLineEdit(self, placeholderText=text) for text in ['1.5', '1', '1', '1', '1', '1', '1', '1']]
         self.mitoses_config_menu = QFormLayout()
@@ -640,7 +640,7 @@ class LeftToolbar(QScrollArea):
         mitoses_border = bordered(mitoses_widget)
 
         track_centroids_widget.header_layout.addWidget(self.tracking_label)
-        track_centroids_widget.header_layout.addSpacerItem(QSpacerItem(5,0))
+        track_centroids_widget.header_layout.addSpacerItem(QSpacerItem(5, 0))
         track_centroids_widget.core_layout.addWidget(self.track_centroids_button)
         track_centroids_widget.core_layout.addLayout(io_menu)
         track_centroids_widget.core_layout.addWidget(clear_tracking_button)
@@ -651,9 +651,9 @@ class LeftToolbar(QScrollArea):
         track_centroids_widget.hide_content()
 
         mitoses_widget.header_layout.addWidget(self.mitoses_label)
-        mitoses_widget.header_layout.addSpacerItem(QSpacerItem(5,0))
+        mitoses_widget.header_layout.addSpacerItem(QSpacerItem(5, 0))
         mitoses_widget.core_layout.addWidget(get_mitoses_button)
-        mitoses_widget.core_layout.addWidget(delete_mitosis_button)
+        mitoses_widget.core_layout.addLayout(edit_mitoses_layout)
         mitoses_widget.addLayout(self.mitoses_config_menu)
         mitoses_widget.addWidget(apply_new_weights_button)
         mitoses_widget.hide_content()
@@ -662,12 +662,12 @@ class LeftToolbar(QScrollArea):
         tracking_tab_layout.addWidget(tracking_border)
         tracking_tab_layout.addWidget(mitoses_border)
 
-        self.track_centroids_button.clicked.connect(self.main_window._track_centroids_pressed)
-        self.tracking_range.returnPressed.connect(self.main_window._track_centroids_pressed)
+        self.track_centroids_button.clicked.connect(self.main_window._track_centroids_action.trigger)
+        self.tracking_range.returnPressed.connect(self.main_window._track_centroids_action.trigger)
         split_particle_button.clicked.connect(self.main_window.split_particle_tracks)
         clear_tracking_button.clicked.connect(self.main_window.clear_tracking)
         self.save_tracking_button.clicked.connect(self.main_window.save_tracking)
-        self.load_tracking_button.clicked.connect(self.main_window._load_tracking_pressed)
+        self.load_tracking_button.clicked.connect(self.main_window._load_tracking_action.trigger)
         self.highlight_track_ends_button.stateChanged.connect(self.main_window._update_tracking_overlay)
         self.highlight_mitoses_button.stateChanged.connect(self.main_window._update_tracking_overlay)
         delete_head.clicked.connect(self.main_window.delete_particle_head)
@@ -724,8 +724,8 @@ class LeftToolbar(QScrollArea):
         self.z_size_input.editingFinished.connect(self.main_window._update_voxel_size)
 
         # Save signals
-        self.save_button.clicked.connect(self.main_window._save_segmentation)
-        self.save_as_button.clicked.connect(self.main_window._save_as_segmentation)
+        self.save_button.clicked.connect(self.main_window._save_action.trigger)
+        self.save_as_button.clicked.connect(self.main_window._save_as_action.trigger)
 
         # Tab switch signal
         self.tabbed_widget.currentChanged.connect(self.tab_switched)

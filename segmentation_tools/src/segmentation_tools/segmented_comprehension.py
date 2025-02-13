@@ -749,8 +749,25 @@ class TimeStack(SegmentedStack):
 
         self.mitosis_scores = get_mitosis_scores(mitosis_df, weights=weights, biases=biases)
         self.mitoses = threshold_mitoses(self.mitosis_scores, threshold=score_cutoff)
+        self.mitoses=self.mitoses.astype({'mother':'Int64','daughter1':'Int64','daughter2':'Int64'}) # nullable integer columns
         return self.mitoses
 
+    def add_mitosis(self, m, compute_scores=False):
+        """
+        Add a mitosis event to the TimeStack object.
+
+        Args:
+            m (DataFrame): DataFrame containing information about the mitotic event.
+            compute_scores (bool, optional): If True, computes mitosis scores for the added event. Defaults to False (score is NaN).
+            TODO: add mitosis score computation
+        """
+        if not hasattr(self, 'mitoses'):
+            self.mitoses=pd.DataFrame(columns=['frame','mother','daughter1','daughter2','score'])
+            self.mitoses=self.mitoses.astype({'frame':int, 'mother':'Int64','daughter1':'Int64','daughter2':'Int64', 'score':float}) # nullable integer columns
+            self.mitosis_scores=self.mitoses.copy()
+        self.mitoses.loc[len(self.mitoses)] = m
+        self.mitosis_scores.loc[len(self.mitosis_scores)] = m
+        return self.mitoses
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
 

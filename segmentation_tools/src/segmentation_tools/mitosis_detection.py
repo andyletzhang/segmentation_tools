@@ -36,8 +36,8 @@ def get_mitosis_scores(mitosis_df, weights=[1, 1, 1, 1, 1, 1], biases=None):
 
 
 def threshold_mitoses(mitosis_df, threshold=1):
-    mitosis_df = mitosis_df[mitosis_df['score'] < threshold]
-    return resolve_conflicts(mitosis_df)
+    mitosis_df = mitosis_df[(mitosis_df['score'] < threshold) | np.isnan(mitosis_df['score'])]
+    return resolve_conflicts(mitosis_df).sort_index()
 
 
 def get_division_candidates(stack, distance_threshold=1.5, persistence_threshold=0):
@@ -157,8 +157,8 @@ def evaluate_mitosis(stack, mother, daughters):
     daughter1, daughter2 = daughters[daughter_pairs].T
     return pd.DataFrame(
         {
-            'mother': [mother] * len(daughter_pairs),
             'frame': [mother_cell[-1].frame + 1] * len(daughter_pairs),
+            'mother': [mother] * len(daughter_pairs),
             'daughter1': daughter1,
             'daughter2': daughter2,
             'mother_circ': mother_circs,

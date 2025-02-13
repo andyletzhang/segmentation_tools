@@ -72,6 +72,7 @@ class PyQtGraphCanvas(QWidget):
         self.selection_overlay = [pg.ImageItem(), pg.ImageItem()]
         self.FUCCI_overlay = [pg.ImageItem(), pg.ImageItem()]
         self.tracking_overlay = [pg.ImageItem(), pg.ImageItem()]
+        self.mitosis_overlay = [pg.ImageItem(), pg.ImageItem()]
 
         # add images to the plots
         # self.img_plot.addItem(self.img)
@@ -90,6 +91,9 @@ class PyQtGraphCanvas(QWidget):
 
         self.img_plot.addItem(self.selection_overlay[0])
         self.seg_plot.addItem(self.selection_overlay[1])
+
+        self.img_plot.addItem(self.mitosis_overlay[0])
+        self.seg_plot.addItem(self.mitosis_overlay[1])
 
         self.seg_plot.addItem(self.seg)
 
@@ -184,13 +188,10 @@ class PyQtGraphCanvas(QWidget):
 
         return img_masks, seg_masks
 
-    def clear_FUCCI_overlay(self):
-        self.FUCCI_overlay[0].clear()
-        self.FUCCI_overlay[1].clear()
-
-    def clear_tracking_overlay(self):
-        self.tracking_overlay[0].clear()
-        self.tracking_overlay[1].clear()
+    def clear_overlay(self, overlay):
+        overlay=getattr(self, f'{overlay}_overlay')
+        overlay[0].clear()
+        overlay[1].clear()
 
     def highlight_cells(
         self, cell_indices, layer='selection', alpha=None, color=None, cell_colors=None, img_type='masks', seg_type='masks'
@@ -357,14 +358,6 @@ class PyQtGraphCanvas(QWidget):
 
         boundaries = find_boundaries(mask, mode='inner')
         return boundaries
-
-    def clear_selection_overlay(self):
-        self.selection_overlay[0].clear()
-        self.selection_overlay[1].clear()
-
-    def clear_mask_overlay(self):
-        self.mask_overlay[0].clear()
-        self.mask_overlay[1].clear()
 
     def get_plot_coords(self, pos=None, pixels=True):
         """Get the pixel coordinates of the mouse cursor."""

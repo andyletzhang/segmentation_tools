@@ -1372,32 +1372,28 @@ class MainWidget(QMainWindow):
             # get all mitoses within n frames of the current frame
             tail_length = 5
 
-            current_frame = self.frame_number
-            relevant_mitoses = [
-                m for m in self.stack.mitoses if abs(m.index.get_level_values(1)[0] - current_frame) <= tail_length
-            ]
+            mitoses = self.stack.mitoses[abs(self.stack.mitoses.frame - self.frame_number) <= tail_length]
 
             self.canvas.clear_tracking_overlay()
-            if len(relevant_mitoses) == 0:
+            if len(mitoses) == 0:
                 return
 
-            for m in relevant_mitoses:
-                particles = m.index.get_level_values(0)
-                mitosis_frame = m.index.get_level_values(1)[0]
-                mother, daughter1, daughter2 = (self.cell_from_particle(p) for p in particles)
+            for _, m in mitoses.iterrows():
+                mitosis_frame = m['frame']
+                mother, daughter1, daughter2 = (self.cell_from_particle(m[p]) for p in ['mother', 'daughter1', 'daughter2'])
                 if mother is not None:
-                    alpha = 1 - (mitosis_frame - current_frame + 1) / (tail_length + 1)
+                    alpha = 1 - (mitosis_frame - self.frame_number + 1) / (tail_length + 1)
                     self.canvas.add_cell_highlight(
                         mother, color='red', alpha=alpha, layer='tracking', img_type='outlines', seg_alpha=True
                     )
                 else:
                     if daughter1 is not None:
-                        alpha = 1 - (current_frame - mitosis_frame + 1) / (tail_length + 1)
+                        alpha = 1 - (self.frame_number - mitosis_frame + 1) / (tail_length + 1)
                         self.canvas.add_cell_highlight(
                             daughter1, color='lime', alpha=alpha, img_type='outlines', layer='tracking', seg_alpha=True
                         )
                     if daughter2 is not None:
-                        alpha = 1 - (current_frame - mitosis_frame + 1) / (tail_length + 1)
+                        alpha = 1 - (self.frame_number - mitosis_frame + 1) / (tail_length + 1)
                         self.canvas.add_cell_highlight(
                             daughter2, color='lime', alpha=alpha, img_type='outlines', layer='tracking', seg_alpha=True
                         )

@@ -1411,6 +1411,7 @@ class MainWidget(QMainWindow):
         self.canvas.clear_overlay('mitosis')
         self.mitosis_mode = 0
         del self.current_mitosis
+        self._update_tracking_overlay()
 
     def _get_mitoses(self):
         if not self.file_loaded:

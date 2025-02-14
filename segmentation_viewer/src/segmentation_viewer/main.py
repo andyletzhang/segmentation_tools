@@ -1349,9 +1349,9 @@ class MainWidget(QMainWindow):
         else:
             idx = idx[np.argmin(col)]
 
-        deleted_m = self.stack.mitoses.loc[idx]
+        deleted_m = self.stack.mitoses.iloc[[idx]][['frame', 'mother', 'daughter1', 'daughter2']].to_string(index=False)
         self.stack.mitoses.drop(self.stack.mitoses.index[idx], inplace=True)
-        print(f'Deleted mitosis {deleted_m}')
+        print(f'Deleted mitosis\n{deleted_m}')
         self._update_tracking_overlay()
 
     def _add_mitosis(self, event=None):
@@ -1401,6 +1401,7 @@ class MainWidget(QMainWindow):
         self.mitosis_mode = 0
         del self.current_mitosis
         print('Add mitosis cancelled.')
+        self.canvas.clear_overlay('mitosis')
 
     def _end_mitosis(self):
         if not hasattr(self, 'current_mitosis'):
@@ -3347,6 +3348,7 @@ class MainWidget(QMainWindow):
         self.select_cell(None)
         self.FUCCI_dropdown = 0  # clear FUCCI overlay
         self.canvas.clear_overlay('tracking')
+        self.canvas.clear_overlay('mitosis')
         self.seg_overlay_attr.setCurrentIndex(0)  # clear attribute overlay
         self.left_toolbar.RGB_visible = True
         if not self.is_grayscale:
@@ -3530,7 +3532,6 @@ class MainWidget(QMainWindow):
         self.reorder_dialog.finished.connect(finish_reordering)
 
         self.reorder_dialog.exec()
-    
 
     def reorder_channels(self, channel_order):
         if len(channel_order) != 3:

@@ -765,8 +765,10 @@ class TimeStack(SegmentedStack):
             self.mitoses=pd.DataFrame(columns=['frame','mother','daughter1','daughter2','score'])
             self.mitoses=self.mitoses.astype({'frame':int, 'mother':'Int64','daughter1':'Int64','daughter2':'Int64', 'score':float}) # nullable integer columns
             self.mitosis_scores=self.mitoses.copy()
-        self.mitoses.loc[len(self.mitoses)] = m
-        self.mitosis_scores.loc[len(self.mitosis_scores)] = m
+
+        new_idx=self.mitosis_scores.index.max()+1 if len(self.mitosis_scores)>0 else 0
+        self.mitoses.loc[new_idx] = m
+        self.mitosis_scores.loc[new_idx] = m
         return self.mitoses
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#

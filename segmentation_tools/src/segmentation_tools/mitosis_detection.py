@@ -182,7 +182,10 @@ def resolve_conflicts(candidates_df):
 
     mitosis_graph = nx.Graph()
     for idx, row in candidates_df.iterrows():
-        mitosis_graph.add_node(idx, score=row['score'])
+        score = row['score']
+        if np.isnan(score): # Manually added mitosis, give it a perfect score
+            score = 0
+        mitosis_graph.add_node(idx, score=score)
 
     all_conflicts = set()
     for mother in mother_conflicts:

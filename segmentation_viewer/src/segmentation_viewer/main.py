@@ -3098,6 +3098,14 @@ class MainWidget(QMainWindow):
             file_path = QFileDialog.getSaveFileName(self, 'Save tracking data as...', filter='*.csv')[0]
             if file_path == '':
                 return
+
+        if hasattr(self.stack, 'mitoses'):
+            mitoses_path = file_path.replace('tracking.csv', 'mitoses.csv')
+            scores_path = file_path.replace('tracking.csv', 'mitosis_scores.csv')
+            self.stack.mitoses.to_csv(mitoses_path)
+            self.stack.mitosis_scores.to_csv(scores_path)
+            print(f'Saved mitoses to {mitoses_path}')
+
         self.stack.save_tracking(file_path)
         print(f'Saved tracking data to {file_path}')
 
@@ -3827,6 +3835,16 @@ class MainWidget(QMainWindow):
             stack = SegmentedStack(frame_paths=seg_files, load_img=True, progress_bar=self._progress_bar)
             if tracking_file is not None:
                 stack.load_tracking(tracking_file)
+                if tracking_file.replace('tracking.csv', 'mitoses.csv') in files:
+                    try:
+                        stack.mitoses = pd.read_csv(tracking_file.replace('tracking.csv', 'mitoses.csv'), index_col=0)
+                        stack.mitosis_scores = pd.read_csv(tracking_file.replace('tracking.csv', 'mitosis_scores.csv'), index_col=0)
+                        print(f'Loaded mitoses from {tracking_file.replace("tracking.csv", "mitoses.csv")}')
+                    except FileNotFoundError:
+                        print(f'Failed to load mitoses from {tracking_file.replace("tracking.csv", "mitoses.csv")}')
+                        if hasattr(stack, 'mitoses'):
+                            del stack.mitoses
+                    
             self.file_loaded = True
             return stack
 

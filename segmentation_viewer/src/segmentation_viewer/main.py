@@ -18,7 +18,6 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QGraphicsEllipseItem,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -61,7 +60,6 @@ from .utils import create_html_table, load_stylesheet
 # TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
 
 # low priority
-# TODO: reorder channels preview
 # TODO: when cell is clicked, have option to show its entire colormapped track
 # TODO: edit mitoses
 # TODO: use fastremap to add cell highlights?
@@ -215,7 +213,7 @@ class MainWidget(QMainWindow):
             'Save Stack GIF': (self._save_stack_gif, None),
         }
         image_actions = {
-            'Reorder Channels...': (self.reorder_channels, None),
+            'Reorder Channels...': (self._reorder_channels, None),
             'Rotate Stack Clockwise': (self.rotate_clockwise, None),
             'Rotate Stack Counterclockwise': (self.rotate_counterclockwise, None),
         }
@@ -1350,7 +1348,9 @@ class MainWidget(QMainWindow):
         else:
             idx = idx[np.argmin(col)]
 
+        deleted_m = self.stack.mitoses.loc[idx]
         self.stack.mitoses.drop(self.stack.mitoses.index[idx], inplace=True)
+        print(f'Deleted mitosis {deleted_m}')
         self._update_tracking_overlay()
 
     def _add_mitosis(self, event=None):
@@ -1371,7 +1371,7 @@ class MainWidget(QMainWindow):
             frame_number = self.frame_number
         self.mitosis_mode = 1
         self.current_mitosis = {'frame': frame_number}
-        print(f'Starting mitosis at frame {frame_number}.\nSelect mother cell.')
+        print(f'Starting mitosis at frame {frame_number}. Select mother cell.')
 
     def _mitosis_selected(self, particle_n):
         if not hasattr(self, 'current_mitosis'):
@@ -1379,7 +1379,6 @@ class MainWidget(QMainWindow):
         keys = ['mother', 'daughter1', 'daughter2']
         key = keys[self.mitosis_mode - 1]
         self.current_mitosis[key] = particle_n
-        print(f'Selected {key} cell: {particle_n}.')
         if self.mitosis_mode == 3:
             self._end_mitosis()
             return
@@ -1392,7 +1391,7 @@ class MainWidget(QMainWindow):
             self.canvas.add_cell_highlight(
                 self.cell_from_particle(particle_n), color=color, layer='mitosis', alpha=self.canvas.masks_alpha
             )
-        print(f'Select {keys[self.mitosis_mode]} cell.')
+        print(f'Selected {key} cell: {particle_n}. Select {keys[self.mitosis_mode]} cell.')
         self.mitosis_mode += 1
 
     def _cancel_mitosis(self):
@@ -1499,7 +1498,9 @@ class MainWidget(QMainWindow):
             dt = t2 - t1
             if dt >= 0:
                 alpha = 1 - (dt + 1) / (tail_length + 1)
-                self.canvas.add_cell_highlight(cell, color=color, alpha=alpha, layer='tracking', img_type='outlines', seg_alpha=True)
+                self.canvas.add_cell_highlight(
+                    cell, color=color, alpha=alpha, layer='tracking', img_type='outlines', seg_alpha=True
+                )
 
         for _, m in mitoses.iterrows():
             mitosis_frame = m['frame']
@@ -3494,37 +3495,57 @@ class MainWidget(QMainWindow):
             event = self.left_toolbar.show_grayscale_checkbox.isChecked()
         self.canvas.img.set_grayscale(event != 0)
 
-    def reorder_channels(self):
+    def _reorder_channels(self):
         if not self.file_loaded:
             return
         if self.is_grayscale:
             return
+        from .qt import ChannelOrderDialog
+
+        saved_img = self.canvas.img.img_data
+        saved_levels = self.canvas.img.getLevels()
+
+        def preview_reorder(channel_order):
+            """Preview the current image with the given channel order."""
+            new_img = self.frame.img[..., channel_order]
+            new_levels = [saved_levels[i] for i in channel_order]
+            self.canvas.img.setImage(new_img)
+            self.canvas.img.setLevels(new_levels)
+
+        def clear_preview():
+            """Clear the preview of the current image."""
+            self.canvas.img.setImage(saved_img)
+            self.canvas.img.setLevels(saved_levels)
+
+        def finish_reordering(channel_order):
+            """Apply the channel order to the entire stack."""
+            if self.reorder_dialog.result() == QDialog.DialogCode.Accepted:
+                self.reorder_channels(channel_order)
 
         # Prompt the user for the channel order
-        text, accepted = QInputDialog.getText(self, 'Channel Order', 'Enter channel order (e.g., 1,2,0):')
+        self.reorder_dialog = ChannelOrderDialog(self)
+        self.reorder_dialog.previewRequested.connect(preview_reorder)
+        self.reorder_dialog.clearPreviewRequested.connect(clear_preview)
+        self.reorder_dialog.finished.connect(finish_reordering)
 
-        if accepted and text:  # confirmed a non-empty input
-            try:
-                # Parse the input into a tuple of integers
-                channel_order = tuple(map(int, text.split(',')))
+        self.reorder_dialog.exec()
+    
 
-                if len(channel_order) != 3:
-                    raise ValueError('Channel order must have exactly three elements.')
+    def reorder_channels(self, channel_order):
+        if len(channel_order) != 3:
+            raise ValueError('Channel order must have exactly three elements.')
 
-                for frame in self._progress_bar(self.stack.frames, desc='Reordering channels'):
-                    frame.img = frame.img[..., channel_order]
+        for frame in self._progress_bar(self.stack.frames, desc='Reordering channels'):
+            frame.img = frame.img[..., channel_order]
 
-                    if hasattr(frame, 'zstack'):
-                        frame.zstack = frame.zstack[..., channel_order]
-                    if hasattr(frame, 'bounds'):
-                        frame.bounds = frame.bounds[..., channel_order, :]
+            if hasattr(frame, 'zstack'):
+                frame.zstack = frame.zstack[..., channel_order]
+            if hasattr(frame, 'bounds'):
+                frame.bounds = frame.bounds[..., channel_order, :]
 
-                self._update_display()
-                self._auto_range_sliders()
-                self._normalize()
-            except ValueError as e:
-                # Show an error message if the input is invalid
-                QMessageBox.critical(self, 'Invalid Input', str(e))
+        self._update_display()
+        self._auto_range_sliders()
+        self._normalize()
 
     def _clear_stored_overlays(self):
         for frame in self.stack.frames:
@@ -3979,14 +4000,13 @@ class MainWidget(QMainWindow):
 
     def closeEvent(self, event):
         # Close the command line window when the main window is closed
-        if hasattr(self, 'shape_dialog'):
-            self.shape_dialog.close()
-        if hasattr(self, 'cli_window'):
-            self.cli_window.close()
-        if hasattr(self, 'script_window'):
-            self.script_window.close()
-        if hasattr(self, 'overlay_dialog'):
-            self.overlay_dialog.close()
+        # find all attrs that end with "dialog" or "window"
+        for attr in dir(self):
+            if attr.endswith('dialog') or attr.endswith('window'):
+                try:
+                    getattr(self, attr).close()
+                except Exception:
+                    pass
 
         self._dump_config()
         event.accept()

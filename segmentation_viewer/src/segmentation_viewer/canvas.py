@@ -545,6 +545,10 @@ class RGB_ImageItem:
             item.setLevels(level)
         self.refresh()
 
+    def getLevels(self):
+        """Get the levels of the image items."""
+        return [item.getLevels() for item in self.channels]
+
     def create_lut(self, color):
         lut = np.zeros((256, 3), dtype=np.ubyte)
         for i in range(256):

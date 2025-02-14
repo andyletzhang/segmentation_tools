@@ -368,3 +368,67 @@ class CollapsibleWidget(QWidget):
         else:
             self.toggle_hidden.setArrowType(Qt.RightArrow)
             self.collapsing_widget.hide()
+
+
+class ChannelOrderDialog(QDialog):
+    previewRequested=pyqtSignal(list)
+    clearPreviewRequested=pyqtSignal()
+    finished=pyqtSignal(list)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Channel Order')
+
+        # Layout and widgets
+        layout = QVBoxLayout(self)
+        self.label = QLabel('Enter channel order:', self)
+        layout.addWidget(self.label)
+
+        self.line_edit = QLineEdit(self)
+        self.line_edit.setValidator(RangeStringValidator(max_value=2, parent=self))
+        self.line_edit.setPlaceholderText('e.g. 1, 2, 0')
+        self.line_edit.textChanged.connect(self._check_input)
+
+        layout.addWidget(self.line_edit)
+
+        # Confirm and Cancel buttons
+        submit_layout = QHBoxLayout()
+        self.button_confirm = QPushButton('Confirm', self)
+        self.button_cancel = QPushButton('Cancel', self)
+        submit_layout.addWidget(self.button_cancel)
+        submit_layout.addWidget(self.button_confirm)
+
+        layout.addLayout(submit_layout)
+
+        # Connect buttons
+        self.button_confirm.clicked.connect(self.confirm_and_finish)
+        self.button_cancel.clicked.connect(self.clear_and_reject)
+
+    def _check_input(self):
+        try:
+            channel_order=self.get_input()
+            if len(channel_order) == 3:
+                self.previewRequested.emit(channel_order)
+        except ValueError:
+            self.clearPreviewRequested.emit()
+        
+    def clear_and_reject(self):
+        self.clearPreviewRequested.emit()
+        self.reject()
+
+    def get_input(self):
+        """
+        Returns the text entered by the user in the QLineEdit.
+        """
+        return range_string_to_list(self.line_edit.text())
+    
+    def confirm_and_finish(self):
+        try:
+            channel_order = self.get_input()
+            if len(channel_order) == 3:
+                self.finished.emit(channel_order)
+                self.accept()
+            else:
+                QMessageBox.warning(self, 'Invalid Input', f'Expected 3 channels, got {len(channel_order)}.')
+        except ValueError:
+            QMessageBox.warning(self, 'Invalid Input', f'Invalid input: {self.line_edit.text()}')
+            return None

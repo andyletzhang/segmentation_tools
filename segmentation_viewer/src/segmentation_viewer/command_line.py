@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QLineEdit, QMainWindow, QTextEdit, QVBoxLayout, QWid
 class CommandLineWindow(QMainWindow):
     def __init__(self, parent=None, globals_dict={}, locals_dict={}):
         super().__init__()
-        icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('terminal_icon.png')
+        icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('terminal_icon.ico')
         self.setWindowIcon(QIcon(str(icon_path)))
         self.setWindowTitle('Command Line')
 

@@ -60,6 +60,7 @@ from .utils import create_html_table, load_stylesheet
 # TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
 
 # low priority
+# TODO: unify print statements with status bar messages
 # TODO: when cell is clicked, have option to show its entire colormapped track
 # TODO: edit mitoses
 # TODO: use fastremap to add cell highlights?
@@ -91,7 +92,7 @@ class MainWidget(QMainWindow):
         super().__init__()
         # window setup
         self.setWindowTitle('Segmentation Viewer')
-        icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('icon.png')
+        icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('icon.ico')
         self.setWindowIcon(QIcon(str(icon_path)))
         self.resize(1280, 720)
         self.file_loaded = False  # passive mode

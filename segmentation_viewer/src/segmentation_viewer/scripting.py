@@ -43,7 +43,7 @@ class ScriptWindow(QMainWindow):
     def __init__(self, parent=None, local_env=None, global_env=None):
         super().__init__()
         self.main_window = parent
-        icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('script_editor.png')
+        icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('script_editor.ico')
         self.setWindowIcon(QIcon(str(icon_path)))
         self.setWindowTitle('Script Editor')
         self.setGeometry(100, 100, 800, 500)

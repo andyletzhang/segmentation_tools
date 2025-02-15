@@ -356,19 +356,33 @@ class TimeStack(SegmentedStack):
             second_ID = self.split_particle_track(second_ID, frame)  # reassign second_ID in case of split
 
         # merge particles
-        t.loc[t.particle == second_ID, 'particle'] = first_ID
+        t['particle'] = fastremap.remap(t['particle'].values, {second_ID: first_ID}, preserve_missing_labels=True)
+        if hasattr(self, 'mitoses'):
+            self.mitoses[['mother', 'daughter1', 'daughter2']] = fastremap.remap(
+                self.mitoses[['mother', 'daughter1', 'daughter2']].values, {second_ID: first_ID}, preserve_missing_labels=True
+            )
 
         # new merged ID
         f, c = t.loc[t.particle == first_ID][['frame', 'cell_number']].values[0]
 
         # renumber particles so that they're contiguous
-        particles = np.unique(t['particle'])
-        t['particle'] = np.searchsorted(particles, t['particle'])
+        t['particle'] = self.renumber_particles()
 
         merged = t.loc[(t.frame == f) & (t.cell_number == c)]['particle'].iloc[0]
         return merged, new_head, new_tail
 
-    # -------------Retrieve Tracking Data-------------
+    def renumber_particles(self):
+        """
+        Renumber particle IDs so that they are contiguous.
+        """
+        t = self.tracked_centroids
+        t['particle'], map = fastremap.renumber(t['particle'].values)
+        if hasattr(self, 'mitoses'):
+            self.mitoses[['mother', 'daughter1', 'daughter2']] = fastremap.remap(
+                self.mitoses[['mother', 'daughter1', 'daughter2']].values, map
+            )
+        return t['particle']
+
     def split_particle_track(self, particle_ID, split_frame):
         """
         Split a particle track into two separate tracks at a given frame.
@@ -388,8 +402,14 @@ class TimeStack(SegmentedStack):
             return None
         else:
             t.loc[(t.particle == particle_ID) & (t.frame >= split_frame), 'particle'] = new_particle_ID
+            if hasattr(self, 'mitoses'):
+                needs_editing = ((self.mitoses[['mother', 'daughter1', 'daughter2']] == particle_ID).any(axis=1)) & (self.mitoses['frame'] >= split_frame)
+                self.mitoses.loc[needs_editing, ['mother', 'daughter1', 'daughter2']] = fastremap.remap(
+                    self.mitoses.loc[needs_editing, ['mother', 'daughter1', 'daughter2']].values, {particle_ID: new_particle_ID}, preserve_missing_labels=True
+                )
             return new_particle_ID
 
+    # -------------Retrieve Tracking Data-------------
     def particle_from_cell(self, cell_number, frame_number):
         if not hasattr(self, 'tracked_centroids'):
             raise ValueError('No tracking data available.')
@@ -749,7 +769,9 @@ class TimeStack(SegmentedStack):
 
         self.mitosis_scores = get_mitosis_scores(mitosis_df, weights=weights, biases=biases)
         self.mitoses = threshold_mitoses(self.mitosis_scores, threshold=score_cutoff)
-        self.mitoses=self.mitoses.astype({'mother':'Int64','daughter1':'Int64','daughter2':'Int64'}) # nullable integer columns
+        self.mitoses = self.mitoses.astype(
+            {'mother': 'Int64', 'daughter1': 'Int64', 'daughter2': 'Int64'}
+        )  # nullable integer columns
         return self.mitoses
 
     def add_mitosis(self, m, compute_scores=False):
@@ -762,14 +784,17 @@ class TimeStack(SegmentedStack):
             TODO: add mitosis score computation
         """
         if not hasattr(self, 'mitoses'):
-            self.mitoses=pd.DataFrame(columns=['frame','mother','daughter1','daughter2','score'])
-            self.mitoses=self.mitoses.astype({'frame':int, 'mother':'Int64','daughter1':'Int64','daughter2':'Int64', 'score':float}) # nullable integer columns
-            self.mitosis_scores=self.mitoses.copy()
+            self.mitoses = pd.DataFrame(columns=['frame', 'mother', 'daughter1', 'daughter2', 'score'])
+            self.mitoses = self.mitoses.astype(
+                {'frame': int, 'mother': 'Int64', 'daughter1': 'Int64', 'daughter2': 'Int64', 'score': float}
+            )  # nullable integer columns
+            self.mitosis_scores = self.mitoses.copy()
 
-        new_idx=self.mitosis_scores.index.max()+1 if len(self.mitosis_scores)>0 else 0
+        new_idx = self.mitosis_scores.index.max() + 1 if len(self.mitosis_scores) > 0 else 0
         self.mitoses.loc[new_idx] = m
         self.mitosis_scores.loc[new_idx] = m
         return self.mitoses
+
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
 

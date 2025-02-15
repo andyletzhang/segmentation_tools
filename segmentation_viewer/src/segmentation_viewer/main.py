@@ -1300,8 +1300,8 @@ class MainWidget(QMainWindow):
             t = self.stack.tracked_centroids
             self.left_toolbar.also_save_tracking.setChecked(True)
 
-            head_cell_numbers, head_frame_numbers = np.array(t[t.particle == particle_n][['cell_number', 'frame']]).T
-            for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
+            cell_numbers, frame_numbers = np.array(t[t.particle == particle_n][['cell_number', 'frame']]).T
+            for cell_n, frame_n in zip(cell_numbers, frame_numbers):
                 frame = self.stack.frames[frame_n]
                 if hasattr(frame, 'stored_mask_overlay'):
                     self.canvas.add_cell_highlight(cell_n, frame, color='none', layer='mask')
@@ -3835,7 +3835,7 @@ class MainWidget(QMainWindow):
             stack = SegmentedStack(frame_paths=seg_files, load_img=True, progress_bar=self._progress_bar)
             if tracking_file is not None:
                 stack.load_tracking(tracking_file)
-                if tracking_file.replace('tracking.csv', 'mitoses.csv') in files:
+                if os.path.exists(tracking_file.replace('tracking.csv', 'mitoses.csv')):
                     try:
                         stack.mitoses = pd.read_csv(tracking_file.replace('tracking.csv', 'mitoses.csv'), index_col=0)
                         stack.mitosis_scores = pd.read_csv(tracking_file.replace('tracking.csv', 'mitosis_scores.csv'), index_col=0)

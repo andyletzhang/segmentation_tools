@@ -1501,7 +1501,7 @@ class MainWidget(QMainWindow):
             if dt >= 0:
                 alpha = 1 - (dt + 1) / (tail_length + 1)
                 self.canvas.add_cell_highlight(
-                    cell, color=color, alpha=alpha, layer='tracking', img_type='outlines', seg_alpha=True
+                    cell, color=color, alpha=alpha, layer='tracking', img_type='outlines', seg_alpha=True, mode='blend'
                 )
 
         for _, m in mitoses.iterrows():

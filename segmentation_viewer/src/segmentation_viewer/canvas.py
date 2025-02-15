@@ -251,6 +251,7 @@ class PyQtGraphCanvas(QWidget):
         img_type='masks',
         seg_type='masks',
         seg_alpha=False,
+        mode='overwrite',
     ):
         from matplotlib.colors import to_rgb
 
@@ -319,8 +320,24 @@ class PyQtGraphCanvas(QWidget):
                     seg_cell_mask[~outlines] = 0
 
             # Add the cell mask to the existing overlay
-            overlays[0][xmin:xmax, ymin:ymax][cell_mask_bbox] = img_cell_mask[cell_mask_bbox]
-            overlays[1][xmin:xmax, ymin:ymax][cell_mask_bbox] = seg_cell_mask[cell_mask_bbox]
+            img_out=img_cell_mask[cell_mask_bbox]
+            seg_out=seg_cell_mask[cell_mask_bbox]
+            for out, overlay in zip([img_out, seg_out], overlays):
+                if mode == 'overwrite':
+                    overlay[xmin:xmax, ymin:ymax][cell_mask_bbox]=out
+                elif mode == 'add':
+                    overlay[xmin:xmax, ymin:ymax][cell_mask_bbox]+=out
+                elif mode == 'blend':
+                    current=overlay[xmin:xmax, ymin:ymax][cell_mask_bbox]
+                    alpha_out=out[..., -1]+current[..., -1]-out[..., -1]*current[..., -1]
+                    zero_alpha=alpha_out==0
+                    safe_alpha=alpha_out.copy()
+                    safe_alpha[zero_alpha]=1
+                    out[..., :-1]=(out[..., :-1]*out[..., -1, np.newaxis]+current[..., :-1]*current[..., -1, np.newaxis]*(1-out[..., -1, np.newaxis]))/safe_alpha[..., np.newaxis]
+                    out[..., -1]=alpha_out
+                    out[zero_alpha]=0
+
+                    overlay[xmin:xmax, ymin:ymax][cell_mask_bbox]=out
 
         # Update the overlay images
         if drawing_layers:

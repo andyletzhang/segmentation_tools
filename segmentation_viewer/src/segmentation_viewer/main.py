@@ -51,8 +51,7 @@ from .utils import create_html_table, load_stylesheet
 # high priority
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
 # ndimage labeled measurements on any of these attributes to create new ones
-# TODO: change RGB_ImageItem LUTs in settings (new settings dialog?)
-# add LUTs to config file
+# TODO: add LUTs to config file
 # TODO: export segplot as gif
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
@@ -197,6 +196,8 @@ class MainWidget(QMainWindow):
             'Save As...': (self._save_as, 'Ctrl+Shift+S'),
             'Export CSV...': (self._export_csv, 'Ctrl+Shift+E'),
             'Import Images...': (self.import_images, None),
+            'Window Screenshot': (self.save_screenshot, None),
+            'Save Stack GIF': (self._save_stack_gif, None),
             'Exit': (self.close, 'Ctrl+Q'),
         }
         edit_actions = {
@@ -210,8 +211,7 @@ class MainWidget(QMainWindow):
             'Show Grayscale': (self._toggle_grayscale, None),
             'Invert Contrast': (self._toggle_inverted, 'I'),
             'Overlay Settings...': (self._open_overlay_settings, None),
-            'Window Screenshot': (self.save_screenshot, None),
-            'Save Stack GIF': (self._save_stack_gif, None),
+            'Change LUTs...': (self._change_LUTs, None),
         }
         image_actions = {
             'Reorder Channels...': (self._reorder_channels, None),
@@ -3556,6 +3556,31 @@ class MainWidget(QMainWindow):
         self._update_display()
         self._auto_range_sliders()
         self._normalize()
+
+    def _change_LUTs(self):
+        from .qt import LookupTableDialog
+        LUT_options=list(self.canvas.img.LUT_options.keys())
+        initial_LUTs = self.canvas.img.LUTs
+
+        def apply_LUTs(new_LUTs):
+            self.canvas.img.LUTs=new_LUTs
+            self.canvas.img.update_LUTs()
+
+        def revert_LUTs():
+            self.canvas.img.LUTs=initial_LUTs
+            self.canvas.img.update_LUTs()
+
+        def finish_LUTs(new_LUTs):
+            if dialog.result() == QDialog.DialogCode.Accepted:
+                self.canvas.img.LUTs=new_LUTs
+                self.canvas.img.update_LUTs()
+            else:
+                revert_LUTs()
+
+        dialog = LookupTableDialog(self, options=LUT_options, initial_LUTs=initial_LUTs)
+        dialog.valueChanged.connect(apply_LUTs)
+        dialog.rejected.connect(revert_LUTs)
+        dialog.exec()
 
     def _clear_stored_overlays(self):
         for frame in self.stack.frames:

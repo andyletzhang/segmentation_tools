@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QGridLayout,
     QHBoxLayout,
+    QFormLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -432,3 +433,52 @@ class ChannelOrderDialog(QDialog):
         except ValueError:
             QMessageBox.warning(self, 'Invalid Input', f'Invalid input: {self.line_edit.text()}')
             return None
+
+class LookupTableDialog(QDialog):
+    valueChanged=pyqtSignal(list)
+    def __init__(self, parent=None, options=[], initial_LUTs=[]):
+        super().__init__(parent)
+        self.setWindowTitle('Edit LUTs')
+
+        # Layout and widgets
+        layout=QVBoxLayout(self)
+        dropdown_layout = QFormLayout()
+        dropdown_layout.setSpacing(2)
+        self.label = QLabel('Enter lookup tables:', self)
+        layout.addWidget(self.label)
+
+        red_label = QLabel('R:')
+        green_label = QLabel('G:')
+        blue_label = QLabel('B:')
+        self.red_dropdown = QComboBox(self)
+        self.green_dropdown = QComboBox(self)
+        self.blue_dropdown = QComboBox(self)
+
+        for dropdown, current_value in zip([self.red_dropdown, self.green_dropdown, self.blue_dropdown], initial_LUTs):
+            dropdown.addItems(options)
+            dropdown.setCurrentText(current_value)
+            dropdown.currentIndexChanged.connect(self.send_preview)
+        
+        dropdown_layout.addRow(red_label, self.red_dropdown)
+        dropdown_layout.addRow(green_label, self.green_dropdown)
+        dropdown_layout.addRow(blue_label, self.blue_dropdown)
+
+        submit_layout = QHBoxLayout()
+        self.button_confirm = QPushButton('Confirm', self)
+        self.button_cancel = QPushButton('Cancel', self)
+        submit_layout.addStretch()
+        submit_layout.addWidget(self.button_cancel)
+        submit_layout.addWidget(self.button_confirm)
+
+        layout.addLayout(dropdown_layout)
+        layout.addLayout(submit_layout)
+        
+        # Connect buttons
+        self.button_confirm.clicked.connect(self.accept)
+        self.button_cancel.clicked.connect(self.reject)
+
+    def send_preview(self):
+        self.valueChanged.emit(self.get_input())
+
+    def get_input(self):
+        return [self.red_dropdown.currentText(), self.green_dropdown.currentText(), self.blue_dropdown.currentText()]

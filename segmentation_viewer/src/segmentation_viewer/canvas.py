@@ -505,12 +505,25 @@ class RGB_ImageItem:
             self.scene.addItem(item)
             item.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
 
+        # default LUTs
+        self.LUT_options={
+            'Grays': (255,255,255),
+            'Reds': (255,0,0),
+            'Greens': (0,255,0),
+            'Blues': (0,0,255),
+            'Yellows': (255,255,0),
+            'Cyans': (0,255,255),
+            'Magentas': (255,0,255),
+        }
+        self.LUTs = ('Reds','Greens','Grays')
         self.setLookupTable('RGB')
 
         self.img_item = pg.ImageItem(self.image(), levels=(0, 255))
         plot.addItem(self.img_item)
         self.show_grayscale = False
-        self.toggle_grayscale()
+        self.update_LUTs()
+    
+    
 
     def image(self):
         """Get the rendered image from the specified plot."""
@@ -531,7 +544,7 @@ class RGB_ImageItem:
         return rgb_array
 
     def refresh(self):
-        """Refresh the image item."""
+        """Re-render the image item."""
         self.img_item.setImage(self.image(), autoLevels=False)
 
     def setImage(self, img_data):
@@ -550,11 +563,12 @@ class RGB_ImageItem:
         self.scene.setSceneRect(self.scene.itemsBoundingRect())
         self.refresh()
 
-    def toggle_grayscale(self):
+    def update_LUTs(self):
         if self.show_grayscale:
             self.setLookupTable('gray')
         else:
             self.setLookupTable('RGB')
+        self.refresh()
 
     def setLevels(self, levels):
         """Update the levels of the image items based on the sliders."""
@@ -586,13 +600,11 @@ class RGB_ImageItem:
         return [self.create_lut(QColor(255, 255, 255))] * 3
 
     def RGB_lut(self):
-        return [self.create_lut(QColor(255, 0, 0)), self.create_lut(QColor(0, 255, 0)), self.create_lut(QColor(255, 255, 255))]
+        return [self.create_lut(QColor(*self.LUT_options[lut])) for lut in self.LUTs]
 
     def set_grayscale(self, grayscale):
         self.show_grayscale = grayscale
-        self.toggle_grayscale()
-        self.refresh()
-
+        self.update_LUTs()
 
 class CellMaskPolygons:
     """

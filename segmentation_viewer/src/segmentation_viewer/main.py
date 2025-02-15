@@ -3,6 +3,8 @@ import os
 import sys
 from pathlib import Path
 
+import time
+
 import fastremap
 import numpy as np
 import pandas as pd
@@ -33,12 +35,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from scipy import ndimage
-from skimage import draw
-from tqdm import tqdm
-
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
 from segmentation_tools.segmented_comprehension import Cell, SegmentedStack
 from segmentation_tools.utils import cell_scalar_attrs
+from skimage import draw
+from tqdm import tqdm
 
 from .canvas import CellMaskPolygons, CellSplitLines, PyQtGraphCanvas
 from .command_line import CommandLineWindow
@@ -85,7 +86,8 @@ from .utils import create_html_table, load_stylesheet
 # TODO: user can specify membrane channel for volumes tab
 # TODO: mask nan slices during normalization
 
-debug_execution_times=False
+debug_execution_times = False
+
 
 class MainWidget(QMainWindow):
     def __init__(self):
@@ -1578,7 +1580,6 @@ class MainWidget(QMainWindow):
         self.frame.img = self.frame.zstack[self.zstack_number]
         self._update_coordinate_label()
         self.imshow()
-        self._normalize()
 
     def _refresh_right_toolbar(self, cell_attr=None):
         if cell_attr is None:
@@ -1783,6 +1784,9 @@ class MainWidget(QMainWindow):
         """
         if not self.file_loaded:
             return
+        
+
+        start_time=time.time()
         self.frame_number = frame_number
         self.frame_slider.blockSignals(True)
         self.frame_slider.setValue(frame_number)
@@ -1854,6 +1858,9 @@ class MainWidget(QMainWindow):
         self.stat_plot_frame_marker.setPos(self.frame_number)
         self.time_series_frame_marker.setPos(self.frame_number)
         self.status_frame_number.setText(f'Frame: {frame_number}')
+
+        if debug_execution_times:
+            print(f'Total frame change time: {time.time()-start_time:.3f}s')
 
     @property
     def FUCCI_dropdown(self):
@@ -2137,9 +2144,9 @@ class MainWidget(QMainWindow):
                         new_tail_cell, color=new_tail_color, alpha=self.canvas.masks_alpha, layer='mask'
                     )
 
-    def _set_LUTs(self):
+    def _set_LUTs(self, refresh=True):
         """Set the LUTs for the image display based on the current slider values."""
-        self.canvas.img.setLevels(self.left_toolbar.LUT_slider_values)
+        self.canvas.img.setLevels(self.left_toolbar.LUT_slider_values, refresh=refresh)
         self.left_toolbar.update_LUT_labels()
 
     def _update_display(self):
@@ -2149,15 +2156,11 @@ class MainWidget(QMainWindow):
         self._show_seg_overlay()
         img_data = self.frame.img
         seg_data = self.canvas.image_transform(self.frame.outlines)
-        self.canvas.update_display(img_data=img_data, seg_data=seg_data, RGB_checks=self.left_toolbar.RGB_visible)
-        import time
-        start=time.time()
         self._normalize()
-        if debug_execution_times:
-            print('-------------NORMALIZE-------------')
-            print(f'main._normalize: {time.time() - start:.4f}')
+        self.canvas.update_display(img_data=img_data, seg_data=seg_data, RGB_checks=self.left_toolbar.RGB_visible)
 
-    def _auto_range_sliders(self):
+
+    def _autorange_LUT_sliders(self):
         if self.is_grayscale:
             n_colors = 1
         else:
@@ -2197,17 +2200,17 @@ class MainWidget(QMainWindow):
             z_size = self.frame.z_scale
             self.left_toolbar.z_size = z_size
 
-    def _update_normalize_frame(self):
-        if not self.file_loaded:
-            return
-        self._normalize()
-
     def _normalize(self):
+        execution_times = {}
+
+        start_time = time.time()
         if self.is_grayscale:  # single channel
             colors = 1
         else:
             colors = 3
+        execution_times['channel check'] = time.time() - start_time
 
+        start_time = time.time()
         if self.left_toolbar.normalize_type == 'frame':  # normalize the frame
             if self.is_zstack:
                 if hasattr(self.frame, 'bounds'):
@@ -2223,7 +2226,7 @@ class MainWidget(QMainWindow):
                 if hasattr(self.frame, 'bounds') and not self.is_zstack:
                     bounds = self.frame.bounds
                 else:
-                    bounds = np.quantile(self.canvas.img_data.reshape(-1, colors), (0.01, 0.99), axis=0).T
+                    bounds = np.quantile(self.frame.img.reshape(-1, colors), (0.01, 0.99), axis=0).T
                     self.frame.bounds = bounds
 
         elif self.left_toolbar.normalize_type == 'stack':  # normalize the stack
@@ -2242,8 +2245,18 @@ class MainWidget(QMainWindow):
 
         else:  # custom: use the slider values
             bounds = np.array([slider.value() for slider in self.left_toolbar.LUT_range_sliders])
+        execution_times['normalize type handling'] = time.time() - start_time
 
+        start_time = time.time()
         self.left_toolbar.LUT_slider_values = bounds
+        execution_times['self.left_toolbar.LUT_slider_values = bounds'] = time.time() - start_time
+
+        # Print all execution times sorted by duration
+        if debug_execution_times:
+            print('-------------NORMALIZE-------------')
+            sorted_execution_times = sorted(execution_times.items(), key=lambda item: item[1], reverse=True)
+            for description, duration in sorted_execution_times:
+                print(f'{description}: {duration:.4f} seconds')
 
         return bounds
 
@@ -3381,25 +3394,23 @@ class MainWidget(QMainWindow):
 
     def imshow(self):
         """Render any changes to the image data (new file, new frame, new z slice)."""
-        import time
-        
         execution_times = {}
 
-        start_time=time.time()
+        start_time = time.time()
         self._update_tracking_overlay()
-        execution_times['update_tracking_overlay'] = time.time()-start_time
+        execution_times['update_tracking_overlay'] = time.time() - start_time
 
-        start_time=time.time()
+        start_time = time.time()
         self._update_ROIs_label()
-        execution_times['update_ROIs_label'] = time.time()-start_time
+        execution_times['update_ROIs_label'] = time.time() - start_time
 
         self._update_display()
 
-        start_time=time.time()
+        start_time = time.time()
         self._show_seg_overlay()
-        execution_times['show_seg_overlay'] = time.time()-start_time
+        execution_times['show_seg_overlay'] = time.time() - start_time
 
-        start_time=time.time()
+        start_time = time.time()
         self._plot_histogram()
         execution_times['histogram_plot'] = time.time() - start_time
 
@@ -3587,21 +3598,21 @@ class MainWidget(QMainWindow):
             if hasattr(frame, 'bounds'):
                 frame.bounds = frame.bounds[..., channel_order, :]
 
+        self._autorange_LUT_sliders()
         self._update_display()
-        self._auto_range_sliders()
-        self._normalize()
 
     def _change_LUTs(self):
         from .qt import LookupTableDialog
-        LUT_options=list(self.canvas.img.LUT_options.keys())
+
+        LUT_options = list(self.canvas.img.LUT_options.keys())
         initial_LUTs = self.canvas.img.LUTs
 
         def apply_LUTs(new_LUTs):
-            self.canvas.img.LUTs=new_LUTs
+            self.canvas.img.LUTs = new_LUTs
             self.canvas.img.update_LUTs()
 
         def revert_LUTs():
-            self.canvas.img.LUTs=initial_LUTs
+            self.canvas.img.LUTs = initial_LUTs
             self.canvas.img.update_LUTs()
 
         dialog = LookupTableDialog(self, options=LUT_options, initial_LUTs=initial_LUTs)
@@ -3614,7 +3625,6 @@ class MainWidget(QMainWindow):
             if hasattr(frame, 'stored_mask_overlay'):
                 del frame.stored_mask_overlay
         self.canvas.draw_masks_parallel()
-
 
     def rotate_clockwise(self):
         """
@@ -3833,6 +3843,7 @@ class MainWidget(QMainWindow):
             self.frame_slider.setVisible(False)
 
         self.frame_slider.setRange(0, len(self.stack.frames) - 1)
+        self._autorange_LUT_sliders()
         self.change_current_frame(0, reset=True)  # call frame update explicitly (in case the slider value was already at 0)
 
         for frame in self.stack.frames:  # loaded segmentation files will always have outlines
@@ -3842,8 +3853,6 @@ class MainWidget(QMainWindow):
         self.canvas.img_plot.autoRange()
 
         self.left_toolbar.saved_visual_settings = [self.default_visual_settings for _ in range(4)]
-        self._auto_range_sliders()
-        self._normalize()
 
         self.canvas.draw_masks_parallel()
 
@@ -3894,13 +3903,15 @@ class MainWidget(QMainWindow):
                 if os.path.exists(tracking_file.replace('tracking.csv', 'mitoses.csv')):
                     try:
                         stack.mitoses = pd.read_csv(tracking_file.replace('tracking.csv', 'mitoses.csv'), index_col=0)
-                        stack.mitosis_scores = pd.read_csv(tracking_file.replace('tracking.csv', 'mitosis_scores.csv'), index_col=0)
+                        stack.mitosis_scores = pd.read_csv(
+                            tracking_file.replace('tracking.csv', 'mitosis_scores.csv'), index_col=0
+                        )
                         print(f'Loaded mitoses from {tracking_file.replace("tracking.csv", "mitoses.csv")}')
                     except FileNotFoundError:
                         print(f'Failed to load mitoses from {tracking_file.replace("tracking.csv", "mitoses.csv")}')
                         if hasattr(stack, 'mitoses'):
                             del stack.mitoses
-                    
+
             self.file_loaded = True
             return stack
 

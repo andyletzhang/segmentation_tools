@@ -1,15 +1,15 @@
+from multiprocessing import cpu_count
+
 import fastremap
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import QPointF, Qt, QRunnable, pyqtSignal, QObject, QThreadPool
+from PyQt6.QtCore import QObject, QPointF, QRunnable, Qt, QThreadPool, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QCursor, QImage, QPainter, QPainterPath, QPen, QPolygonF
 from PyQt6.QtWidgets import QGraphicsPathItem, QGraphicsPolygonItem, QGraphicsScene, QHBoxLayout, QWidget
 from shapely.geometry import LineString
 from shapely.ops import polygonize, unary_union
-from multiprocessing import cpu_count
 
-
-debug_execution_times=False
+debug_execution_times = False
 
 try:
     import cupy as xp
@@ -24,6 +24,7 @@ except ImportError:
     on_gpu = False
 
 N_CORES = cpu_count()
+
 
 class PyQtGraphCanvas(QWidget):
     def __init__(self, parent=None, cell_n_colors=10, cell_cmap='tab10'):
@@ -181,7 +182,7 @@ class PyQtGraphCanvas(QWidget):
             alpha = self.masks_alpha
         # get cell colors
         if frame is None:
-            frame=self.main_window.frame
+            frame = self.main_window.frame
         try:
             cell_colors = frame.get_cell_attrs('color_ID')  # retrieve the stored colors for each cell
         except AttributeError:
@@ -202,7 +203,7 @@ class PyQtGraphCanvas(QWidget):
             frames = self.main_window.stack.frames
 
         if N_CORES == 1:
-            return # No background loading if only one core is available
+            return  # No background loading if only one core is available
         else:
             self.mask_processor.draw_masks_parallel(frames)
 
@@ -630,16 +631,16 @@ class RGB_ImageItem:
     def setImage(self, img_data):
         self.img_data = img_data
         if img_data.ndim == 2:
-            self.red.setImage(self.img_data)
+            self.red.setImage(self.img_data, autoLevels=False)
             self.green.clear()
             self.blue.clear()
             self.setLookupTable('gray')
         else:  # RGB image
             if self.img_data.shape[-1] == 2:  # two channels--assume RG and convert to RGB
                 self.img_data = np.concatenate((self.img_data, np.zeros((*self.img_data.shape[:-1], 1), dtype=np.uint8)), axis=-1)
-            self.red.setImage(self.img_data[..., 0])
-            self.green.setImage(self.img_data[..., 1])
-            self.blue.setImage(self.img_data[..., 2])
+            self.red.setImage(self.img_data[..., 0], autoLevels=False)
+            self.green.setImage(self.img_data[..., 1], autoLevels=False)
+            self.blue.setImage(self.img_data[..., 2], autoLevels=False)
         self.scene.setSceneRect(self.scene.itemsBoundingRect())
         self.refresh()
 
@@ -650,11 +651,12 @@ class RGB_ImageItem:
             self.setLookupTable('RGB')
         self.refresh()
 
-    def setLevels(self, levels):
+    def setLevels(self, levels, refresh=True):
         """Update the levels of the image items based on the sliders."""
         for level, item in zip(levels, self.channels):
             item.setLevels(level)
-        self.refresh()
+        if refresh:
+            self.refresh()
 
     def getLevels(self):
         """Get the levels of the image items."""
@@ -848,6 +850,7 @@ def inverted_contrast(img):
 class MaskSignals(QObject):
     mask_ready = pyqtSignal(object, object)  # Emits (frame, [img_masks, seg_masks])
 
+
 class MasksLoaderTask(QRunnable):
     def __init__(self, frame, processor):
         super().__init__()
@@ -856,7 +859,7 @@ class MasksLoaderTask(QRunnable):
         self.alpha = processor.canvas.masks_alpha
         self.signals = MaskSignals()
         self._is_canceled = False
-        
+
     def run(self):
         if self._is_canceled:
             return
@@ -864,10 +867,10 @@ class MasksLoaderTask(QRunnable):
         if hasattr(self.frame, 'stored_mask_overlay'):
             self.signals.mask_ready.emit(self.frame, self.frame.stored_mask_overlay)
             return
-        
+
         try:
             canvas = self.processor.canvas
-            
+
             try:
                 cell_colors = self.frame.get_cell_attrs('color_ID')
             except AttributeError:
@@ -878,20 +881,20 @@ class MasksLoaderTask(QRunnable):
                 return
 
             cell_indices = fastremap.unique(self.frame.masks)[1:] - 1
-            
+
             img_masks, seg_masks = canvas.highlight_cells(
-                cell_indices, frame=self.frame, alpha=self.alpha,
-                cell_colors=cell_colors, layer='mask'
+                cell_indices, frame=self.frame, alpha=self.alpha, cell_colors=cell_colors, layer='mask'
             )
-                
+
             if not self._is_canceled:
                 self.signals.mask_ready.emit(self.frame, [img_masks, seg_masks])
-                    
+
         except Exception as e:
-            print(f"Error processing frame: {e}")
-            
+            print(f'Error processing frame: {e}')
+
     def cancel(self):
         self._is_canceled = True
+
 
 class MaskProcessor:
     def __init__(self, canvas, n_cores=None):
@@ -900,11 +903,11 @@ class MaskProcessor:
         if n_cores is not None:
             self.thread_pool.setMaxThreadCount(n_cores)
         self.active_tasks = []
-        
+
     def draw_masks_parallel(self, frames):
         """Processes frames in parallel using QThreadPool."""
         self.abort_all_tasks()
-        
+
         for frame in frames:
             self.add_frame_task(frame)
 
@@ -914,11 +917,11 @@ class MaskProcessor:
         task.signals.mask_ready.connect(self._handle_mask_ready)
         self.active_tasks.append(task)
         self.thread_pool.start(task)
-        
+
     def _handle_mask_ready(self, frame, overlay):
         """Handle completed mask processing."""
         frame.stored_mask_overlay = overlay
-        
+
     def abort_all_tasks(self):
         """Stops all running tasks."""
         for task in self.active_tasks:

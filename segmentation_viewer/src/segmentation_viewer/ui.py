@@ -708,9 +708,9 @@ class LeftToolbar(QScrollArea):
     def _connect_signals(self):
         # Normalize signals
         self.inverted_checkbox.stateChanged.connect(self.main_window._invert_toggled)
-        self.normalize_frame_button.toggled.connect(self.main_window._update_normalize_frame)
-        self.normalize_stack_button.toggled.connect(self.main_window._update_normalize_frame)
-        self.normalize_custom_button.toggled.connect(self.main_window._update_normalize_frame)
+        self.normalize_frame_button.toggled.connect(self.main_window._update_display)
+        self.normalize_stack_button.toggled.connect(self.main_window._update_display)
+        self.normalize_custom_button.toggled.connect(self.main_window._update_display)
 
         # Segmentation overlay signals
         self.masks_checkbox.stateChanged.connect(self.set_masks_visibility)
@@ -815,7 +815,7 @@ class LeftToolbar(QScrollArea):
             slider.blockSignals(True)
             slider.setValue(tuple(bound))
             slider.blockSignals(False)
-        self.main_window._set_LUTs()
+        self.main_window._set_LUTs(refresh=False)
 
     def set_LUT_slider_ranges(self, ranges):
         for slider, slider_range in zip(self.LUT_range_sliders, ranges):

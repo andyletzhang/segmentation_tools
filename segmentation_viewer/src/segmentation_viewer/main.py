@@ -3570,13 +3570,6 @@ class MainWidget(QMainWindow):
             self.canvas.img.LUTs=initial_LUTs
             self.canvas.img.update_LUTs()
 
-        def finish_LUTs(new_LUTs):
-            if dialog.result() == QDialog.DialogCode.Accepted:
-                self.canvas.img.LUTs=new_LUTs
-                self.canvas.img.update_LUTs()
-            else:
-                revert_LUTs()
-
         dialog = LookupTableDialog(self, options=LUT_options, initial_LUTs=initial_LUTs)
         dialog.valueChanged.connect(apply_LUTs)
         dialog.rejected.connect(revert_LUTs)

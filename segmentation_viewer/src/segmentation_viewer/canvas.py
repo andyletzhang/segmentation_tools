@@ -1,11 +1,15 @@
 import fastremap
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import QPointF, Qt
+from PyQt6.QtCore import QPointF, Qt, QRunnable, pyqtSignal, QObject, QThreadPool
 from PyQt6.QtGui import QBrush, QColor, QCursor, QImage, QPainter, QPainterPath, QPen, QPolygonF
 from PyQt6.QtWidgets import QGraphicsPathItem, QGraphicsPolygonItem, QGraphicsScene, QHBoxLayout, QWidget
 from shapely.geometry import LineString
 from shapely.ops import polygonize, unary_union
+from multiprocessing import cpu_count
+
+
+debug_execution_times=False
 
 try:
     import cupy as xp
@@ -19,6 +23,7 @@ except ImportError:
     Warning('cupy and/or cucim not found. Inverted contrast may be slow.')
     on_gpu = False
 
+N_CORES = cpu_count()
 
 class PyQtGraphCanvas(QWidget):
     def __init__(self, parent=None, cell_n_colors=10, cell_cmap='tab10'):
@@ -31,6 +36,7 @@ class PyQtGraphCanvas(QWidget):
         self.outlines_color = 'white'
         self.outlines_alpha = 0.5
         self.masks_alpha = 0.5
+        self.mask_processor = MaskProcessor(self, n_cores=2)
 
         # cell mask colors
         self.cell_n_colors = cell_n_colors
@@ -170,31 +176,58 @@ class PyQtGraphCanvas(QWidget):
         else:
             return random_IDs
 
-    def draw_masks(self, alpha=None):
+    def draw_masks(self, alpha=None, frame=None):
         if alpha is None:
             alpha = self.masks_alpha
         # get cell colors
+        if frame is None:
+            frame=self.main_window.frame
         try:
-            cell_colors = self.main_window.frame.get_cell_attrs('color_ID')  # retrieve the stored colors for each cell
+            cell_colors = frame.get_cell_attrs('color_ID')  # retrieve the stored colors for each cell
         except AttributeError:
             # from monolayer_tracking.networks import color_masks, greedy_color # generate pseudo-random colors
             # random_colors=color_masks(self.main_window.frame.masks)
-            cell_colors = self.random_cell_color(self.main_window.frame.masks.max())
+            cell_colors = self.random_cell_color(frame.masks.max())
             self.main_window.frame.set_cell_attr('color_ID', cell_colors)
 
         # highlight all cells with the specified colors
-        cell_indices = fastremap.unique(self.main_window.frame.masks)[1:] - 1
-        img_masks, seg_masks = self.highlight_cells(cell_indices, alpha=alpha, cell_colors=cell_colors, layer='mask')
+        cell_indices = fastremap.unique(frame.masks)[1:] - 1
+        img_masks, seg_masks = self.highlight_cells(cell_indices, frame=frame, alpha=alpha, cell_colors=cell_colors, layer='mask')
 
-        return img_masks, seg_masks
+        frame.stored_mask_overlay = [img_masks, seg_masks]
+
+    def draw_masks_parallel(self, frames=None):
+        """Process multiple frames in parallel using QThreadPool."""
+        if frames is None:
+            frames = self.main_window.stack.frames
+
+        if N_CORES == 1:
+            return # No background loading if only one core is available
+        else:
+            self.mask_processor.draw_masks_parallel(frames)
+
+    def draw_masks_bg(self, frame):
+        """Process a single frame in the background."""
+        if N_CORES == 1:
+            return
+        else:
+            self.mask_processor.add_frame_task(frame)
 
     def clear_overlay(self, overlay):
-        overlay=getattr(self, f'{overlay}_overlay')
+        overlay = getattr(self, f'{overlay}_overlay')
         overlay[0].clear()
         overlay[1].clear()
 
     def highlight_cells(
-        self, cell_indices, layer='selection', alpha=None, color=None, cell_colors=None, img_type='masks', seg_type='masks'
+        self,
+        cell_indices,
+        frame=None,
+        layer='selection',
+        alpha=None,
+        color=None,
+        cell_colors=None,
+        img_type='masks',
+        seg_type='masks',
     ):
         from matplotlib.colors import to_rgb
 
@@ -203,11 +236,22 @@ class PyQtGraphCanvas(QWidget):
         if color is None:
             color = self.selected_cell_color
 
-        masks = self.main_window.frame.masks
+        if frame is None:
+            frame = self.main_window.frame
+        elif isinstance(frame, int):
+            frame = self.main_window.stack.frames[frame]
 
-        layer = getattr(
-            self, f'{layer}_overlay'
-        )  # get the specified overlay layer: selection for highlighting, mask for colored masks
+        if frame == self.main_window.frame:
+            drawing_layers = True
+        else:
+            if layer != 'mask':
+                Warning(
+                    f'Only mask overlay can be drawn on stored frames, but highlight_cells was called with layer {layer}. Proceeding with mask overlay.'
+                )
+            layer = 'mask'
+            drawing_layers = False
+
+        masks = frame.masks
 
         if cell_colors is None:  # single color mode
             color = [*to_rgb(color), alpha]  # convert color to RGBA
@@ -225,19 +269,17 @@ class PyQtGraphCanvas(QWidget):
         opaque_mask = mask_overlay.copy()
         opaque_mask[mask_overlay[..., -1] != 0, -1] = 1
         if img_type == 'outlines':
-            mask_overlay[self.main_window.frame.outlines == 0] = 0
+            mask_overlay[frame.outlines == 0] = 0
         if seg_type == 'outlines':
-            opaque_mask[self.main_window.frame.outlines == 0] = 0
+            opaque_mask[frame.outlines == 0] = 0
 
         mask_overlay = self.image_transform(mask_overlay)
         opaque_mask = self.image_transform(opaque_mask)
 
-        layer[0].setImage(mask_overlay)
-        layer[1].setImage(opaque_mask)
-
-        # store mask overlays if layer is mask
-        if layer == self.mask_overlay:
-            self.main_window.frame.stored_mask_overlay = [mask_overlay, opaque_mask]
+        if drawing_layers:
+            layer_overlay = getattr(self, f'{layer}_overlay')
+            layer_overlay[0].setImage(mask_overlay)
+            layer_overlay[1].setImage(opaque_mask)
 
         return mask_overlay, opaque_mask
 
@@ -320,24 +362,27 @@ class PyQtGraphCanvas(QWidget):
                     seg_cell_mask[~outlines] = 0
 
             # Add the cell mask to the existing overlay
-            img_out=img_cell_mask[cell_mask_bbox]
-            seg_out=seg_cell_mask[cell_mask_bbox]
+            img_out = img_cell_mask[cell_mask_bbox]
+            seg_out = seg_cell_mask[cell_mask_bbox]
             for out, overlay in zip([img_out, seg_out], overlays):
                 if mode == 'overwrite':
-                    overlay[xmin:xmax, ymin:ymax][cell_mask_bbox]=out
+                    overlay[xmin:xmax, ymin:ymax][cell_mask_bbox] = out
                 elif mode == 'add':
-                    overlay[xmin:xmax, ymin:ymax][cell_mask_bbox]+=out
+                    overlay[xmin:xmax, ymin:ymax][cell_mask_bbox] += out
                 elif mode == 'blend':
-                    current=overlay[xmin:xmax, ymin:ymax][cell_mask_bbox]
-                    alpha_out=out[..., -1]+current[..., -1]-out[..., -1]*current[..., -1]
-                    zero_alpha=alpha_out==0
-                    safe_alpha=alpha_out.copy()
-                    safe_alpha[zero_alpha]=1
-                    out[..., :-1]=(out[..., :-1]*out[..., -1, np.newaxis]+current[..., :-1]*current[..., -1, np.newaxis]*(1-out[..., -1, np.newaxis]))/safe_alpha[..., np.newaxis]
-                    out[..., -1]=alpha_out
-                    out[zero_alpha]=0
+                    current = overlay[xmin:xmax, ymin:ymax][cell_mask_bbox]
+                    alpha_out = out[..., -1] + current[..., -1] - out[..., -1] * current[..., -1]
+                    zero_alpha = alpha_out == 0
+                    safe_alpha = alpha_out.copy()
+                    safe_alpha[zero_alpha] = 1
+                    out[..., :-1] = (
+                        out[..., :-1] * out[..., -1, np.newaxis]
+                        + current[..., :-1] * current[..., -1, np.newaxis] * (1 - out[..., -1, np.newaxis])
+                    ) / safe_alpha[..., np.newaxis]
+                    out[..., -1] = alpha_out
+                    out[zero_alpha] = 0
 
-                    overlay[xmin:xmax, ymin:ymax][cell_mask_bbox]=out
+                    overlay[xmin:xmax, ymin:ymax][cell_mask_bbox] = out
 
         # Update the overlay images
         if drawing_layers:
@@ -418,31 +463,64 @@ class PyQtGraphCanvas(QWidget):
         return self.main_window.is_inverted
 
     def update_display(self, img_data=None, seg_data=None, RGB_checks=None):
+        import time
+
+        execution_times = {}
+        start_time = time.time()
         if img_data is None:
             img_data = self.img_data
+        execution_times['if img_data is None: img_data = self.img_data'] = time.time() - start_time
+
+        start_time = time.time()
         if seg_data is None:
             seg_data = self.seg_data
+        execution_times['if seg_data is None: seg_data = self.seg_data'] = time.time() - start_time
 
-        # RGB checkboxes
+        start_time = time.time()
         self.img_data = img_data.copy()
-        self.seg_data = seg_data.copy()
+        execution_times['self.img_data = img_data.copy()'] = time.time() - start_time
 
+        start_time = time.time()
+        self.seg_data = seg_data.copy()
+        execution_times['self.seg_data = seg_data.copy()'] = time.time() - start_time
+
+        start_time = time.time()
         if RGB_checks is not None:
             for i, check in enumerate(RGB_checks):
                 if not check:
                     self.img_data[..., i] = 0
+        execution_times['RGB_checks handling'] = time.time() - start_time
 
-        # update segmentation overlay
+        start_time = time.time()
         self.draw_outlines()
+        execution_times['self.draw_outlines()'] = time.time() - start_time
 
-        # update masks overlay, use the stored overlay if available
+        start_time = time.time()
         self.overlay_masks()
+        execution_times['self.overlay_masks()'] = time.time() - start_time
 
-        # turn seg_data from grayscale to RGBA
+        start_time = time.time()
         self.seg_data = np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1)
+        execution_times['self.seg_data = np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1)'] = (
+            time.time() - start_time
+        )
 
+        start_time = time.time()
         self.img.setImage(self.img_data)
+        execution_times['self.img.setImage(self.img_data)'] = time.time() - start_time
+
+        start_time = time.time()
         self.seg.setImage(self.seg_data)
+        execution_times['self.seg.setImage(self.seg_data)'] = time.time() - start_time
+
+        # Print all execution times sorted by duration
+        if debug_execution_times:
+            print('-----------UPDATE DISPLAY TIMES-----------')
+            sorted_execution_times = sorted(execution_times.items(), key=lambda item: item[1], reverse=True)
+            for description, duration in sorted_execution_times:
+                if duration < 0.001:
+                    continue
+                print(f'{description}: {duration:.4f} seconds')
 
     def image_transform(self, img_data):
         return np.fliplr(np.rot90(img_data, 3))
@@ -463,6 +541,10 @@ class PyQtGraphCanvas(QWidget):
         self.seg_plot.blockSignals(True)
         self.seg_plot.setRange(xRange=self.img_plot.viewRange()[0], yRange=self.img_plot.viewRange()[1], padding=0)
         self.seg_plot.blockSignals(False)
+
+    def close(self):
+        if hasattr(self, 'mask_processor'):
+            self.mask_processor.abort_all_tasks()
 
 
 class SegPlot(pg.PlotWidget):
@@ -506,24 +588,22 @@ class RGB_ImageItem:
             item.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
 
         # default LUTs
-        self.LUT_options={
-            'Grays': (255,255,255),
-            'Reds': (255,0,0),
-            'Greens': (0,255,0),
-            'Blues': (0,0,255),
-            'Yellows': (255,255,0),
-            'Cyans': (0,255,255),
-            'Magentas': (255,0,255),
+        self.LUT_options = {
+            'Grays': (255, 255, 255),
+            'Reds': (255, 0, 0),
+            'Greens': (0, 255, 0),
+            'Blues': (0, 0, 255),
+            'Yellows': (255, 255, 0),
+            'Cyans': (0, 255, 255),
+            'Magentas': (255, 0, 255),
         }
-        self.LUTs = ('Reds','Greens','Grays')
+        self.LUTs = ('Reds', 'Greens', 'Grays')
         self.setLookupTable('RGB')
 
         self.img_item = pg.ImageItem(self.image(), levels=(0, 255))
         plot.addItem(self.img_item)
         self.show_grayscale = False
         self.update_LUTs()
-    
-    
 
     def image(self):
         """Get the rendered image from the specified plot."""
@@ -605,6 +685,7 @@ class RGB_ImageItem:
     def set_grayscale(self, grayscale):
         self.show_grayscale = grayscale
         self.update_LUTs()
+
 
 class CellMaskPolygons:
     """
@@ -762,3 +843,85 @@ def inverted_contrast(img):
     if on_gpu:
         inverted = inverted.get()
     return inverted
+
+
+class MaskSignals(QObject):
+    mask_ready = pyqtSignal(object, object)  # Emits (frame, [img_masks, seg_masks])
+
+class MasksLoaderTask(QRunnable):
+    def __init__(self, frame, processor):
+        super().__init__()
+        self.frame = frame
+        self.processor = processor
+        self.alpha = processor.canvas.masks_alpha
+        self.signals = MaskSignals()
+        self._is_canceled = False
+        
+    def run(self):
+        if self._is_canceled:
+            return
+
+        if hasattr(self.frame, 'stored_mask_overlay'):
+            self.signals.mask_ready.emit(self.frame, self.frame.stored_mask_overlay)
+            return
+        
+        try:
+            canvas = self.processor.canvas
+            
+            try:
+                cell_colors = self.frame.get_cell_attrs('color_ID')
+            except AttributeError:
+                cell_colors = canvas.random_cell_color(self.frame.masks.max())
+                self.frame.set_cell_attr('color_ID', cell_colors)
+
+            if self._is_canceled:
+                return
+
+            cell_indices = fastremap.unique(self.frame.masks)[1:] - 1
+            
+            img_masks, seg_masks = canvas.highlight_cells(
+                cell_indices, frame=self.frame, alpha=self.alpha,
+                cell_colors=cell_colors, layer='mask'
+            )
+                
+            if not self._is_canceled:
+                self.signals.mask_ready.emit(self.frame, [img_masks, seg_masks])
+                    
+        except Exception as e:
+            print(f"Error processing frame: {e}")
+            
+    def cancel(self):
+        self._is_canceled = True
+
+class MaskProcessor:
+    def __init__(self, canvas, n_cores=None):
+        self.canvas = canvas
+        self.thread_pool = QThreadPool.globalInstance()
+        if n_cores is not None:
+            self.thread_pool.setMaxThreadCount(n_cores)
+        self.active_tasks = []
+        
+    def draw_masks_parallel(self, frames):
+        """Processes frames in parallel using QThreadPool."""
+        self.abort_all_tasks()
+        
+        for frame in frames:
+            self.add_frame_task(frame)
+
+    def add_frame_task(self, frame):
+        """Processes a single frame in the background."""
+        task = MasksLoaderTask(frame, self)
+        task.signals.mask_ready.connect(self._handle_mask_ready)
+        self.active_tasks.append(task)
+        self.thread_pool.start(task)
+        
+    def _handle_mask_ready(self, frame, overlay):
+        """Handle completed mask processing."""
+        frame.stored_mask_overlay = overlay
+        
+    def abort_all_tasks(self):
+        """Stops all running tasks."""
+        for task in self.active_tasks:
+            task.cancel()
+        self.thread_pool.clear()
+        self.active_tasks.clear()

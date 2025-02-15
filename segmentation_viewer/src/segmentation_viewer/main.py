@@ -85,6 +85,7 @@ from .utils import create_html_table, load_stylesheet
 # TODO: user can specify membrane channel for volumes tab
 # TODO: mask nan slices during normalization
 
+debug_execution_times=False
 
 class MainWidget(QMainWindow):
     def __init__(self):
@@ -343,6 +344,7 @@ class MainWidget(QMainWindow):
                 for frame in self.stack.frames:
                     if hasattr(frame, 'stored_mask_overlay'):
                         del frame.stored_mask_overlay
+                self.canvas.draw_masks_parallel()
 
             self.imshow()
             self.select_cell(cell=self.selected_cell_n)
@@ -807,6 +809,7 @@ class MainWidget(QMainWindow):
             mended = frame.mend_gaps(gap_size)
             if mended and hasattr(frame, 'stored_mask_overlay'):
                 del frame.stored_mask_overlay
+        self.canvas.draw_masks_parallel(frames)
 
     def _remove_edge_masks(self):
         if not self.file_loaded:
@@ -850,6 +853,7 @@ class MainWidget(QMainWindow):
             print(f'Removed {len(deleted_cells)} edge cells from frame {frame.frame_number}')
             if hasattr(frame, 'stored_mask_overlay'):
                 del frame.stored_mask_overlay
+        self.canvas.draw_masks_parallel(frames)
         if hasattr(self.stack, 'tracked_centroids'):
             self.left_toolbar.also_save_tracking.setChecked(True)
 
@@ -1090,6 +1094,7 @@ class MainWidget(QMainWindow):
         )
         if hasattr(frame, 'stored_mask_overlay'):
             del frame.stored_mask_overlay
+            self.canvas.draw_masks_bg(frame)
 
     def get_tracked_FUCCI(self):
         """
@@ -1330,6 +1335,7 @@ class MainWidget(QMainWindow):
                 del frame.stored_mask_overlay
             for cell in frame.cells:
                 del cell.color_ID
+        self.canvas.draw_masks_parallel()
 
         self.canvas.draw_masks()
 
@@ -1974,7 +1980,7 @@ class MainWidget(QMainWindow):
         # recolor cells so each particle has one color over time
         for frame in self.stack.frames:
             if hasattr(frame, 'stored_mask_overlay'):
-                del frame.stored_mask_overlay  # remove the mask_overlay attribute to force recoloring
+                del frame.stored_mask_overlay
 
         t = self.stack.tracked_centroids
         colors = self.canvas.random_color_ID(t['particle'].max() + 1)
@@ -1982,6 +1988,8 @@ class MainWidget(QMainWindow):
         for frame in self.stack.frames:
             tracked_frame = t[t.frame == frame.frame_number].sort_values('cell_number')
             frame.set_cell_attrs('color_ID', self.canvas.cell_cmap(tracked_frame['color']))
+
+        self.canvas.draw_masks_parallel()
 
     def particle_from_cell(self, cell_number, frame_number=None):
         """
@@ -2142,7 +2150,12 @@ class MainWidget(QMainWindow):
         img_data = self.frame.img
         seg_data = self.canvas.image_transform(self.frame.outlines)
         self.canvas.update_display(img_data=img_data, seg_data=seg_data, RGB_checks=self.left_toolbar.RGB_visible)
+        import time
+        start=time.time()
         self._normalize()
+        if debug_execution_times:
+            print('-------------NORMALIZE-------------')
+            print(f'main._normalize: {time.time() - start:.4f}')
 
     def _auto_range_sliders(self):
         if self.is_grayscale:
@@ -2946,7 +2959,6 @@ class MainWidget(QMainWindow):
 
         if frame_number == self.frame_number:
             self._update_tracking_overlay()
-            self.canvas.draw_outlines()
             self.select_cell(cell=selected_cell_n)
             self._update_ROIs_label()
             self._update_display()
@@ -3071,7 +3083,6 @@ class MainWidget(QMainWindow):
         if update_display:
             print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
             if frame == self.frame:
-                self.canvas.draw_outlines()
                 self._update_tracking_overlay()
                 self._update_display()
                 self._update_ROIs_label()
@@ -3370,12 +3381,35 @@ class MainWidget(QMainWindow):
 
     def imshow(self):
         """Render any changes to the image data (new file, new frame, new z slice)."""
-        self.canvas.draw_outlines()
+        import time
+        
+        execution_times = {}
+
+        start_time=time.time()
         self._update_tracking_overlay()
+        execution_times['update_tracking_overlay'] = time.time()-start_time
+
+        start_time=time.time()
         self._update_ROIs_label()
+        execution_times['update_ROIs_label'] = time.time()-start_time
+
         self._update_display()
+
+        start_time=time.time()
         self._show_seg_overlay()
+        execution_times['show_seg_overlay'] = time.time()-start_time
+
+        start_time=time.time()
         self._plot_histogram()
+        execution_times['histogram_plot'] = time.time() - start_time
+
+        if debug_execution_times:
+            print('-----------IMSHOW TIMES-----------')
+            sorted_execution_times = sorted(execution_times.items(), key=lambda item: item[1], reverse=True)
+            for description, duration in sorted_execution_times:
+                if duration < 0.001:
+                    continue
+                print(f'{description}: {duration:.4f} seconds')
 
     def keyPressEvent(self, event):
         """Handle key press events (e.g., arrow keys for frame navigation)."""
@@ -3579,6 +3613,8 @@ class MainWidget(QMainWindow):
         for frame in self.stack.frames:
             if hasattr(frame, 'stored_mask_overlay'):
                 del frame.stored_mask_overlay
+        self.canvas.draw_masks_parallel()
+
 
     def rotate_clockwise(self):
         """
@@ -3808,6 +3844,8 @@ class MainWidget(QMainWindow):
         self.left_toolbar.saved_visual_settings = [self.default_visual_settings for _ in range(4)]
         self._auto_range_sliders()
         self._normalize()
+
+        self.canvas.draw_masks_parallel()
 
     def _open_files(self):
         files = QFileDialog.getOpenFileNames(self, 'Open file(s)', filter='*seg.npy *.tif *.tiff *.nd2')[0]
@@ -4047,6 +4085,7 @@ class MainWidget(QMainWindow):
                     pass
 
         self._dump_config()
+        self.canvas.close()
         event.accept()
 
 

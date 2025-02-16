@@ -73,7 +73,6 @@ class BoundsProcessor:
 
     def _handle_bounds_ready(self, frame, bounds):
         """Handle completed bounds calculation"""
-        print(f'Calculated bounds for frame {frame.frame_number}')
         frame.bounds = bounds
 
     def abort_all_tasks(self):
@@ -146,7 +145,6 @@ class MaskProcessor:
 
     def _handle_mask_ready(self, frame, overlay):
         """Handle completed mask processing."""
-        print(f'Processed masks for frame {frame.frame_number}')
         frame.stored_mask_overlay = overlay
 
     def abort_all_tasks(self):

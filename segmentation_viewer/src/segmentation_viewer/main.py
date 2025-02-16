@@ -38,6 +38,7 @@ from scipy import ndimage
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
 from segmentation_tools.segmented_comprehension import Cell, SegmentedStack
 from segmentation_tools.utils import cell_scalar_attrs
+from segmentation_tools.preprocessing import get_quantile
 from skimage import draw
 from tqdm import tqdm
 
@@ -1784,9 +1785,8 @@ class MainWidget(QMainWindow):
         """
         if not self.file_loaded:
             return
-        
 
-        start_time=time.time()
+        start_time = time.time()
         self.frame_number = frame_number
         self.frame_slider.blockSignals(True)
         self.frame_slider.setValue(frame_number)
@@ -1860,7 +1860,7 @@ class MainWidget(QMainWindow):
         self.status_frame_number.setText(f'Frame: {frame_number}')
 
         if debug_execution_times:
-            print(f'Total frame change time: {time.time()-start_time:.3f}s')
+            print(f'Total frame change time: {time.time() - start_time:.3f}s')
 
     @property
     def FUCCI_dropdown(self):
@@ -2159,7 +2159,6 @@ class MainWidget(QMainWindow):
         self._normalize()
         self.canvas.update_display(img_data=img_data, seg_data=seg_data, RGB_checks=self.left_toolbar.RGB_visible)
 
-
     def _autorange_LUT_sliders(self):
         if self.is_grayscale:
             n_colors = 1
@@ -2204,48 +2203,31 @@ class MainWidget(QMainWindow):
         execution_times = {}
 
         start_time = time.time()
-        if self.is_grayscale:  # single channel
-            colors = 1
-        else:
-            colors = 3
         execution_times['channel check'] = time.time() - start_time
 
         start_time = time.time()
         if self.left_toolbar.normalize_type == 'frame':  # normalize the frame
-            if self.is_zstack:
-                if hasattr(self.frame, 'bounds'):
+            if hasattr(self.frame, 'bounds'):
+                if self.is_zstack:
                     bounds = self.frame.bounds[self.zstack_number]
                 else:
-                    zstack_bounds = np.quantile(
-                        self.frame.zstack.reshape(self.frame.zstack.shape[0], -1, colors), (0.01, 0.99), axis=1
-                    ).transpose(1, 2, 0)
-                    self.frame.bounds = zstack_bounds
-                    bounds = zstack_bounds[self.zstack_number]
+                    bounds = self.frame.bounds
 
             else:
-                if hasattr(self.frame, 'bounds') and not self.is_zstack:
-                    bounds = self.frame.bounds
-                else:
-                    bounds = np.quantile(self.frame.img.reshape(-1, colors), (0.01, 0.99), axis=0).T
-                    self.frame.bounds = bounds
+                bounds = self._get_frame_bounds(self.frame)
+                self.frame.bounds = bounds
 
         elif self.left_toolbar.normalize_type == 'stack':  # normalize the stack
             if hasattr(self.stack, 'bounds'):
                 bounds = self.stack.bounds
             else:
-                if self.is_zstack:
-                    all_imgs = np.array([frame.zstack for frame in self.stack.frames]).reshape(-1, colors)
-                else:
-                    all_imgs = np.array([frame.img for frame in self.stack.frames]).reshape(-1, colors)
-                if len(all_imgs) > 1e6:
-                    # downsample to speed up calculation
-                    all_imgs = all_imgs[:: len(all_imgs) // int(1e6)]
-                bounds = np.quantile(all_imgs, (0.01, 0.99), axis=0).T
+                bounds = self._get_stack_bounds()
                 self.stack.bounds = bounds
 
         else:  # custom: use the slider values
             bounds = np.array([slider.value() for slider in self.left_toolbar.LUT_range_sliders])
-        execution_times['normalize type handling'] = time.time() - start_time
+
+        execution_times['bounds retrieval'] = time.time() - start_time
 
         start_time = time.time()
         self.left_toolbar.LUT_slider_values = bounds
@@ -2257,6 +2239,55 @@ class MainWidget(QMainWindow):
             sorted_execution_times = sorted(execution_times.items(), key=lambda item: item[1], reverse=True)
             for description, duration in sorted_execution_times:
                 print(f'{description}: {duration:.4f} seconds')
+
+        return bounds
+
+    def _get_frame_bounds(self, frame):
+        """Get the bounds of the frame for normalization."""
+        if hasattr(frame, 'zstack'):
+            img = frame.zstack
+            is_grayscale = img.ndim == 3
+        else:
+            img = frame.img
+            is_grayscale = img.ndim == 2
+
+        if is_grayscale:
+            img = img.reshape(*img.shape, 1)
+
+        bounds = get_quantile(img, q=(1, 99), mask_zeros=True)
+        return bounds
+
+    def _get_stack_bounds(self):
+        """Get the bounds of the stack for normalization."""
+        if not self.file_loaded:
+            return
+        first_frame = self.stack.frames[0]
+        if hasattr(first_frame, 'zstack'):
+            shape = first_frame.zstack.shape
+            is_grayscale = len(shape) == 3
+        else:
+            shape = first_frame.img.shape
+            is_grayscale = len(shape) == 2
+
+        img_size = np.prod(shape)
+        downsample_factor = img_size // int(1e6)
+
+        if downsample_factor == 0:
+            downsample_factor = 1
+
+        all_imgs = []
+        for frame in self.stack.frames:
+            if hasattr(frame, 'zstack'):
+                img = frame.zstack
+                img = img[:, ::downsample_factor]
+            else:
+                img = frame.img
+                img = img[::downsample_factor]
+            if is_grayscale:
+                img = img.reshape(*img.shape, 1)
+            all_imgs.append(img)
+        all_imgs = np.stack(all_imgs)
+        bounds = get_quantile(all_imgs, q=(1, 99), mask_zeros=True)
 
         return bounds
 

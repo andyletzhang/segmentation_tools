@@ -145,12 +145,11 @@ def quantile_mono(img, q=(1, 99), mask_zeros: bool = False):
     # Transfer data to GPU
     img = xp.asarray(img)
 
+    if img.max()==0:
+        return xp.array([0, 1])
     if mask_zeros:
         # Create mask for non-zero values
         nonzero_mask = img != 0
-        if not xp.any(nonzero_mask):
-            # Handle case where channel is all zeros
-            bounds=xp.array([0, 0])
             
         # Calculate percentiles only on non-zero values
         img_filtered = img[nonzero_mask]

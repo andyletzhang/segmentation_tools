@@ -403,9 +403,13 @@ class TimeStack(SegmentedStack):
         else:
             t.loc[(t.particle == particle_ID) & (t.frame >= split_frame), 'particle'] = new_particle_ID
             if hasattr(self, 'mitoses'):
-                needs_editing = ((self.mitoses[['mother', 'daughter1', 'daughter2']] == particle_ID).any(axis=1)) & (self.mitoses['frame'] >= split_frame)
+                needs_editing = ((self.mitoses[['mother', 'daughter1', 'daughter2']] == particle_ID).any(axis=1)) & (
+                    self.mitoses['frame'] >= split_frame
+                )
                 self.mitoses.loc[needs_editing, ['mother', 'daughter1', 'daughter2']] = fastremap.remap(
-                    self.mitoses.loc[needs_editing, ['mother', 'daughter1', 'daughter2']].values, {particle_ID: new_particle_ID}, preserve_missing_labels=True
+                    self.mitoses.loc[needs_editing, ['mother', 'daughter1', 'daughter2']].values,
+                    {particle_ID: new_particle_ID},
+                    preserve_missing_labels=True,
                 )
             return new_particle_ID
 
@@ -760,7 +764,7 @@ class TimeStack(SegmentedStack):
         Returns:
             list: List of potential mitotic events, each represented as a DataFrame containing information about mother and daughter cells.
         """
-        from .mitosis_detection import get_viable_mitoses, get_mitosis_scores, threshold_mitoses
+        from .mitosis_detection import get_mitosis_scores, get_viable_mitoses, threshold_mitoses
 
         if not hasattr(self, 'tracked_centroids'):
             self.track_centroids(**kwargs)

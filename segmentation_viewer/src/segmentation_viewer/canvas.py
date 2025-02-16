@@ -3,11 +3,13 @@ from multiprocessing import cpu_count
 import fastremap
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import QObject, QPointF, QRunnable, Qt, QThreadPool, pyqtSignal
+from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QBrush, QColor, QCursor, QImage, QPainter, QPainterPath, QPen, QPolygonF
 from PyQt6.QtWidgets import QGraphicsPathItem, QGraphicsPolygonItem, QGraphicsScene, QHBoxLayout, QWidget
 from shapely.geometry import LineString
 from shapely.ops import polygonize, unary_union
+
+from .workers import MaskProcessor
 
 debug_execution_times = False
 
@@ -845,86 +847,3 @@ def inverted_contrast(img):
     if on_gpu:
         inverted = inverted.get()
     return inverted
-
-
-class MaskSignals(QObject):
-    mask_ready = pyqtSignal(object, object)  # Emits (frame, [img_masks, seg_masks])
-
-
-class MasksLoaderTask(QRunnable):
-    def __init__(self, frame, processor):
-        super().__init__()
-        self.frame = frame
-        self.processor = processor
-        self.alpha = processor.canvas.masks_alpha
-        self.signals = MaskSignals()
-        self._is_canceled = False
-
-    def run(self):
-        if self._is_canceled:
-            return
-
-        if hasattr(self.frame, 'stored_mask_overlay'):
-            self.signals.mask_ready.emit(self.frame, self.frame.stored_mask_overlay)
-            return
-
-        try:
-            canvas = self.processor.canvas
-
-            try:
-                cell_colors = self.frame.get_cell_attrs('color_ID')
-            except AttributeError:
-                cell_colors = canvas.random_cell_color(self.frame.masks.max())
-                self.frame.set_cell_attr('color_ID', cell_colors)
-
-            if self._is_canceled:
-                return
-
-            cell_indices = fastremap.unique(self.frame.masks)[1:] - 1
-
-            img_masks, seg_masks = canvas.highlight_cells(
-                cell_indices, frame=self.frame, alpha=self.alpha, cell_colors=cell_colors, layer='mask'
-            )
-
-            if not self._is_canceled:
-                self.signals.mask_ready.emit(self.frame, [img_masks, seg_masks])
-
-        except Exception as e:
-            print(f'Error processing frame: {e}')
-
-    def cancel(self):
-        self._is_canceled = True
-
-
-class MaskProcessor:
-    def __init__(self, canvas, n_cores=None):
-        self.canvas = canvas
-        self.thread_pool = QThreadPool.globalInstance()
-        if n_cores is not None:
-            self.thread_pool.setMaxThreadCount(n_cores)
-        self.active_tasks = []
-
-    def draw_masks_parallel(self, frames):
-        """Processes frames in parallel using QThreadPool."""
-        self.abort_all_tasks()
-
-        for frame in frames:
-            self.add_frame_task(frame)
-
-    def add_frame_task(self, frame):
-        """Processes a single frame in the background."""
-        task = MasksLoaderTask(frame, self)
-        task.signals.mask_ready.connect(self._handle_mask_ready)
-        self.active_tasks.append(task)
-        self.thread_pool.start(task)
-
-    def _handle_mask_ready(self, frame, overlay):
-        """Handle completed mask processing."""
-        frame.stored_mask_overlay = overlay
-
-    def abort_all_tasks(self):
-        """Stops all running tasks."""
-        for task in self.active_tasks:
-            task.cancel()
-        self.thread_pool.clear()
-        self.active_tasks.clear()

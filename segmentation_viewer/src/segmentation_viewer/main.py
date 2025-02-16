@@ -49,6 +49,8 @@ from .qt import CustomComboBox, SubstackDialog
 from .scripting import ScriptWindow
 from .ui import LeftToolbar, labeled_LUT_slider
 from .utils import create_html_table, load_stylesheet
+from .workers import BoundsProcessor
+from multiprocessing import cpu_count
 
 # high priority
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
@@ -88,7 +90,7 @@ from .utils import create_html_table, load_stylesheet
 # TODO: mask nan slices during normalization
 
 debug_execution_times = False
-
+N_CORES = cpu_count()
 
 class MainWidget(QMainWindow):
     def __init__(self):
@@ -110,6 +112,8 @@ class MainWidget(QMainWindow):
         self.is_iterating = False
         self.circle_mask = None
         self.mitosis_mode = 0
+        self.bounds_processor = BoundsProcessor(self, n_cores=1)
+
 
         # Status bar
         self.status_cell = QLabel('Selected Cell: None', self)
@@ -2207,22 +2211,19 @@ class MainWidget(QMainWindow):
 
         start_time = time.time()
         if self.left_toolbar.normalize_type == 'frame':  # normalize the frame
-            if hasattr(self.frame, 'bounds'):
-                if self.is_zstack:
-                    bounds = self.frame.bounds[self.zstack_number]
-                else:
-                    bounds = self.frame.bounds
+            if not hasattr(self.frame, 'bounds'):
+                self.frame.bounds = self._get_frame_bounds(self.frame)
 
+            if self.is_zstack:
+                bounds = self.frame.bounds[self.zstack_number]
             else:
-                bounds = self._get_frame_bounds(self.frame)
-                self.frame.bounds = bounds
+                bounds = self.frame.bounds
 
         elif self.left_toolbar.normalize_type == 'stack':  # normalize the stack
-            if hasattr(self.stack, 'bounds'):
-                bounds = self.stack.bounds
-            else:
-                bounds = self._get_stack_bounds()
-                self.stack.bounds = bounds
+            if not hasattr(self.stack, 'bounds'):
+                self.stack.bounds = self._get_stack_bounds()
+
+            bounds = self.stack.bounds
 
         else:  # custom: use the slider values
             bounds = np.array([slider.value() for slider in self.left_toolbar.LUT_range_sliders])
@@ -2248,15 +2249,29 @@ class MainWidget(QMainWindow):
             img = frame.zstack
             is_grayscale = img.ndim == 3
         else:
-            img = frame.img
+            img = frame.img.reshape(1, *frame.img.shape)
             is_grayscale = img.ndim == 2
 
         if is_grayscale:
             img = img.reshape(*img.shape, 1)
 
-        bounds = get_quantile(img, q=(1, 99), mask_zeros=True)
-        return bounds
+        bounds=[]
+        for z_slice in img:
+            bounds.append(get_quantile(z_slice, q=(1, 99), mask_zeros=True))
+        return np.squeeze(bounds)
 
+    def _precompute_bounds(self, frames=None):
+        if not self.file_loaded:
+            return
+        
+        if frames is None:
+            frames = self.stack.frames
+        
+        if N_CORES == 1:
+            return
+        else:
+            self.bounds_processor.process_frames(frames)
+        
     def _get_stack_bounds(self):
         """Get the bounds of the stack for normalization."""
         if not self.file_loaded:
@@ -3885,6 +3900,7 @@ class MainWidget(QMainWindow):
 
         self.left_toolbar.saved_visual_settings = [self.default_visual_settings for _ in range(4)]
 
+        self._precompute_bounds()
         self.canvas.draw_masks_parallel()
 
     def _open_files(self):

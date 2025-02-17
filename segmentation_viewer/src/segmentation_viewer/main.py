@@ -2216,7 +2216,7 @@ class MainWidget(QMainWindow):
                 self.frame.bounds = self._get_frame_bounds(self.frame)
 
             if self.is_zstack:
-                bounds = self.frame.bounds[self.zstack_number]
+                bounds = [self.frame.bounds[self.zstack_number]]
             else:
                 bounds = self.frame.bounds
 

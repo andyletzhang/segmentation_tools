@@ -1953,6 +1953,7 @@ class MainWidget(QMainWindow):
         print(f'Tracked centroids for stack {self.stack.name}')
         self.left_toolbar.tracking_range.setText(f'{self.stack.tracking_range:.2f}')
         self.statusBar().showMessage(f'Tracked centroids for stack {self.stack.name}.', 2000)
+        self._update_tracking_overlay()
         self._recolor_tracks()
         self.canvas.draw_masks()
         self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(True)

@@ -177,6 +177,8 @@ def resolve_conflicts(candidates_df):
 
     mother_conflicts = candidates_df.groupby('mother').size() > 1
     mother_conflicts = mother_conflicts[mother_conflicts].index
+    if len(mother_conflicts) == 0:
+        return candidates_df
     daughter_conflicts = pd.concat([candidates_df['daughter1'], candidates_df['daughter2']]).value_counts() > 1
     daughter_conflicts = daughter_conflicts[daughter_conflicts].index
 

@@ -3707,8 +3707,7 @@ class MainWidget(QMainWindow):
 
         def finish_reordering(channel_order):
             """Apply the channel order to the entire stack."""
-            if self.reorder_dialog.result() == QDialog.DialogCode.Accepted:
-                self.reorder_channels(channel_order)
+            self.reorder_channels(channel_order)
 
         # Prompt the user for the channel order
         self.reorder_dialog = ChannelOrderDialog(self)

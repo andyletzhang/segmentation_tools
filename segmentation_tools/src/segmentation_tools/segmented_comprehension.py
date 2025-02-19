@@ -1233,7 +1233,7 @@ class SegmentedImage:
 
     def set_cell_attr(self, attribute, values):
         if len(values) != len(self.cells):
-            raise ValueError(f'Length of values ({len(values)}) must match the number of cells ({len(self.cells)}) in the image')
+            raise ValueError(f'Error setting attribute {attribute}: Length of values ({len(values)}) must match the number of cells ({len(self.cells)}) in the image')
         for cell, value in zip(self.cells, values):
             setattr(cell, attribute, value)
 

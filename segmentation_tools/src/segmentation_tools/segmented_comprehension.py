@@ -356,11 +356,9 @@ class TimeStack(SegmentedStack):
             second_ID = self.split_particle_track(second_ID, frame)  # reassign second_ID in case of split
 
         # merge particles
-        t['particle'] = fastremap.remap(t['particle'].values, {second_ID: first_ID}, preserve_missing_labels=True)
+        t['particle'] = t['particle'].replace({second_ID: first_ID})
         if hasattr(self, 'mitoses'):
-            self.mitoses[['mother', 'daughter1', 'daughter2']] = fastremap.remap(
-                self.mitoses[['mother', 'daughter1', 'daughter2']].values, {second_ID: first_ID}, preserve_missing_labels=True
-            )
+            self.mitoses[['mother', 'daughter1', 'daughter2']] = self.mitoses[['mother', 'daughter1', 'daughter2']].replace({second_ID: first_ID})
 
         # new merged ID
         f, c = t.loc[t.particle == first_ID][['frame', 'cell_number']].values[0]
@@ -376,11 +374,8 @@ class TimeStack(SegmentedStack):
         Renumber particle IDs so that they are contiguous.
         """
         t = self.tracked_centroids
-        t['particle'], map = fastremap.renumber(t['particle'].values)
-        if hasattr(self, 'mitoses'):
-            self.mitoses[['mother', 'daughter1', 'daughter2']] = fastremap.remap(
-                self.mitoses[['mother', 'daughter1', 'daughter2']].values, map
-            )
+        t['particle'], remap = fastremap.renumber(t['particle'].values)
+        self.mitoses[['mother', 'daughter1', 'daughter2']] = self.mitoses[['mother', 'daughter1', 'daughter2']].replace(remap)
         return t['particle']
 
     def split_particle_track(self, particle_ID, split_frame):
@@ -406,11 +401,7 @@ class TimeStack(SegmentedStack):
                 needs_editing = ((self.mitoses[['mother', 'daughter1', 'daughter2']] == particle_ID).any(axis=1)) & (
                     self.mitoses['frame'] >= split_frame
                 )
-                self.mitoses.loc[needs_editing, ['mother', 'daughter1', 'daughter2']] = fastremap.remap(
-                    self.mitoses.loc[needs_editing, ['mother', 'daughter1', 'daughter2']].values,
-                    {particle_ID: new_particle_ID},
-                    preserve_missing_labels=True,
-                )
+                self.mitoses.loc[needs_editing, ['mother', 'daughter1', 'daughter2']] = self.mitoses.loc[needs_editing, ['mother', 'daughter1', 'daughter2']].replace({particle_ID: new_particle_ID})
             return new_particle_ID
 
     # -------------Retrieve Tracking Data-------------

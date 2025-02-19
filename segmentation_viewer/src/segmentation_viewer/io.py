@@ -1,12 +1,15 @@
+import os
 import re
+from typing import List, Optional
 
 import numpy as np
 from nd2 import ND2File
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QValidator
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -19,9 +22,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from tifffile import TiffFile
-
 from segmentation_tools.io import read_nd2, read_nd2_shape, read_tif, read_tif_shape
+from tifffile import TiffFile
 
 
 def read_image_file(file_path, progress_bar=None, image_shape=None, **progress_kwargs):
@@ -219,7 +221,7 @@ class ExportWizard(QDialog):
         main_layout.addLayout(button_layout)
 
     def browse_save_location(self):
-        file_path, _ = QFileDialog.getSaveFileName(self, 'Save As', '', 'CSV Files (*.csv);;All Files (*)')
+        file_path, _ = CustomFileDialog.getSaveFileName(self, 'Save As', '', 'CSV Files (*.csv);;All Files (*)')
         if file_path:
             self.save_input.setText(file_path)
 
@@ -408,3 +410,160 @@ def range_string_to_list(range_str):
         return indices
     except ValueError as e:
         raise ValueError(f'Invalid range format: {e}')
+
+
+class CustomFileDialog(QFileDialog):
+    """
+    Enhanced file dialog that extends QFileDialog with customizable appearance and behavior.
+    Designed to integrate with application themes by using the Qt-styled dialog instead of native dialogs.
+    """
+
+    def __init__(self, parent=None, select_folders: bool = False, **kwargs):
+        """
+        Initialize a custom file dialog with enhanced functionality.
+
+        Args:
+            parent: Parent widget
+            select_folders: Whether to enable folder selection alongside files
+            **kwargs: Additional QFileDialog parameters
+        """
+        super().__init__(parent, **kwargs)
+        self.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+        self.select_folders = select_folders
+        self.save_stack_checkbox: Optional[QCheckBox] = None
+
+        # Use QTimer to ensure dialog is fully constructed before modifying
+        QTimer.singleShot(0, self.setup_button_connections)
+
+    def setup_button_connections(self) -> None:
+        """Configure custom button behavior after dialog initialization"""
+        button_box = self.findChild(QDialogButtonBox)
+        if not button_box:
+            return
+
+        open_button = button_box.button(QDialogButtonBox.StandardButton.Open)
+        if not open_button:
+            return
+
+        # Disconnect existing connections and connect our custom handler
+        open_button.clicked.disconnect()
+        open_button.clicked.connect(self._handle_open_click)
+
+    def _handle_open_click(self) -> None:
+        """
+        Custom handler for the Open/Save button click.
+        Handles directory selection based on configuration.
+        """
+        selected_files = self.selectedFiles()
+        if not selected_files:
+            self.reject()
+            return
+
+        selected_path = selected_files[0]
+
+        # Special handling for folder selection if enabled
+        if self.select_folders and os.path.isdir(selected_path):
+            original_mode = self.fileMode()
+            try:
+                self.setFileMode(QFileDialog.FileMode.Directory)
+                self.accept()
+            finally:
+                # Ensure mode is restored even if an exception occurs
+                self.setFileMode(original_mode)
+        else:
+            self.accept()
+
+    def _get_files(self) -> List[str]:
+        """
+        Execute the dialog and return selected files.
+
+        Returns:
+            List of selected file paths or empty list if canceled
+        """
+        self.setDirectory(self.directory())  # Forces QFileDialog to refresh
+        if self.exec() == QDialog.DialogCode.Accepted:
+            return self.selectedFiles()
+        else:
+            return []
+
+    def _add_stack_checkbox(self, default_state: bool = False) -> None:
+        """
+        Add a 'Save Stack' checkbox to the dialog.
+
+        Args:
+            default_state: Initial checked state of the checkbox
+        """
+        self.save_stack_checkbox = QCheckBox('Save Stack', self)
+        self.save_stack_checkbox.setChecked(default_state)
+
+        layout = self.layout()
+        if layout:
+            layout.addWidget(self.save_stack_checkbox)
+
+    def is_stack_checked(self) -> bool:
+        """
+        Check if the stack checkbox is checked.
+
+        Returns:
+            True if checkbox exists and is checked, False otherwise
+        """
+        return self.save_stack_checkbox.isChecked() if self.save_stack_checkbox else False
+
+    @staticmethod
+    def getOpenFileName(parent=None, caption: str = '', directory: str = '', filter: str = '', **kwargs) -> str:
+        """
+        Static method to get a single file path, similar to QFileDialog.getOpenFileName.
+
+        Returns:
+            Selected file path or empty string if canceled
+        """
+        dialog = CustomFileDialog(parent, caption=caption, directory=directory, filter=filter, **kwargs)
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
+        dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+
+        files = dialog._get_files()
+        return files[0] if files else ''
+
+    @staticmethod
+    def getOpenFileNames(parent=None, caption: str = '', directory: str = '', filter: str = '', **kwargs) -> List[str]:
+        """
+        Static method to get multiple file paths, similar to QFileDialog.getOpenFileNames.
+
+        Returns:
+            List of selected file paths or empty list if canceled
+        """
+        dialog = CustomFileDialog(parent, select_folders=True, caption=caption, directory=directory, filter=filter, **kwargs)
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
+        dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
+
+        return dialog._get_files()
+
+    @staticmethod
+    def getExistingDirectory(parent=None, caption: str = '', directory: str = '', **kwargs) -> str:
+        """
+        Static method to get a directory path, similar to QFileDialog.getExistingDirectory.
+
+        Returns:
+            Selected directory path or empty string if canceled
+        """
+
+        dialog = CustomFileDialog(parent, caption=caption, directory=directory, select_folders=True, **kwargs)
+        dialog.setFileMode(QFileDialog.FileMode.Directory)
+        dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
+
+        files = dialog._get_files()
+        return files[0] if files else ''
+
+    @staticmethod
+    def getSaveFileName(parent=None, caption: str = '', directory: str = '', filter: str = '', **kwargs) -> str:
+        """
+        Static method to get a save file path, similar to QFileDialog.getSaveFileName.
+
+        Returns:
+            Selected save file path or empty string if canceled
+        """
+        dialog = CustomFileDialog(parent, caption=caption, directory=directory, filter=filter, **kwargs)
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+
+        files = dialog._get_files()
+        return files[0] if files else ''

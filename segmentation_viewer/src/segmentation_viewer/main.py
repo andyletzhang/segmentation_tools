@@ -1,9 +1,9 @@
 import importlib.resources
 import os
 import sys
-from pathlib import Path
-
 import time
+from multiprocessing import cpu_count
+from pathlib import Path
 
 import fastremap
 import numpy as np
@@ -16,7 +16,6 @@ from PyQt6.QtGui import QFontMetrics, QIcon, QIntValidator
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
-    QFileDialog,
     QFormLayout,
     QGraphicsEllipseItem,
     QHBoxLayout,
@@ -36,21 +35,20 @@ from PyQt6.QtWidgets import (
 )
 from scipy import ndimage
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
+from segmentation_tools.preprocessing import get_quantile
 from segmentation_tools.segmented_comprehension import Cell, SegmentedStack
 from segmentation_tools.utils import cell_scalar_attrs
-from segmentation_tools.preprocessing import get_quantile
 from skimage import draw
 from tqdm import tqdm
 
 from .canvas import CellMaskPolygons, CellSplitLines, PyQtGraphCanvas
 from .command_line import CommandLineWindow
-from .io import ExportWizard
+from .io import CustomFileDialog, ExportWizard
 from .qt import CustomComboBox, SubstackDialog
 from .scripting import ScriptWindow
 from .ui import LeftToolbar, labeled_LUT_slider
 from .utils import create_html_table, load_stylesheet
 from .workers import BoundsProcessor
-from multiprocessing import cpu_count
 
 # high priority
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
@@ -59,7 +57,6 @@ from multiprocessing import cpu_count
 # TODO: export segplot as gif
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
-# TODO: File -> export heights tif, import heights tif
 # TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
 
 # low priority
@@ -92,6 +89,7 @@ from multiprocessing import cpu_count
 debug_execution_times = False
 N_CORES = cpu_count()
 
+
 class MainWidget(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -113,7 +111,8 @@ class MainWidget(QMainWindow):
         self.circle_mask = None
         self.mitosis_mode = 0
         self.bounds_processor = BoundsProcessor(self, n_cores=1)
-
+        self.save_dir = None
+        self.open_dir = None
 
         # Status bar
         self.status_cell = QLabel('Selected Cell: None', self)
@@ -199,10 +198,11 @@ class MainWidget(QMainWindow):
 
         file_actions = {
             'Open File(s)': (self._open_files, 'Ctrl+O'),
-            'Open Folder': (self._open_folder, 'Ctrl+Shift+O'),
             'Save': (self._save, 'Ctrl+S'),
             'Save As...': (self._save_as, 'Ctrl+Shift+S'),
             'Export CSV...': (self._export_csv, 'Ctrl+Shift+E'),
+            'Export Heights...': (self._export_heights, None),
+            'Import Heights...': (self._import_heights, None),
             'Import Images...': (self.import_images, None),
             'Window Screenshot': (self.save_screenshot, None),
             'Save Stack GIF': (self._save_stack_gif, None),
@@ -1720,6 +1720,7 @@ class MainWidget(QMainWindow):
         self.measure_heights(frames, peak_prominence, coverslip_height)
         self._show_seg_overlay()
         self.left_toolbar.volume_button.setEnabled(True)
+        self._export_heights_action.setEnabled(True)
 
     def measure_heights(self, frames, peak_prominence=0.01, coverslip_height=None):
         """
@@ -1803,29 +1804,29 @@ class MainWidget(QMainWindow):
             self.zstack_slider.setVisible(True)
             self.zstack_slider.setRange(0, self.frame.zstack.shape[0] - 1)
             self.is_zstack = True
+            self.left_toolbar.get_coverslip_height_button.setEnabled(True)
+            self.left_toolbar.get_heights_button.setEnabled(True)
+            self.left_toolbar.peak_prominence.setEnabled(True)
         else:
             self.frame.img = self.frame.img
             self.zstack_slider.setVisible(False)
             self.is_zstack = False
+            self.left_toolbar.get_coverslip_height_button.setEnabled(False)
+            self.left_toolbar.get_heights_button.setEnabled(False)
+            self.left_toolbar.peak_prominence.setEnabled(False)
 
         if self.is_zstack or hasattr(self.frame, 'heights'):
             self.left_toolbar.volume_button.setEnabled(True)
-            if not self.is_zstack:  # enable/disable z-stack specific options
-                self.left_toolbar.get_heights_button.setEnabled(False)
-                self.left_toolbar.peak_prominence.setEnabled(False)
-            else:
-                self.left_toolbar.get_heights_button.setEnabled(True)
-                self.left_toolbar.peak_prominence.setEnabled(True)
 
             if hasattr(self.frame, 'coverslip_height'):
                 self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
             else:
                 self.left_toolbar.coverslip_height.setText('')
         else:
-            self.left_toolbar.get_heights_button.setEnabled(False)
-            self.left_toolbar.peak_prominence.setEnabled(False)
             self.left_toolbar.volume_button.setEnabled(False)
             self.left_toolbar.coverslip_height.setText('')
+
+        self._export_heights_action.setEnabled(hasattr(self.frame, 'heights'))
 
         self.imshow()
 
@@ -2256,7 +2257,7 @@ class MainWidget(QMainWindow):
         if is_grayscale:
             img = img.reshape(*img.shape, 1)
 
-        bounds=[]
+        bounds = []
         for z_slice in img:
             bounds.append(get_quantile(z_slice, q=(1, 99), mask_zeros=True))
         return np.squeeze(bounds)
@@ -2264,15 +2265,15 @@ class MainWidget(QMainWindow):
     def _precompute_bounds(self, frames=None):
         if not self.file_loaded:
             return
-        
+
         if frames is None:
             frames = self.stack.frames
-        
+
         if N_CORES == 1:
             return
         else:
             self.bounds_processor.process_frames(frames)
-        
+
     def _get_stack_bounds(self):
         """Get the bounds of the stack for normalization."""
         if not self.file_loaded:
@@ -3166,7 +3167,8 @@ class MainWidget(QMainWindow):
             return
 
         if file_path is None:
-            file_path = QFileDialog.getSaveFileName(self, 'Save tracking data as...', filter='*.csv')[0]
+            file_path = CustomFileDialog.getSaveFileName(self, 'Save tracking data as...', filter='*.csv')
+
             if file_path == '':
                 return
 
@@ -3183,7 +3185,7 @@ class MainWidget(QMainWindow):
     def _load_tracking(self):
         if not self.file_loaded:
             return
-        file_path = QFileDialog.getOpenFileName(self, 'Load tracking data...', filter='*.csv')[0]
+        file_path = CustomFileDialog.getOpenFileName(self, 'Load tracking data...', filter='*.csv')
         if file_path == '':
             return
 
@@ -3216,14 +3218,14 @@ class MainWidget(QMainWindow):
             return
 
         if self.left_toolbar.save_stack.isChecked():
-            folder_path = QFileDialog.getExistingDirectory(self, 'Save stack to folder...')
+            folder_path = CustomFileDialog.getExistingDirectory(self, 'Save stack to folder...')
             if folder_path == '':
                 return
             for frame in self._progress_bar(self.stack.frames):
                 file_path = os.path.join(folder_path, os.path.basename(frame.name))
                 self.save_frame(frame, file_path=file_path)
         else:
-            file_path = QFileDialog.getSaveFileName(self, 'Save frame as...', filter='*_seg.npy')[0]
+            file_path = CustomFileDialog.getSaveFileName(self, 'Save frame as...', filter='*_seg.npy')
             folder_path = Path(file_path).parent
             if file_path == '':
                 return
@@ -3348,6 +3350,64 @@ class MainWidget(QMainWindow):
             export = csv_df[columns]
 
         export.to_csv(file_path, index=False)
+
+    def _export_heights(self):
+        if not self.file_loaded:
+            return
+        # dialog to save either frame or stack
+        save_dialog = CustomFileDialog(self, caption='Save heights as...', filter='Numpy Archive (*.npz)')
+        save_dialog._add_stack_checkbox(self.left_toolbar.save_stack.isChecked())
+
+        if save_dialog.exec():
+            save_path = save_dialog.selectedFiles()[0]
+            save_stack = save_dialog.save_stack_checkbox.isChecked()
+        else:
+            return
+
+        if save_stack:
+            frames = self.stack.frames
+        else:
+            frames = [self.frame]
+        self.export_heights(frames, save_path)
+        print(f'Saved heights to {save_path}')
+
+    def export_heights(self, frames, file_path):
+        heights = []
+        coverslip_heights = []
+        z_scales = []
+        for frame in frames:
+            try:
+                heights.append(frame.heights)
+            except AttributeError:
+                QMessageBox.warning(self, 'Error', f'No heights found for frame {frame.frame_number}.')
+                return
+            coverslip_heights.append(getattr(frame, 'coverslip_height', 0))
+            z_scales.append(getattr(frame, 'z_scale', 1))
+        np.savez(file_path, heights=heights, coverslip_heights=coverslip_heights, z_scales=z_scales)
+
+    def _import_heights(self):
+        if not self.file_loaded:
+            return
+        # dialog to save either frame or stack
+        heights_path = CustomFileDialog.getOpenFileName(self, 'Load heights...', filter='Numpy Archive (*.npz)')
+        if heights_path == '':
+            return
+        heights_file = np.load(heights_path)
+        heights, coverslip_heights, z_scales = heights_file['heights'], heights_file['coverslip_heights'], heights_file['z_scales']
+        if len(heights) == 1:
+            frames=[self.frame]
+        elif len(heights) == len(self.stack.frames):
+            frames = self.stack.frames
+        else:
+            raise ValueError(f'Number of heights arrays ({len(heights)}) does not match number of frames ({len(self.stack.frames)}).')
+            return
+
+        for frame, height, coverslip_height, z_scale in zip(frames, heights, coverslip_heights, z_scales):
+            frame.heights=height
+            frame.coverslip_height=coverslip_height
+            frame.z_scale=z_scale
+
+        print(f'Loaded heights from {heights_path} for {len(frames)} frames.')
 
     def _convert_red_green(self, frames=None):
         """convert cell.red, cell.green attributes to FUCCI labeling for the stack."""
@@ -3758,7 +3818,7 @@ class MainWidget(QMainWindow):
         """
 
         if file_path is None:
-            file_path = QFileDialog.getSaveFileName(self, 'Save screenshot as...', filter='*.png')[0]
+            file_path = CustomFileDialog.getSaveFileName(self, 'Save screenshot as...', filter='*.png')
             if file_path == '':
                 return
         screenshot = self.take_screenshot()
@@ -3771,7 +3831,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
 
-        file_path = QFileDialog.getSaveFileName(self, 'Save stack as GIF...', filter='*.gif')[0]
+        file_path = CustomFileDialog.getSaveFileName(self, 'Save stack as GIF...', filter='*.gif')
         if file_path == '':
             return
 
@@ -3905,14 +3965,9 @@ class MainWidget(QMainWindow):
         self.canvas.draw_masks_parallel()
 
     def _open_files(self):
-        files = QFileDialog.getOpenFileNames(self, 'Open file(s)', filter='*seg.npy *.tif *.tiff *.nd2')[0]
+        files = CustomFileDialog.getOpenFileNames(self, 'Open file(s)', filter='*seg.npy *.tif *.tiff *.nd2')
         if len(files) > 0:
             self.open_stack(files)
-
-    def _open_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, 'Open folder of segmentation files')
-        if folder:
-            self.open_stack([folder])
 
     def _load_files(self, files):
         """
@@ -4063,7 +4118,7 @@ class MainWidget(QMainWindow):
             return
 
         if files is None:
-            files = natsorted(QFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2')[0])
+            files = CustomFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2')
         elif isinstance(files, str):
             files = [files]
 

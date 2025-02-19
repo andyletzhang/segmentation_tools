@@ -538,10 +538,10 @@ class LeftToolbar(QScrollArea):
         self.coverslip_height = QLineEdit(self, placeholderText='Auto')
         self.coverslip_height.setValidator(QDoubleValidator(bottom=0))  # non-negative floats only
         self.coverslip_height.setFixedWidth(60)
-        self.get_coverslip_height = QPushButton('Calibrate', self)
+        self.get_coverslip_height_button = QPushButton('Calibrate', self)
         self.get_coverslip_height_layout.addWidget(coverslip_height_label)
         self.get_coverslip_height_layout.addWidget(self.coverslip_height)
-        self.get_coverslip_height_layout.addWidget(self.get_coverslip_height)
+        self.get_coverslip_height_layout.addWidget(self.get_coverslip_height_button)
         self.get_spherical_volumes = QPushButton('Compute Spherical Volumes', self)
 
         volumes_layout.addWidget(operate_on_label)
@@ -553,7 +553,7 @@ class LeftToolbar(QScrollArea):
 
         self.volume_button.clicked.connect(self.main_window._measure_volumes_action.trigger)
         self.get_heights_button.clicked.connect(self.main_window._measure_heights_action.trigger)
-        self.get_coverslip_height.clicked.connect(self.main_window._calibrate_coverslip_height_action.trigger)
+        self.get_coverslip_height_button.clicked.connect(self.main_window._calibrate_coverslip_height_action.trigger)
         self.get_spherical_volumes.clicked.connect(self.main_window._compute_spherical_volumes_action.trigger)
 
         return self.volumes_tab
@@ -611,7 +611,7 @@ class LeftToolbar(QScrollArea):
         get_mitoses_button.clicked.connect(self.main_window._get_mitoses_action.trigger)
         add_mitosis_button.clicked.connect(self.main_window._add_mitosis_action.trigger)
         delete_mitosis_button.clicked.connect(self.main_window._delete_mitosis_action.trigger)
-        edit_mitoses_layout=QHBoxLayout()
+        edit_mitoses_layout = QHBoxLayout()
         edit_mitoses_layout.addWidget(add_mitosis_button)
         edit_mitoses_layout.addWidget(delete_mitosis_button)
         apply_new_weights_button.clicked.connect(self.main_window._apply_new_weights_action.trigger)

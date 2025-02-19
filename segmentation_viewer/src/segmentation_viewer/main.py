@@ -111,8 +111,6 @@ class MainWidget(QMainWindow):
         self.circle_mask = None
         self.mitosis_mode = 0
         self.bounds_processor = BoundsProcessor(self, n_cores=1)
-        self.save_dir = None
-        self.open_dir = None
 
         # Status bar
         self.status_cell = QLabel('Selected Cell: None', self)
@@ -192,6 +190,26 @@ class MainWidget(QMainWindow):
         # click event
         self.canvas.img_plot.scene().sigMouseClicked.connect(self._on_click)
         self.canvas.seg_plot.scene().sigMouseClicked.connect(self._on_click)
+
+    @property
+    def open_dir(self) -> str:
+        if not hasattr(self, '_open_dir'):
+            self._open_dir = Path.cwd()
+        return str(self._open_dir)
+    
+    @open_dir.setter
+    def open_dir(self, path):
+        self._open_dir = path
+
+    @property
+    def save_dir(self) -> str:
+        if not hasattr(self, '_save_dir'):
+            self._save_dir = self.open_dir
+        return str(self._save_dir)
+
+    @save_dir.setter
+    def save_dir(self, path):
+        self._save_dir = path
 
     def _init_actions(self):
         from .utils import create_action
@@ -3167,10 +3185,11 @@ class MainWidget(QMainWindow):
             return
 
         if file_path is None:
-            file_path = CustomFileDialog.getSaveFileName(self, 'Save tracking data as...', filter='*.csv')
+            file_path = CustomFileDialog.getSaveFileName(self, 'Save tracking data as...', filter='*.csv', directory=self.save_dir)
 
             if file_path == '':
                 return
+            self.save_dir = Path(file_path).parent
 
         if hasattr(self.stack, 'mitoses'):
             mitoses_path = file_path.replace('tracking.csv', 'mitoses.csv')
@@ -3185,9 +3204,11 @@ class MainWidget(QMainWindow):
     def _load_tracking(self):
         if not self.file_loaded:
             return
-        file_path = CustomFileDialog.getOpenFileName(self, 'Load tracking data...', filter='*.csv')
+        file_path = CustomFileDialog.getOpenFileName(self, 'Load tracking data...', filter='*.csv', directory=self.open_dir)
         if file_path == '':
             return
+        
+        self.open_dir = Path(file_path).parent
 
         self.stack.load_tracking(file_path)
         print(f'Loaded tracking data from {file_path}')
@@ -3218,22 +3239,24 @@ class MainWidget(QMainWindow):
             return
 
         if self.left_toolbar.save_stack.isChecked():
-            folder_path = CustomFileDialog.getExistingDirectory(self, 'Save stack to folder...')
+            folder_path = CustomFileDialog.getExistingDirectory(self, 'Save stack to folder...', directory=self.save_dir)
             if folder_path == '':
                 return
             for frame in self._progress_bar(self.stack.frames):
                 file_path = os.path.join(folder_path, os.path.basename(frame.name))
                 self.save_frame(frame, file_path=file_path)
         else:
-            file_path = CustomFileDialog.getSaveFileName(self, 'Save frame as...', filter='*_seg.npy')
+            file_path = CustomFileDialog.getSaveFileName(self, 'Save frame as...', filter='*_seg.npy', directory=self.save_dir)
             folder_path = Path(file_path).parent
             if file_path == '':
                 return
             if not file_path.endswith('_seg.npy'):
                 file_path = file_path + '_seg.npy'
             self.save_frame(self.frame, file_path)
+            
 
         print(f'Saved segmentation to {folder_path}')
+        self.save_dir = folder_path
         if self.left_toolbar.also_save_tracking.isChecked():
             self.save_tracking(file_path=folder_path + '/tracking.csv')
 
@@ -3355,7 +3378,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         # dialog to save either frame or stack
-        save_dialog = CustomFileDialog(self, caption='Save heights as...', filter='Numpy Archive (*.npz)')
+        save_dialog = CustomFileDialog(self, caption='Save heights as...', filter='Numpy Archive (*.npz)', directory=self.save_dir)
         save_dialog._add_stack_checkbox(self.left_toolbar.save_stack.isChecked())
 
         if save_dialog.exec():
@@ -3368,6 +3391,7 @@ class MainWidget(QMainWindow):
             frames = self.stack.frames
         else:
             frames = [self.frame]
+        self.save_dir = Path(save_path).parent
         self.export_heights(frames, save_path)
         print(f'Saved heights to {save_path}')
 
@@ -3389,7 +3413,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         # dialog to save either frame or stack
-        heights_path = CustomFileDialog.getOpenFileName(self, 'Load heights...', filter='Numpy Archive (*.npz)')
+        heights_path = CustomFileDialog.getOpenFileName(self, 'Load heights...', filter='Numpy Archive (*.npz)', directory=self.open_dir)
         if heights_path == '':
             return
         heights_file = np.load(heights_path)
@@ -3406,6 +3430,7 @@ class MainWidget(QMainWindow):
             frame.heights=height
             frame.coverslip_height=coverslip_height
             frame.z_scale=z_scale
+        self.open_dir = Path(heights_path).parent
 
         print(f'Loaded heights from {heights_path} for {len(frames)} frames.')
 
@@ -3818,20 +3843,21 @@ class MainWidget(QMainWindow):
         """
 
         if file_path is None:
-            file_path = CustomFileDialog.getSaveFileName(self, 'Save screenshot as...', filter='*.png')
+            file_path = CustomFileDialog.getSaveFileName(self, 'Save screenshot as...', filter='*.png', directory=self.save_dir)
             if file_path == '':
                 return
         screenshot = self.take_screenshot()
         if screenshot is None:
             return
         screenshot.save(file_path, 'png')  # Save to file
+        self.save_dir = Path(file_path).parent
         print(f'Saved screenshot to {file_path}')
 
     def _save_stack_gif(self):
         if not self.file_loaded:
             return
 
-        file_path = CustomFileDialog.getSaveFileName(self, 'Save stack as GIF...', filter='*.gif')
+        file_path = CustomFileDialog.getSaveFileName(self, 'Save stack as GIF...', filter='*.gif', directory=self.save_dir)
         if file_path == '':
             return
 
@@ -3840,6 +3866,9 @@ class MainWidget(QMainWindow):
             self.save_stack_gif(file_path, delay=delay)
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to save GIF: {str(e)}')
+            return
+        self.save_dir = Path(file_path).parent
+        print(f'Saved stack as GIF to {file_path}')
 
     def save_stack_gif(self, file_path, delay=100):
         """
@@ -3925,6 +3954,7 @@ class MainWidget(QMainWindow):
             out_message = f'Loaded stack {self.stack.name} with {len(self.stack.frames)} frames.'
         print(out_message)
         self.statusBar().showMessage(out_message, 3000)
+        self.open_dir = Path(self.stack.name).parent
 
         self.frame = self.stack.frames[0]
         if hasattr(self.frame, 'zstack'):
@@ -3965,7 +3995,7 @@ class MainWidget(QMainWindow):
         self.canvas.draw_masks_parallel()
 
     def _open_files(self):
-        files = CustomFileDialog.getOpenFileNames(self, 'Open file(s)', filter='*seg.npy *.tif *.tiff *.nd2')
+        files = CustomFileDialog.getOpenFileNames(self, 'Open file(s)', filter='*seg.npy *.tif *.tiff *.nd2', directory=self.open_dir)
         if len(files) > 0:
             self.open_stack(files)
 
@@ -4118,13 +4148,14 @@ class MainWidget(QMainWindow):
             return
 
         if files is None:
-            files = CustomFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2')
+            files = CustomFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2', directory=self.open_dir)
         elif isinstance(files, str):
             files = [files]
 
         if len(files) == 0:
             return
 
+        self.open_dir = Path(files[0]).parent
         imgs = []
         for file in files:
             name = Path(file).name

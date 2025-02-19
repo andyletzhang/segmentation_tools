@@ -163,18 +163,18 @@ class PyQtGraphCanvas(QWidget):
             for layer, overlay in zip(self.mask_overlay, self.main_window.frame.stored_mask_overlay):
                 layer.setImage(overlay)
 
-    def random_cell_color(self, n=1):
+    def random_cell_color(self, n=0):
         random_colors = self.cell_cmap(self.random_color_ID(n))
 
-        if n == 1:
+        if n == 0:
             return random_colors[:3]
         else:
             return random_colors[:, :3]
 
-    def random_color_ID(self, n=1):
-        random_IDs = np.random.randint(0, self.cell_n_colors, size=n)
+    def random_color_ID(self, n=0):
+        random_IDs = np.random.randint(0, self.cell_n_colors, size=max(1,n))
 
-        if n == 1:
+        if n == 0:
             return random_IDs[0]
         else:
             return random_IDs
@@ -185,17 +185,20 @@ class PyQtGraphCanvas(QWidget):
         # get cell colors
         if frame is None:
             frame = self.main_window.frame
-        try:
-            cell_colors = frame.get_cell_attrs('color_ID')  # retrieve the stored colors for each cell
-        except AttributeError:
-            # from monolayer_tracking.networks import color_masks, greedy_color # generate pseudo-random colors
-            # random_colors=color_masks(self.main_window.frame.masks)
-            cell_colors = self.random_cell_color(frame.masks.max())
-            self.main_window.frame.set_cell_attr('color_ID', cell_colors)
+        if frame.n_cells == 0:
+            img_masks, seg_masks = np.zeros((*frame.masks.shape, 4)), np.zeros((*frame.masks.shape, 4))
+        else:
+            try:
+                cell_colors = frame.get_cell_attrs('color_ID')  # retrieve the stored colors for each cell
+            except AttributeError:
+                # from monolayer_tracking.networks import color_masks, greedy_color # generate pseudo-random colors
+                # random_colors=color_masks(self.main_window.frame.masks)
+                cell_colors = self.random_cell_color(frame.n_cells)
+                self.main_window.frame.set_cell_attr('color_ID', cell_colors)
 
-        # highlight all cells with the specified colors
-        cell_indices = fastremap.unique(frame.masks)[1:] - 1
-        img_masks, seg_masks = self.highlight_cells(cell_indices, frame=frame, alpha=alpha, cell_colors=cell_colors, layer='mask')
+            # highlight all cells with the specified colors
+            cell_indices = fastremap.unique(frame.masks)[1:] - 1
+            img_masks, seg_masks = self.highlight_cells(cell_indices, frame=frame, alpha=alpha, cell_colors=cell_colors, layer='mask')
 
         frame.stored_mask_overlay = [img_masks, seg_masks]
 

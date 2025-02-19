@@ -1,6 +1,6 @@
 import fastremap
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
-
+import numpy as np
 
 # Common base classes for frame processing
 class FrameProcessorSignals(QObject):
@@ -102,19 +102,22 @@ class MasksLoaderTask(FrameProcessorTask):
 
         try:
             canvas = self.processor.canvas
-            try:
-                cell_colors = self.frame.get_cell_attrs('color_ID')
-            except AttributeError:
-                cell_colors = canvas.random_cell_color(self.frame.masks.max())
-                self.frame.set_cell_attr('color_ID', cell_colors)
+            if self.frame.n_cells == 0:
+                img_masks, seg_masks = np.zeros((*self.frame.masks.shape, 4)), np.zeros((*self.frame.masks.shape, 4))
+            else:
+                try:
+                    cell_colors = self.frame.get_cell_attrs('color_ID')
+                except AttributeError:
+                    cell_colors = canvas.random_cell_color(self.frame.masks.max())
+                    self.frame.set_cell_attr('color_ID', cell_colors)
 
-            if self.check_canceled():
-                return
+                if self.check_canceled():
+                    return
 
-            cell_indices = fastremap.unique(self.frame.masks)[1:] - 1
-            img_masks, seg_masks = canvas.highlight_cells(
-                cell_indices, frame=self.frame, alpha=self.alpha, cell_colors=cell_colors, layer='mask'
-            )
+                cell_indices = fastremap.unique(self.frame.masks)[1:] - 1
+                img_masks, seg_masks = canvas.highlight_cells(
+                    cell_indices, frame=self.frame, alpha=self.alpha, cell_colors=cell_colors, layer='mask'
+                )
 
             if not self.check_canceled():
                 self.signals.result_ready.emit(self.frame, [img_masks, seg_masks])

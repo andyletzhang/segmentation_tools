@@ -44,12 +44,13 @@ def read_image_file(file_path, progress_bar: callable=None, image_shape: dict|No
 
     if image_shape is not None: # if image bounds are specified, use to slice the image
         if image_shape == 'all':
-            t_bounds, p_bounds, z_bounds, c_bounds = slice(None), slice(None), slice(None), slice(None)
+            t_bounds, p_bounds, z_bounds, c_bounds = [np.arange(shape[i]) for i in range(4)]
         else:
-            t_bounds, p_bounds, z_bounds, c_bounds = image_shape
+            image_shape = {s: np.arange(shape[i]) for i, s in zip(range(4), 'TPZC')} | image_shape
+            t_bounds, p_bounds, z_bounds, c_bounds = image_shape['T'], image_shape['P'], image_shape['Z'], image_shape['C']
 
-    elif shape==(1,1,1,1): # single image: bypass shape dialog
-        t_bounds, p_bounds, z_bounds, c_bounds = slice(None), slice(None), slice(None), slice(None)
+    elif shape[:4] == (1, 1, 1, 1):  # single image: bypass shape dialog
+        t_bounds, p_bounds, z_bounds, c_bounds = [0], [0], [0], [0]
 
     else:
         shape_dialog = ShapeDialog(shape)  # Prompt user to select ranges to import for each dimension

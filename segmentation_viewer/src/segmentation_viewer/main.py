@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QTabWidget,
     QVBoxLayout,
     QWidget,
+    QFileDialog,
 )
 from scipy import ndimage
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
@@ -42,7 +43,7 @@ from tqdm import tqdm
 
 from .canvas import CellMaskPolygons, CellSplitLines, PyQtGraphCanvas
 from .command_line import CommandLineWindow
-from .io import CustomFileDialog, ExportWizard
+from .io import ExportWizard
 from .qt import CustomComboBox, SubstackDialog
 from .scripting import ScriptWindow
 from .ui import LeftToolbar, labeled_LUT_slider
@@ -52,7 +53,6 @@ from .workers import BoundsProcessor
 # high priority
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
 # ndimage labeled measurements on any of these attributes to create new ones
-# TODO: add LUTs to config file
 # TODO: export segplot as gif
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
@@ -61,7 +61,6 @@ from .workers import BoundsProcessor
 # low priority
 # TODO: unify print statements with status bar messages
 # TODO: when cell is clicked, have option to show its entire colormapped track
-# TODO: edit mitoses
 # TODO: use fastremap to add cell highlights?
 
 # TODO: some image pyramid approach to speed up work on large images??
@@ -97,7 +96,6 @@ class MainWidget(QMainWindow):
         icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('icon.ico')
         self.setWindowIcon(QIcon(str(icon_path)))
         self.resize(1280, 720)
-        self.file_loaded = False  # passive mode
         self.drawing_cell_roi = False
         self.drawing_cell_split = False
         self.spacer = (0, 10)  # default spacer size (width, height)
@@ -140,6 +138,7 @@ class MainWidget(QMainWindow):
         main_widget = QSplitter()
         self.setCentralWidget(main_widget)
         self._init_actions()
+        self.file_loaded = False
 
         self.canvas_widget = QWidget()
         canvas_VBoxLayout = QVBoxLayout(self.canvas_widget)
@@ -218,7 +217,8 @@ class MainWidget(QMainWindow):
             'Save': (self._save, 'Ctrl+S'),
             'Save As...': (self._save_as, 'Ctrl+Shift+S'),
             'Export CSV...': (self._export_csv, 'Ctrl+Shift+E'),
-            'Export Heights...': (self._export_heights, None),
+            'Export Frame Heights...': (self._export_frame_heights, None),
+            'Export Stack Heights...': (self._export_stack_heights, None),
             'Import Heights...': (self._import_heights, None),
             'Import Images...': (self.import_images, None),
             'Window Screenshot': (self.save_screenshot, None),
@@ -307,9 +307,14 @@ class MainWidget(QMainWindow):
         self._set_config(config)
 
     def _set_config(self, config):
-        self.canvas.dark_overlay_settings = config['overlay_settings']
-        self.canvas.light_overlay_settings = config['inverted_overlay_settings']
-        self.left_toolbar.inverted_checkbox.setChecked(config['inverted'])
+        if 'LUTs' in config:
+            self.canvas.img.LUTs = tuple(config['LUTs'])
+        if 'overlay_settings' in config:
+            self.canvas.dark_overlay_settings = config['overlay_settings']
+        if 'inverted_overlay_settings' in config:
+            self.canvas.light_overlay_settings = config['inverted_overlay_settings']
+        if 'inverted' in config:
+            self.left_toolbar.inverted_checkbox.setChecked(config['inverted'])
 
     def _dump_config(self, config_path=None):
         import yaml
@@ -322,7 +327,7 @@ class MainWidget(QMainWindow):
             attr: getattr(self.canvas, attr)
             for attr in ['selected_cell_color', 'selected_cell_alpha', 'outlines_color', 'outlines_alpha', 'masks_alpha']
         }
-
+        LUTs=list(self.canvas.img.LUTs)
         overlay_settings = getattr(self.canvas, 'dark_overlay_settings', current_overlay_settings.copy())
         inverted_overlay_settings = getattr(self.canvas, 'light_overlay_settings', current_overlay_settings.copy())
 
@@ -330,6 +335,7 @@ class MainWidget(QMainWindow):
             'overlay_settings': overlay_settings,
             'inverted_overlay_settings': inverted_overlay_settings,
             'inverted': inverted,
+            'LUTs': LUTs,
         }
         # create the config directory if it doesn't exist
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1743,7 +1749,8 @@ class MainWidget(QMainWindow):
         self.measure_heights(frames, peak_prominence, coverslip_height)
         self._show_seg_overlay()
         self.left_toolbar.volume_button.setEnabled(True)
-        self._export_heights_action.setEnabled(True)
+        self._export_frame_heights_action.setEnabled(True)
+        self._export_stack_heights_action.setEnabled(True)
         self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
 
     def measure_heights(self, frames, peak_prominence=0.01, coverslip_height=None):
@@ -1854,7 +1861,8 @@ class MainWidget(QMainWindow):
             self.left_toolbar.volume_button.setEnabled(False)
             self.left_toolbar.coverslip_height.setText('')
 
-        self._export_heights_action.setEnabled(hasattr(self.frame, 'heights'))
+        self._export_frame_heights_action.setEnabled(hasattr(self.frame, 'heights'))
+        self._export_stack_heights_action.setEnabled(hasattr(self.frame, 'heights'))
 
         self.imshow()
 
@@ -3195,7 +3203,7 @@ class MainWidget(QMainWindow):
             return
 
         if file_path is None:
-            file_path = CustomFileDialog.getSaveFileName(self, 'Save tracking data as...', filter='*.csv', directory=self.save_dir)
+            file_path, _ = QFileDialog.getSaveFileName(self, 'Save tracking data as...', filter='*.csv', directory=self.save_dir)
 
             if file_path == '':
                 return
@@ -3214,7 +3222,7 @@ class MainWidget(QMainWindow):
     def _load_tracking(self):
         if not self.file_loaded:
             return
-        file_path = CustomFileDialog.getOpenFileName(self, 'Load tracking data...', filter='*.csv', directory=self.open_dir)
+        file_path, _ = QFileDialog.getOpenFileName(self, 'Load tracking data...', filter='*.csv', directory=self.open_dir)
         if file_path == '':
             return
         
@@ -3249,14 +3257,14 @@ class MainWidget(QMainWindow):
             return
 
         if self.left_toolbar.save_stack.isChecked():
-            folder_path = CustomFileDialog.getExistingDirectory(self, 'Save stack to folder...', directory=self.save_dir)
+            folder_path = QFileDialog.getExistingDirectory(self, 'Save stack to folder...', directory=self.save_dir)
             if folder_path == '':
                 return
             for frame in self._progress_bar(self.stack.frames):
                 file_path = os.path.join(folder_path, os.path.basename(frame.name))
                 self.save_frame(frame, file_path=file_path)
         else:
-            file_path = CustomFileDialog.getSaveFileName(self, 'Save frame as...', filter='*_seg.npy', directory=self.save_dir)
+            file_path, _ = QFileDialog.getSaveFileName(self, 'Save frame as...', filter='*_seg.npy', directory=self.save_dir)
             folder_path = Path(file_path).parent
             if file_path == '':
                 return
@@ -3384,26 +3392,23 @@ class MainWidget(QMainWindow):
 
         export.to_csv(file_path, index=False)
 
-    def _export_heights(self):
+    def _export_frame_heights(self):
+        self._export_heights(self.frame)
+
+    def _export_stack_heights(self):
+        self._export_heights(self.stack.frames)
+
+    def _export_heights(self, frames):
         if not self.file_loaded:
             return
-        # dialog to save either frame or stack
-        save_dialog = CustomFileDialog(self, caption='Save heights as...', filter='Numpy Archive (*.npz)', directory=self.save_dir)
-        save_dialog._add_stack_checkbox(self.left_toolbar.save_stack.isChecked())
-
-        if save_dialog.exec():
-            save_path = save_dialog.selectedFiles()[0]
-            save_stack = save_dialog.save_stack_checkbox.isChecked()
-        else:
+        save_path, _ = QFileDialog.getSaveFileName(self, 'Save heights...', filter='Numpy Archive (*.npz)', directory=self.save_dir)
+        
+        if save_path == '':
             return
-
-        if save_stack:
-            frames = self.stack.frames
-        else:
-            frames = [self.frame]
-        self.save_dir = Path(save_path).parent
+        
         self.export_heights(frames, save_path)
         print(f'Saved heights to {save_path}')
+        self.save_dir = Path(save_path).parent
 
     def export_heights(self, frames, file_path):
         heights = []
@@ -3423,7 +3428,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         # dialog to save either frame or stack
-        heights_path = CustomFileDialog.getOpenFileName(self, 'Load heights...', filter='Numpy Archive (*.npz)', directory=self.open_dir)
+        heights_path, _ = QFileDialog.getOpenFileName(self, 'Load heights...', filter='Numpy Archive (*.npz)', directory=self.open_dir)
         if heights_path == '':
             return
         heights_file = np.load(heights_path)
@@ -3852,7 +3857,7 @@ class MainWidget(QMainWindow):
         """
 
         if file_path is None:
-            file_path = CustomFileDialog.getSaveFileName(self, 'Save screenshot as...', filter='*.png', directory=self.save_dir)
+            file_path, _ = QFileDialog.getSaveFileName(self, 'Save screenshot as...', filter='*.png', directory=self.save_dir)
             if file_path == '':
                 return
         screenshot = self.take_screenshot()
@@ -3866,7 +3871,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
 
-        file_path = CustomFileDialog.getSaveFileName(self, 'Save stack as GIF...', filter='*.gif', directory=self.save_dir)
+        file_path, _ = QFileDialog.getSaveFileName(self, 'Save stack as GIF...', filter='*.gif', directory=self.save_dir)
         if file_path == '':
             return
 
@@ -3927,6 +3932,37 @@ class MainWidget(QMainWindow):
         # Save as animated GIF
         if images:
             images[0].save(file_path, save_all=True, append_images=images[1:], duration=delay, loop=0, optimize=True)
+
+    @property
+    def file_loaded(self):
+        if not hasattr(self, '_file_loaded'):
+            self._file_loaded = False
+        return self._file_loaded
+    
+    @file_loaded.setter
+    def file_loaded(self, value):
+        self._file_loaded = value
+        items = [
+            self._save_action,
+            self._save_as_action,
+            self._export_csv_action,
+            self._export_frame_heights_action,
+            self._export_stack_heights_action,
+            self._import_heights_action,
+            self.import_images_action,
+            self._save_stack_gif_action,
+            self.clear_masks_action,
+            self._generate_outlines_action,
+            self._mend_gaps_action,
+            self._remove_edge_masks_action,
+            self._reorder_channels_action,
+            self.rotate_clockwise_action,
+            self.rotate_counterclockwise_action,
+            self.delete_frame_action,
+            self.make_substack_action
+        ]
+        for item in items:
+            item.setEnabled(value)
 
     def open_stack(self, files, image_shape=None):
         """
@@ -4004,7 +4040,7 @@ class MainWidget(QMainWindow):
         self.canvas.draw_masks_parallel()
 
     def _open_files(self):
-        files = CustomFileDialog.getOpenFileNames(self, 'Open file(s)', filter='*seg.npy *.tif *.tiff *.nd2', directory=self.open_dir)
+        files, _ = QFileDialog.getOpenFileNames(self, 'Open file(s)', filter='*seg.npy *.tif *.tiff *.nd2', directory=self.open_dir)
         if len(files) > 0:
             self.open_stack(files)
 
@@ -4054,7 +4090,6 @@ class MainWidget(QMainWindow):
                         if hasattr(stack, 'mitoses'):
                             del stack.mitoses
 
-            self.file_loaded = True
             return stack
 
         elif len(img_files) > 0:  # image files
@@ -4078,7 +4113,6 @@ class MainWidget(QMainWindow):
                         frames.append(segmentation_from_img(img[0], name=file_path.with_name(file_path.stem + f'-{v}_seg.npy')))
 
             stack = SegmentedStack(from_frames=frames)
-            self.file_loaded = True
             return stack
 
         else:  # can't find any seg.npy or tiff files, ignore
@@ -4157,7 +4191,7 @@ class MainWidget(QMainWindow):
             return
 
         if files is None:
-            files = CustomFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2', directory=self.open_dir)
+            files, _ = QFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2', directory=self.open_dir)
         elif isinstance(files, str):
             files = [files]
 

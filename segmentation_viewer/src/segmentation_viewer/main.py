@@ -1057,6 +1057,9 @@ class MainWidget(QMainWindow):
                 self.stack.tracked_centroids = t[t.frame != frame.frame_number]
                 self.left_toolbar.also_save_tracking.setChecked(True)
 
+            if hasattr(frame, 'stored_mask_overlay'):
+                del frame.stored_mask_overlay
+        
         self._update_display()
 
     def _progress_bar(self, iterable, desc=None, length=None):

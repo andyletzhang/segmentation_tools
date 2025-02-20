@@ -159,9 +159,9 @@ class PyQtGraphCanvas(QWidget):
 
         if not hasattr(self.main_window.frame, 'stored_mask_overlay'):
             self.draw_masks()
-        else:
-            for layer, overlay in zip(self.mask_overlay, self.main_window.frame.stored_mask_overlay):
-                layer.setImage(overlay)
+
+        for layer, overlay in zip(self.mask_overlay, self.main_window.frame.stored_mask_overlay):
+            layer.setImage(overlay)
 
     def random_cell_color(self, n=0):
         random_colors = self.cell_cmap(self.random_color_ID(n))
@@ -498,14 +498,6 @@ class PyQtGraphCanvas(QWidget):
         execution_times['RGB_checks handling'] = time.time() - start_time
 
         start_time = time.time()
-        self.draw_outlines()
-        execution_times['self.draw_outlines()'] = time.time() - start_time
-
-        start_time = time.time()
-        self.overlay_masks()
-        execution_times['self.overlay_masks()'] = time.time() - start_time
-
-        start_time = time.time()
         self.seg_data = np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1)
         execution_times['self.seg_data = np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1)'] = (
             time.time() - start_time
@@ -518,6 +510,14 @@ class PyQtGraphCanvas(QWidget):
         start_time = time.time()
         self.seg.setImage(self.seg_data)
         execution_times['self.seg.setImage(self.seg_data)'] = time.time() - start_time
+
+        start_time = time.time()
+        self.overlay_masks()
+        execution_times['self.overlay_masks()'] = time.time() - start_time
+
+        start_time = time.time()
+        self.draw_outlines()
+        execution_times['self.draw_outlines()'] = time.time() - start_time
 
         # Print all execution times sorted by duration
         if debug_execution_times:

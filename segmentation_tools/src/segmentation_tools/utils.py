@@ -3,6 +3,51 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import pickle
 
+def outlines_list(masks):
+    """Get outlines of masks as a list to loop over for plotting.
+
+    Args:
+        masks (ndarray): masks (0=no cells, 1=first cell, 2=second cell,...)
+
+    Returns:
+        list: List of outlines as pixel coordinates.
+
+    """
+    import cv2
+    from scipy.ndimage import find_objects
+
+    outpix = []
+    boundaries = find_objects(masks)
+    for (y,x), n in zip(boundaries, np.unique(masks)[1:]):
+        mn=masks[y,x]==n
+        if np.any(mn):
+            contours, _ = cv2.findContours(mn.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            cmax = np.argmax([c.shape[0] for c in contours])
+            pix = contours[cmax].astype(int).squeeze()
+            if len(pix) > 4:
+                outpix.append(pix+np.array([x.start, y.start]))
+            else:
+                outpix.append(np.zeros((0, 2)))
+
+    return outpix
+
+def masks_to_outlines(masks):
+    """Get outlines of masks as a binary image.
+
+    Args:
+        masks (ndarray): masks (0=no cells, 1=first cell, 2=second cell,...)
+
+    Returns:
+        ndarray: Binary image with outlines of masks.
+
+    """
+    outpix = outlines_list(masks)
+    out = np.zeros(masks.shape, dtype=bool)
+    for i, pix in enumerate(outpix):
+        x,y=pix.T
+        out[y,x] = True
+    return out
+
 def picklesize(o):
     '''
     Measures approximate RAM usage (in MB) by how much space it would take to save using pickle. Seems pretty reliable for my purposes.

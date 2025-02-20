@@ -9,7 +9,6 @@ import fastremap
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
-from cellpose import utils
 from natsort import natsorted
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFontMetrics, QIcon, QIntValidator
@@ -37,7 +36,7 @@ from scipy import ndimage
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
 from segmentation_tools.preprocessing import get_quantile
 from segmentation_tools.segmented_comprehension import Cell, SegmentedStack
-from segmentation_tools.utils import cell_scalar_attrs
+from segmentation_tools.utils import cell_scalar_attrs, outlines_list, masks_to_outlines
 from skimage import draw
 from tqdm import tqdm
 
@@ -1115,7 +1114,7 @@ class MainWidget(QMainWindow):
         """
 
         frame.has_outlines = False
-        frame.outlines = utils.masks_to_outlines(frame.masks)
+        frame.outlines = masks_to_outlines(frame.masks)
         frame.n_cells = np.max(frame.masks)
         frame.cells = np.array(
             [Cell(n, np.empty((0, 2)), frame_number=frame.frame_number, parent=frame) for n in range(frame.n_cells)]
@@ -2002,7 +2001,7 @@ class MainWidget(QMainWindow):
                 needs_outlines.append(frame)
 
         for frame in self._progress_bar(needs_outlines, desc='Generating outlines'):
-            outlines = utils.outlines_list(frame.masks)
+            outlines = outlines_list(frame.masks)
             for cell, outline in zip(frame.cells, outlines):
                 cell.outline = outline
                 cell.get_centroid()
@@ -2784,7 +2783,7 @@ class MainWidget(QMainWindow):
         cell_color_n = self.canvas.random_color_ID()
         cell_color = self.canvas.cell_cmap(cell_color_n)
         if self.frame.has_outlines:
-            outline = utils.outlines_list(new_mask)[0]
+            outline = outlines_list(new_mask)[0]
         else:
             outline = np.empty((0, 2), dtype=int)
 
@@ -3132,7 +3131,7 @@ class MainWidget(QMainWindow):
         """
 
         for frame in self._progress_bar(frames, desc='Generating outlines'):
-            outlines = utils.outlines_list(frame.masks)
+            outlines = outlines_list(frame.masks)
             for cell, outline in zip(frame.cells, outlines):
                 cell.outline = outline
                 cell.get_centroid()
@@ -3279,8 +3278,8 @@ class MainWidget(QMainWindow):
             file_path = frame.name
         if not frame.has_outlines:
             print('Generating outlines...')
-            outlines_list = utils.outlines_list(frame.masks)
-            for cell, outline in zip(frame.cells, outlines_list):
+            outlines = outlines_list(frame.masks)
+            for cell, outline in zip(frame.cells, outlines):
                 cell.outline = outline
                 cell.get_centroid()
             frame.has_outlines = True
@@ -3320,8 +3319,8 @@ class MainWidget(QMainWindow):
         for frame in self.stack.frames:
             if not frame.has_outlines:
                 print(f'Generating outlines for frame {frame.frame_number}...')
-                outlines_list = utils.outlines_list(frame.masks)
-                for cell, outline in zip(frame.cells, outlines_list):
+                outlines = outlines_list(frame.masks)
+                for cell, outline in zip(frame.cells, outlines):
                     cell.outline = outline
                     cell.get_centroid()
                 frame.has_outlines = True
@@ -3361,8 +3360,8 @@ class MainWidget(QMainWindow):
         for frame in self.stack.frames:
             if not frame.has_outlines:
                 print(f'Generating outlines for frame {frame.frame_number}...')
-                outlines_list = utils.outlines_list(frame.masks)
-                for cell, outline in zip(frame.cells, outlines_list):
+                outlines = outlines_list(frame.masks)
+                for cell, outline in zip(frame.cells, outlines):
                     cell.outline = outline
                     cell.get_centroid()
                 frame.has_outlines = True

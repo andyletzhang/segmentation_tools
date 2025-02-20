@@ -1,7 +1,6 @@
 from glob import glob
 from pathlib import Path
 
-import cellpose.utils as cp_utils
 import fastremap
 import numpy as np
 import pandas as pd
@@ -9,6 +8,7 @@ from natsort import natsorted
 from scipy import ndimage
 
 from . import preprocessing
+from .utils import masks_to_outlines, outlines_list
 
 """
     Stacks are collections of time lapse images on a single stage.
@@ -218,7 +218,7 @@ class SegmentedStack:
             all_edge_cells.append(edge_cells)
             if len(edge_cells) > 0:
                 self.delete_cells(edge_cells, frame.frame_number)
-                frame.outlines = cp_utils.masks_to_outlines(frame.masks)
+                frame.outlines = masks_to_outlines(frame.masks)
         return all_edge_cells
 
     def merge_cells(self, cell_n1, cell_n2, frame_number):
@@ -839,7 +839,7 @@ class SegmentedImage:
             raise ValueError('Failed to instantiate SegmentedImage: segmented data must contain masks.')
 
         if 'outlines' not in data.keys():
-            data['outlines'] = cp_utils.masks_to_outlines(data['masks'])
+            data['outlines'] = masks_to_outlines(data['masks'])
 
         # Print debug statements if verbose mode is enabled
         self.verbose = verbose
@@ -881,7 +881,7 @@ class SegmentedImage:
         # Generate outlines_list or load from file
         if not hasattr(self, 'outlines_list'):
             self.vprint('creating new outlines_list from masks')
-            self.outlines_list = cp_utils.outlines_list(self.masks)  # Generate outlines_list
+            self.outlines_list = outlines_list(self.masks)  # Generate outlines_list
 
         cells = fastremap.unique(self.masks)
         cells = cells[cells != 0] - 1
@@ -935,9 +935,9 @@ class SegmentedImage:
             print(f'Error loading {self.name}: {e}. Using current img data.')
             img = self.img
 
-        outlines_list = [cell.outline for cell in self.cells]
+        _outlines_list = [cell.outline for cell in self.cells]
 
-        export = {'img': img, 'masks': self.masks, 'outlines': self.outlines, 'outlines_list': outlines_list}
+        export = {'img': img, 'masks': self.masks, 'outlines': self.outlines, 'outlines_list': _outlines_list}
 
         optional_attrs = [
             'FUCCI',
@@ -994,13 +994,13 @@ class SegmentedImage:
             changed_masks_bool = np.isin(new_masks, changed_cells)
             changed_masks[changed_masks_bool] = new_masks[changed_masks_bool]
             if self.has_outlines:
-                outlines_list = cp_utils.outlines_list(changed_masks)
-                for cell, o in zip(self.cells[changed_cells], outlines_list):
+                _outlines_list = outlines_list(changed_masks)
+                for cell, o in zip(self.cells[changed_cells], _outlines_list):
                     cell.outline = o
                     cell.get_centroid()
 
             self.masks = new_masks
-            self.outlines = self.masks_to_outlines(self.masks)
+            self.outlines = masks_to_outlines(self.masks)
         return mended
 
     def renumber_cells(self):
@@ -1021,7 +1021,7 @@ class SegmentedImage:
         return cell_order
 
     def add_outline(self, mask):
-        outline = cp_utils.outlines_list(mask)[0]
+        outline = outlines_list(mask)[0]
         self.outlines[outline[:, 1], outline[:, 0]] = True
 
         return outline

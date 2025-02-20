@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 from natsort import natsorted
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFontMetrics, QIcon, QIntValidator
 from PyQt6.QtWidgets import (
     QApplication,
@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
 from scipy import ndimage
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
 from segmentation_tools.preprocessing import get_quantile
-from segmentation_tools.segmented_comprehension import Cell, SegmentedStack
+from segmentation_tools.segmented_comprehension import Cell, SegmentedStack, SegmentedImage
 from segmentation_tools.utils import cell_scalar_attrs, outlines_list, masks_to_outlines
 from skimage import draw
 from tqdm import tqdm
@@ -1631,6 +1631,7 @@ class MainWidget(QMainWindow):
 
         # update the display if necessary
         self._refresh_right_toolbar('volume')
+        self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
 
     def measure_volumes(self, frames):
         """
@@ -1652,11 +1653,10 @@ class MainWidget(QMainWindow):
                     else:
                         peak_prominence = float(peak_prominence)
                     if coverslip_height == '':
-                        coverslip_height = self.calibrate_coverslip_height([frame])
-                        self.left_toolbar.coverslip_height.setText(f'{coverslip_height:.2f}')
+                        coverslip_height = None
                     else:
                         coverslip_height = float(coverslip_height)
-                    self.measure_heights([frame], peak_prominence, coverslip_height)
+                    self.measure_heights(frame, peak_prominence, coverslip_height)
                 else:
                     raise ValueError(f'No heights or z-stack available to measure volumes for {frame.name}.')
 
@@ -1682,6 +1682,8 @@ class MainWidget(QMainWindow):
             frames = [self.frame]
 
         coverslip_height = self.calibrate_coverslip_height(frames)
+        for frame in frames:
+            frame.coverslip_height = coverslip_height
         self.left_toolbar.coverslip_height.setText(f'{coverslip_height:.2f}')
 
     def calibrate_coverslip_height(self, frames):
@@ -1700,6 +1702,9 @@ class MainWidget(QMainWindow):
         """
         from segmentation_tools.heightmap import get_coverslip_z
 
+        if isinstance(frames, SegmentedImage):
+            frames = [frames]
+
         z_profile = []
         for z_index in range(frames[0].zstack.shape[0]):
             if self.is_grayscale:
@@ -1713,8 +1718,6 @@ class MainWidget(QMainWindow):
         scale = self.frame.z_scale
 
         coverslip_height = get_coverslip_z(z_profile, scale=scale, precision=0.01)
-        for frame in frames:
-            frame.coverslip_height = coverslip_height
         return coverslip_height
 
     def _measure_heights(self):
@@ -1723,7 +1726,7 @@ class MainWidget(QMainWindow):
         if self.left_toolbar.volumes_on_stack.isChecked():
             frames = self.stack.frames
         else:
-            frames = [self.frame]
+            frames = self.frame
 
         peak_prominence = self.left_toolbar.peak_prominence.text()
         if peak_prominence == '':
@@ -1733,14 +1736,15 @@ class MainWidget(QMainWindow):
 
         coverslip_height = self.left_toolbar.coverslip_height.text()
         if coverslip_height == '':
-            self._calibrate_coverslip_height()
-            coverslip_height = self.left_toolbar.coverslip_height.text()
-        coverslip_height = float(coverslip_height)
+            coverslip_height = None
+        else:
+            coverslip_height = float(coverslip_height)
 
         self.measure_heights(frames, peak_prominence, coverslip_height)
         self._show_seg_overlay()
         self.left_toolbar.volume_button.setEnabled(True)
         self._export_heights_action.setEnabled(True)
+        self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
 
     def measure_heights(self, frames, peak_prominence=0.01, coverslip_height=None):
         """
@@ -1758,18 +1762,22 @@ class MainWidget(QMainWindow):
         """
         from segmentation_tools.heightmap import get_heights
 
+        if isinstance(frames, SegmentedImage):
+            frames = [frames]
+
         for frame in self._progress_bar(frames):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
             else:
+                if not coverslip_height:
+                    coverslip_height = self.calibrate_coverslip_height(frame)
+                frame.coverslip_height = coverslip_height
                 if self.is_grayscale:
                     membrane = frame.zstack
                 else:
                     membrane = frame.zstack[..., 2]  # TODO: allow user to specify membrane channel
                 frame.heights = get_heights(membrane, peak_prominence=peak_prominence)
                 frame.to_heightmap()
-                if coverslip_height:
-                    frame.coverslip_height = coverslip_height
 
     def _compute_spherical_volumes(self):
         if not self.file_loaded:
@@ -3920,7 +3928,7 @@ class MainWidget(QMainWindow):
         if images:
             images[0].save(file_path, save_all=True, append_images=images[1:], duration=delay, loop=0, optimize=True)
 
-    def open_stack(self, files):
+    def open_stack(self, files, image_shape=None):
         """
         Open a stack of images or segmentation files.
         If multiple file types are present, the function will attempt to load the segmented files first, then the image files.
@@ -3934,7 +3942,7 @@ class MainWidget(QMainWindow):
         if isinstance(files, str):
             files = [files]
 
-        loaded_stack = self._load_files(files)
+        loaded_stack = self._load_files(files, image_shape=image_shape)
         if not loaded_stack:
             return
 
@@ -4000,7 +4008,7 @@ class MainWidget(QMainWindow):
         if len(files) > 0:
             self.open_stack(files)
 
-    def _load_files(self, files):
+    def _load_files(self, files, image_shape=None):
         """
         Load a stack of images.
         If a tracking.csv is found, the tracking data is returned as well
@@ -4055,7 +4063,7 @@ class MainWidget(QMainWindow):
             frames = []
             for file_path in img_files:
                 file_path = Path(file_path)
-                imgs = read_image_file(str(file_path), progress_bar=self._progress_bar, desc=f'Loading {file_path.name}')
+                imgs = read_image_file(str(file_path), image_shape=image_shape, progress_bar=self._progress_bar, desc=f'Loading {file_path.name}')
                 if imgs is None:
                     return False, None
                 for v, img in enumerate(self._progress_bar(imgs, desc=f'Processing {file_path.stem}')):

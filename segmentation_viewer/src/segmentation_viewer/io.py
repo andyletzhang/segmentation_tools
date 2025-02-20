@@ -26,9 +26,8 @@ from segmentation_tools.io import read_nd2, read_nd2_shape, read_tif, read_tif_s
 from tifffile import TiffFile
 
 
-def read_image_file(file_path, progress_bar=None, image_shape=None, **progress_kwargs):
+def read_image_file(file_path, progress_bar: callable=None, image_shape: dict|None=None, **progress_kwargs):
     if progress_bar is None:
-
         def progress_bar(x, **kwargs):
             return x
 
@@ -43,11 +42,14 @@ def read_image_file(file_path, progress_bar=None, image_shape=None, **progress_k
         shape = tuple(shape[axes_map[axis]] for axis in 'TPZCYX')
         placeholder = read_tif(file)  # Load the TIFF file
 
-    if image_shape is not None:
+    if image_shape is not None: # if image bounds are specified, use to slice the image
         if image_shape == 'all':
-            t_bounds, p_bounds, z_bounds, c_bounds = (slice(None), slice(None), slice(None), slice(None))
+            t_bounds, p_bounds, z_bounds, c_bounds = slice(None), slice(None), slice(None), slice(None)
         else:
             t_bounds, p_bounds, z_bounds, c_bounds = image_shape
+
+    elif shape==(1,1,1,1): # single image: bypass shape dialog
+        t_bounds, p_bounds, z_bounds, c_bounds = slice(None), slice(None), slice(None), slice(None)
 
     else:
         shape_dialog = ShapeDialog(shape)  # Prompt user to select ranges to import for each dimension

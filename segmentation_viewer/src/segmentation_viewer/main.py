@@ -3785,9 +3785,9 @@ class MainWidget(QMainWindow):
             event.ignore()
 
     def dropEvent(self, event):
-        # TODO: figure out how to release the dragged window
+        event.accept()
         files = [u.toLocalFile() for u in event.mimeData().urls()]
-        self.open_stack(natsorted(files))
+        QTimer.singleShot(0, lambda: self.open_stack(natsorted(files)))
 
     def _scan_tracked_centroids(self):
         if not hasattr(self.stack, 'tracked_centroids'):

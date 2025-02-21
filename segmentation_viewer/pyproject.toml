@@ -16,6 +16,7 @@ dependencies = [
     "pyqtgraph",
     "requests",
     "platformdirs",
+    "opencv-python-headless",
     "segmentation_tools", # You may need to manually install this since it's local.
 ]
 

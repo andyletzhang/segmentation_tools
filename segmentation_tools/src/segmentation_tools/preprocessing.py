@@ -163,44 +163,22 @@ def quantile_mono(img, q=(1, 99), mask_zeros: bool = False):
 
 def normalize(image, dtype='float32', percentile=(1, 99), **kwargs):
     """normalize image data (color or grayscale) between 0 and 100 (min max, or a specified percentile)"""
-    image = image.astype(dtype)
-    if image.ndim == 3:  # multichannel image: normalize each channel separately
-        if np.argmin(image.shape) == 2:  # RGB
-            image = normalize_RGB(image, dtype, percentile, **kwargs)
-        elif np.argmin(image.shape) == 0:  # multipage grayscale
-            image = np.array([normalize_grayscale(page, dtype, percentile, **kwargs) for page in image])
-    else:  # grayscale
-        if image.ndim != 2:
-            print('Warning: image has 3 or more dimensions and is not RGB. Normalizing in grayscale.')
-        image = normalize_grayscale(image, dtype, percentile, **kwargs)
+    image=xp.asarray(image).astype(dtype)
+    if image.ndim==2:
+        image=image[...,xp.newaxis]
+    bounds = get_quantile(image, q=percentile, **kwargs)
 
-    return image
+    for c in range(image.shape[-1]):
+        b=bounds[c]
+        if b[0]==b[1]:
+            image[..., c] = xp.zeros_like(image[..., c])
+        else:
+            image[..., c] = xp.clip((image[..., c] - b[0]) / (b[1] - b[0]), 0, 1)
 
-
-def normalize_RGB(color_img, dtype='float32', percentile=(0, 100), bounds=None, **kwargs):
-    """normalize each channel of a color image separately"""
-    image = color_img.astype(dtype)
-    if bounds is None:
-        bounds = [None, None, None]
-
-    for n, color_channel in enumerate(np.transpose(image, axes=[2, 0, 1])):
-        image[:, :, n] = normalize_grayscale(color_channel, dtype, percentile=percentile, bounds=bounds[n], **kwargs)
-    return image
-
-
-def normalize_grayscale(image, dtype='float32', percentile=(0, 100), bounds=None, mask_zeros=True):
-    """normalize data by min and max or by some specified percentile"""
-    if np.all(image == 0):
+    if gpu:
+        return xp.asnumpy(image)
+    else:
         return image
-    if bounds is None:
-        bounds = quantile_mono(image, q=percentile, mask_zeros=mask_zeros)
-
-    bounds = np.array(bounds, dtype=dtype).flatten()  # just flatten it?? very trashy
-    image = image.astype(dtype)
-    if not np.array_equal(bounds, (0, 0)):
-        image = (image - bounds[0]) / (bounds[1] - bounds[0])
-        image = np.clip(image, a_min=0, a_max=1)
-    return image
 
 
 def get_fluor_threshold(img, size_threshold, noise_score=0.02, percentile=(0.5, 0.95), tolerance=1):

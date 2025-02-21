@@ -482,3 +482,42 @@ class LookupTableDialog(QDialog):
 
     def get_input(self):
         return [self.red_dropdown.currentText(), self.green_dropdown.currentText(), self.blue_dropdown.currentText()]
+
+class FrameStackDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # dialog to save either frame or stack
+        self.setWindowTitle("Save Options")
+        
+        # Create custom button box
+        layout=QHBoxLayout(self)
+        save_stack_button = QPushButton("Save Stack")
+        save_frame_button = QPushButton("Save Frame")
+        
+        # Add buttons to layout
+        layout.addWidget(save_frame_button)
+        layout.addWidget(save_stack_button)
+        
+        # Connect signals
+        save_stack_button.clicked.connect(self.save_stack)
+        save_frame_button.clicked.connect(self.save_frame)
+
+        # Layout
+        self.setLayout(layout)
+
+    def save_stack(self):
+        self.output = 'stack'
+        self.done(QDialog.DialogCode.Accepted)
+
+    def save_frame(self):
+        self.output = 'frame'
+        self.done(QDialog.DialogCode.Accepted)
+        
+    @staticmethod
+    def get_choice(parent=None):
+        dialog = FrameStackDialog(parent)
+        result = dialog.exec()
+        if result == QDialog.DialogCode.Accepted:
+            return dialog.output
+        else:
+            return None

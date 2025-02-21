@@ -51,6 +51,7 @@ from .utils import create_html_table, load_stylesheet
 from .workers import BoundsProcessor
 
 # high priority
+# TODO: export masks to ImageJ ROIs, Tiff
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
 # ndimage labeled measurements on any of these attributes to create new ones
 # TODO: export segplot as gif
@@ -220,6 +221,7 @@ class MainWidget(QMainWindow):
             'Export CSV...': (self._export_csv, 'Ctrl+Shift+E'),
             'Export Frame Heights...': (self._export_frame_heights, None),
             'Export Stack Heights...': (self._export_stack_heights, None),
+            'Export ImageJ ROIs...': (self._export_ROIs, None),
             'Import Heights...': (self._import_heights, None),
             'Import Images...': (self.import_images, None),
             'Window Screenshot': (self.save_screenshot, None),
@@ -3313,6 +3315,36 @@ class MainWidget(QMainWindow):
 
         frame.to_seg_npy(file_path, write_attrs=write_attrs, overwrite_img=True)
         frame.name = file_path
+
+    def _export_ROIs(self):
+        from segmentation_tools.utils import masks_to_rois
+        from .qt import FrameStackDialog
+        from roifile import roiwrite
+        
+        save_output=FrameStackDialog.get_choice()
+        if save_output is None:
+            return
+        if save_output=='stack':
+            frames = self.stack.frames
+        elif save_output=='frame':
+            frames = [self.frame]
+        else:
+            raise ValueError(f'Unexpected save_output value: {save_output}')
+
+        roi_path, _ = QFileDialog.getSaveFileName(self, "Save ROIs...", "", "Zipped Archive (*.zip)")
+        if roi_path == '':
+            return
+        
+        for index, frame in enumerate(self._progress_bar(frames)):
+            rois = masks_to_rois(frame.masks)
+            if len(frames) > 1:
+                frame_export_path = roi_path.replace('.zip', f'-{index}.zip')
+            else:
+                frame_export_path = roi_path
+            for roi in rois:
+                if roi is not None:
+                    roiwrite(frame_export_path, roi)  # save each ROI to the correct path
+            print(f'Saved {len(rois)} ROIs to {frame_export_path}')
 
     def _export_csv(self):
         if not self.file_loaded:

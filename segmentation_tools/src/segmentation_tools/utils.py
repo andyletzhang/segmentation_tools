@@ -48,6 +48,19 @@ def masks_to_outlines(masks):
         out[y,x] = True
     return out
 
+def masks_to_rois(masks):
+    from roifile import ImagejRoi
+    outlines = outlines_list(masks)
+
+    rois=[]
+    for outline in outlines:
+        if len(outline) > 0:
+            rois.append(ImagejRoi.frompoints(outline))
+        else:
+            rois.append(None)
+
+    return rois
+
 def picklesize(o):
     '''
     Measures approximate RAM usage (in MB) by how much space it would take to save using pickle. Seems pretty reliable for my purposes.

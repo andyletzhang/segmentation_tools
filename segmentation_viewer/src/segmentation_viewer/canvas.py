@@ -1,5 +1,6 @@
 from multiprocessing import cpu_count
 
+import cv2
 import fastremap
 import numpy as np
 import pyqtgraph as pg
@@ -12,18 +13,6 @@ from shapely.ops import polygonize, unary_union
 from .workers import MaskProcessor
 
 debug_execution_times = False
-
-try:
-    import cupy as xp
-    from cucim.skimage.color import hsv2rgb, rgb2hsv
-
-    on_gpu = True
-except ImportError:
-    import numpy as xp
-    from skimage.color import hsv2rgb, rgb2hsv
-
-    Warning('cupy and/or cucim not found. Inverted contrast may be slow.')
-    on_gpu = False
 
 N_CORES = cpu_count()
 
@@ -172,7 +161,7 @@ class PyQtGraphCanvas(QWidget):
             return random_colors[:, :3]
 
     def random_color_ID(self, n=0):
-        random_IDs = np.random.randint(0, self.cell_n_colors, size=max(1,n))
+        random_IDs = np.random.randint(0, self.cell_n_colors, size=max(1, n))
 
         if n == 0:
             return random_IDs[0]
@@ -198,7 +187,9 @@ class PyQtGraphCanvas(QWidget):
 
             # highlight all cells with the specified colors
             cell_indices = fastremap.unique(frame.masks)[1:] - 1
-            img_masks, seg_masks = self.highlight_cells(cell_indices, frame=frame, alpha=alpha, cell_colors=cell_colors, layer='mask')
+            img_masks, seg_masks = self.highlight_cells(
+                cell_indices, frame=frame, alpha=alpha, cell_colors=cell_colors, layer='mask'
+            )
 
         frame.stored_mask_overlay = [img_masks, seg_masks]
 
@@ -837,16 +828,10 @@ def get_matplotlib_LUT(name):
 
 
 def inverted_contrast(img):
-    img = xp.asarray(img)
-    if img.ndim == 2:
-        inverted = 255 - img
-    else:
-        hsv = rgb2hsv(img)
-        hsv[..., 0] = xp.mod(hsv[..., 0] + 0.5, 1)
-        inverted = 1 - hsv2rgb(hsv)
+    lut = np.array([255 - i for i in range(256)], dtype=np.uint8)  # Lookup table
+    img_inv = cv2.LUT(img, lut)  # Fast inversion
 
-    inverted = (inverted * 255).astype(np.uint8)
+    hsv = cv2.cvtColor(img_inv, cv2.COLOR_RGB2HSV)
+    hsv[..., 0] = (hsv[..., 0] + 90) % 180  # In-place hue rotation
 
-    if on_gpu:
-        inverted = inverted.get()
-    return inverted
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)

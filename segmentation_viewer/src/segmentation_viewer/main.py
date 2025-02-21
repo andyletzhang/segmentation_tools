@@ -54,6 +54,7 @@ from .workers import BoundsProcessor
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
 # ndimage labeled measurements on any of these attributes to create new ones
 # TODO: export segplot as gif
+# gif export color quality
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
 # TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
@@ -3846,7 +3847,7 @@ class MainWidget(QMainWindow):
         else:
             return None
 
-    def save_screenshot(self, file_path=None):
+    def save_screenshot(self, event=None, file_path=None):
         """
         Take a screenshot of the main window and save it to a file.
 

@@ -375,7 +375,9 @@ class TimeStack(SegmentedStack):
         """
         t = self.tracked_centroids
         t['particle'], remap = fastremap.renumber(t['particle'].values)
-        self.mitoses[['mother', 'daughter1', 'daughter2']] = self.mitoses[['mother', 'daughter1', 'daughter2']].replace(remap)
+
+        if hasattr(self, 'mitoses'):
+            self.mitoses[['mother', 'daughter1', 'daughter2']] = self.mitoses[['mother', 'daughter1', 'daughter2']].replace(remap)
         return t['particle']
 
     def split_particle_track(self, particle_ID, split_frame):

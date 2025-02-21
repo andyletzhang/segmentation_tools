@@ -4142,7 +4142,7 @@ class MainWidget(QMainWindow):
         self.frame_slider.setRange(0, len(self.stack.frames) - 1)
         self.change_current_frame(min(frame_number, len(self.stack.frames) - 1))
 
-    def make_substack(self, substack_frames=None):
+    def make_substack(self, event=None, substack_frames=None):
         """
         Create a substack from the current stack.
 

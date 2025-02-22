@@ -117,6 +117,14 @@ class PyQtGraphCanvas(QWidget):
         self.seg_plot.addItem(self.seg_vline, ignoreBounds=True)
         self.seg_plot.addItem(self.seg_hline, ignoreBounds=True)
 
+    def hide_crosshairs(self):
+        for line in [self.img_vline, self.img_hline, self.seg_vline, self.seg_hline]:
+            line.setVisible(False)
+    
+    def show_crosshairs(self):
+        for line in [self.img_vline, self.img_hline, self.seg_vline, self.seg_hline]:
+            line.setVisible(True)
+            
     def wheelEvent(self, event):
         """Redirect wheel events to the main window."""
         self.main_window._canvas_wheelEvent(event)

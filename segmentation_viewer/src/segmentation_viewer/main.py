@@ -223,7 +223,7 @@ class MainWidget(QMainWindow):
             },
             'Import': {'Import Heights...': (self._import_heights, None), 'Import Images...': (self.import_images, None)},
             'Window Screenshot': (self.save_screenshot, None),
-            'Save Stack GIF': (self._save_stack_gif, None),
+            'Save Stack Video': (self._export_stack_video, None),
             'Exit': (self.close, 'Ctrl+Q'),
         }
         edit_actions = {
@@ -3932,71 +3932,118 @@ class MainWidget(QMainWindow):
         self.save_dir = Path(file_path).parent
         print(f'Saved screenshot to {file_path}')
 
-    def _save_stack_gif(self):
+    def _export_stack_video(self):
         if not self.file_loaded:
             return
-
-        file_path, _ = QFileDialog.getSaveFileName(self, 'Save stack as GIF...', filter='*.gif', directory=self.save_dir)
+        
+        # Define supported formats with their extensions and descriptions
+        formats = {
+            "GIF (*.gif)": {"ext": "gif", "ffmpeg_opts": {
+                "codec": None,  # ffmpeg will automatically use gif encoder
+                "extra": ["-filter_complex", "[0:v] split [a][b];[a] palettegen [p];[b][p] paletteuse"]}
+            },
+            "MP4 (*.mp4)": {"ext": "mp4", "ffmpeg_opts": {
+                "codec": "h264",  # Using built-in h264 encoder
+                "extra": ["-pix_fmt", "yuv420p", "-crf", "23"]}
+            },
+            "MKV (FFV1) (*.mkv)": {"ext": "mkv", "ffmpeg_opts": {
+                "codec": "ffv1",
+                "extra": ["-level", "3"]}
+            },
+            "Lossless PNG Video (*.mkv)": {"ext": "mkv", "ffmpeg_opts": {
+                "codec": "png",
+                "extra": []}
+            }
+        }
+        
+        filter_str = ";;".join(formats.keys())
+        file_path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            'Save video as...',
+            directory=self.save_dir,
+            filter=filter_str
+        )
+        
         if file_path == '':
             return
-
+            
+        # Get the format settings based on selected filter
+        format_settings = formats[selected_filter]
+        
+        # Ensure correct extension
+        if not file_path.lower().endswith(f".{format_settings['ext']}"):
+            file_path += f".{format_settings['ext']}"
+        
         delay = 100  # ms between frames
         try:
-            self.save_stack_gif(file_path, delay=delay)
+            self.export_stack_video(file_path, delay=delay, format_settings=format_settings['ffmpeg_opts'])
         except Exception as e:
-            QMessageBox.critical(self, 'Error', f'Failed to save GIF: {str(e)}')
+            QMessageBox.critical(self, 'Error', f'Failed to save video: {str(e)}')
             return
+            
         self.save_dir = Path(file_path).parent
-        print(f'Saved stack as GIF to {file_path}')
+        print(f'Saved stack as {selected_filter} to {file_path}')
 
-    def save_stack_gif(self, file_path, delay=100):
+    def export_stack_video(self, file_path, delay=100, format_settings=None):
         """
-        Save the stack with its current visual settings as an animated GIF.
-
+        Save the stack with its current visual settings as a video.
+        
         Parameters
         ----------
         file_path : str
-            The file path to save the GIF to.
+            The file path to save the video to.
         delay : int
             The delay between frames in milliseconds.
+        format_settings : dict
+            Dictionary containing ffmpeg codec and extra options.
         """
-
-        import io
-
-        from PIL import Image
-        from PyQt6.QtCore import QBuffer, QByteArray, QTimer
-        from PyQt6.QtWidgets import QApplication
-
-        images = []
-
+        import tempfile
+        import subprocess
+        
+        temp_dir = tempfile.mkdtemp()
+        
         # Ensure main window is active and process events
         self.activateWindow()
         self.raise_()
-
+        
+        # hide crosshairs while taking screenshots
+        self.canvas.hide_crosshairs()
+        
         # Process events and give a small delay for window activation
         QApplication.processEvents()
-        QTimer.singleShot(100, lambda: None)  # Wait for 100ms
-
-        # Convert each frame to PIL Image
-        for frame_number in tqdm(range(len(self.stack.frames)), desc='Saving GIF'):
+        QTimer.singleShot(100, lambda: None)
+        
+        # Convert each frame to PNG
+        for frame_number in range(len(self.stack.frames)):
             self.change_current_frame(frame_number)
-            QApplication.processEvents()  # Allow GUI updates
-            # Convert QImage to PIL Image
-            qimage = self.take_screenshot().toImage()
-
-            # Convert QImage to bytes using QByteArray
-            byte_array = QByteArray()
-            buffer = QBuffer(byte_array)
-            buffer.open(QBuffer.OpenModeFlag.WriteOnly)
-            qimage.save(buffer, 'PNG')
-
-            # Convert to PIL Image
-            pil_image = Image.open(io.BytesIO(byte_array.data()))
-            images.append(pil_image.convert('RGBA'))
-
-        # Save as animated GIF
-        if images:
-            images[0].save(file_path, save_all=True, append_images=images[1:], duration=delay, loop=0, optimize=True)
+            QApplication.processEvents()
+            QTimer.singleShot(0, lambda: None)
+            
+            frame_path = os.path.join(temp_dir, f"{frame_number:05d}.png")
+            screenshot = self.take_screenshot()
+            screenshot.save(frame_path, 'png')
+        
+        fps = 1000/delay
+        
+        # Build ffmpeg command
+        ffmpeg_cmd = ["ffmpeg", "-y", "-framerate", str(fps),
+                    "-i", os.path.join(temp_dir, "%05d.png")]
+        
+        if format_settings["codec"]:
+            ffmpeg_cmd.extend(["-c:v", format_settings["codec"]])
+        
+        ffmpeg_cmd.extend(format_settings["extra"])
+        ffmpeg_cmd.append(file_path)
+        
+        # Run ffmpeg
+        subprocess.run(ffmpeg_cmd, check=True)
+        
+        # Clean up temporary images
+        for f in os.listdir(temp_dir):
+            os.remove(os.path.join(temp_dir, f))
+        os.rmdir(temp_dir)
+        
+        self.canvas.show_crosshairs()
 
     @property
     def file_loaded(self):
@@ -4015,7 +4062,7 @@ class MainWidget(QMainWindow):
             self._export_ROIs_action,
             self._import_heights_action,
             self.import_images_action,
-            self._save_stack_gif_action,
+            self._export_stack_video_action,
             self.clear_masks_action,
             self._generate_outlines_action,
             self._mend_gaps_action,

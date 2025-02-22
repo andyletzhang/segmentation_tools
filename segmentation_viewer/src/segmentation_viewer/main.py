@@ -15,6 +15,7 @@ from PyQt6.QtGui import QFontMetrics, QIcon, QIntValidator
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
+    QFileDialog,
     QFormLayout,
     QGraphicsEllipseItem,
     QHBoxLayout,
@@ -31,20 +32,19 @@ from PyQt6.QtWidgets import (
     QTabWidget,
     QVBoxLayout,
     QWidget,
-    QFileDialog,
 )
 from scipy import ndimage
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
 from segmentation_tools.preprocessing import get_quantile
-from segmentation_tools.segmented_comprehension import Cell, SegmentedStack, SegmentedImage
-from segmentation_tools.utils import cell_scalar_attrs, outlines_list, masks_to_outlines
+from segmentation_tools.segmented_comprehension import Cell, SegmentedImage, SegmentedStack
+from segmentation_tools.utils import cell_scalar_attrs, masks_to_outlines, outlines_list
 from skimage import draw
 from tqdm import tqdm
 
 from .canvas import CellMaskPolygons, CellSplitLines, PyQtGraphCanvas
 from .command_line import CommandLineWindow
 from .io import ExportWizard
-from .qt import CustomComboBox, SubstackDialog
+from .qt import CustomComboBox, SubstackDialog, FrameStackDialog
 from .scripting import ScriptWindow
 from .ui import LeftToolbar, labeled_LUT_slider
 from .utils import create_html_table, load_stylesheet
@@ -196,7 +196,7 @@ class MainWidget(QMainWindow):
         if not hasattr(self, '_open_dir'):
             self._open_dir = Path.cwd()
         return str(self._open_dir)
-    
+
     @open_dir.setter
     def open_dir(self, path):
         self._open_dir = path
@@ -218,12 +218,15 @@ class MainWidget(QMainWindow):
             'Open File(s)': (self._open_files, 'Ctrl+O'),
             'Save': (self._save, 'Ctrl+S'),
             'Save As...': (self._save_as, 'Ctrl+Shift+S'),
-            'Export CSV...': (self._export_csv, 'Ctrl+Shift+E'),
-            'Export Frame Heights...': (self._export_frame_heights, None),
-            'Export Stack Heights...': (self._export_stack_heights, None),
-            'Export ImageJ ROIs...': (self._export_ROIs, None),
-            'Import Heights...': (self._import_heights, None),
-            'Import Images...': (self.import_images, None),
+            'Export': {
+                'Export CSV...': (self._export_csv, 'Ctrl+Shift+E'),
+                'Export Heights...': (self._export_heights, None),
+                'Export ImageJ ROIs...': (self._export_ROIs, None),
+            },  
+            'Import': {
+                'Import Heights...': (self._import_heights, None),
+                'Import Images...': (self.import_images, None),
+            },
             'Window Screenshot': (self.save_screenshot, None),
             'Save Stack GIF': (self._save_stack_gif, None),
             'Exit': (self.close, 'Ctrl+Q'),
@@ -246,7 +249,10 @@ class MainWidget(QMainWindow):
             'Rotate Stack Clockwise': (self.rotate_clockwise, None),
             'Rotate Stack Counterclockwise': (self.rotate_counterclockwise, None),
         }
-        stack_actions = {'Delete Frame': (self.delete_frame, None), 'Make Substack...': (self.make_substack, None)}
+        stack_actions = {
+            'Delete Frame': (self.delete_frame, None),
+            'Make Substack...': (self.make_substack, None),
+        }
         scripts_actions = {
             'Open Command Line': (self._open_command_line, None),
             'Open Script Editor': (self._open_script_editor, None),
@@ -273,15 +279,23 @@ class MainWidget(QMainWindow):
         }
 
         # Create Menu Bar
+        def create_menu(menu, items):
+            for key, item in items.items():
+                if isinstance(item, dict):
+                    submenu = menu.addMenu(key)
+                    create_menu(submenu, item)
+                else:
+                    function, shortcut = item
+                    action = create_action(key, function, self, shortcut)
+                    setattr(self, f'{function.__name__}_action', action)
+                    menu.addAction(action)
+                    
         for menu, actions in zip(
             ['File', 'Edit', 'View', 'Image', 'Stack', 'Scripts', 'Help'],
             [file_actions, edit_actions, view_actions, image_actions, stack_actions, scripts_actions, help_actions],
         ):
             current_menu = self.menuBar().addMenu(menu)
-            for key, (function, shortcut) in actions.items():
-                action = create_action(key, function, self, shortcut)
-                setattr(self, f'{function.__name__}_action', action)
-                current_menu.addAction(action)
+            create_menu(current_menu, actions)
 
         # Create Other Actions
         for key, (function, shortcut) in other_actions.items():
@@ -330,7 +344,7 @@ class MainWidget(QMainWindow):
             attr: getattr(self.canvas, attr)
             for attr in ['selected_cell_color', 'selected_cell_alpha', 'outlines_color', 'outlines_alpha', 'masks_alpha']
         }
-        LUTs=list(self.canvas.img.LUTs)
+        LUTs = list(self.canvas.img.LUTs)
         overlay_settings = getattr(self.canvas, 'dark_overlay_settings', current_overlay_settings.copy())
         inverted_overlay_settings = getattr(self.canvas, 'light_overlay_settings', current_overlay_settings.copy())
 
@@ -1067,7 +1081,7 @@ class MainWidget(QMainWindow):
 
             if hasattr(frame, 'stored_mask_overlay'):
                 del frame.stored_mask_overlay
-        
+
         self._update_display()
 
     def _progress_bar(self, iterable, desc=None, length=None):
@@ -1752,8 +1766,7 @@ class MainWidget(QMainWindow):
         self.measure_heights(frames, peak_prominence, coverslip_height)
         self._show_seg_overlay()
         self.left_toolbar.volume_button.setEnabled(True)
-        self._export_frame_heights_action.setEnabled(True)
-        self._export_stack_heights_action.setEnabled(True)
+        self._export_heights_action.setEnabled(True)
         self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
 
     def measure_heights(self, frames, peak_prominence=0.01, coverslip_height=None):
@@ -1864,8 +1877,7 @@ class MainWidget(QMainWindow):
             self.left_toolbar.volume_button.setEnabled(False)
             self.left_toolbar.coverslip_height.setText('')
 
-        self._export_frame_heights_action.setEnabled(hasattr(self.frame, 'heights'))
-        self._export_stack_heights_action.setEnabled(hasattr(self.frame, 'heights'))
+        self._export_heights_action.setEnabled(hasattr(self.frame, 'heights'))
 
         self.imshow()
 
@@ -3228,7 +3240,7 @@ class MainWidget(QMainWindow):
         file_path, _ = QFileDialog.getOpenFileName(self, 'Load tracking data...', filter='*.csv', directory=self.open_dir)
         if file_path == '':
             return
-        
+
         self.open_dir = Path(file_path).parent
 
         self.stack.load_tracking(file_path)
@@ -3274,7 +3286,6 @@ class MainWidget(QMainWindow):
             if not file_path.endswith('_seg.npy'):
                 file_path = file_path + '_seg.npy'
             self.save_frame(self.frame, file_path)
-            
 
         print(f'Saved segmentation to {folder_path}')
         self.save_dir = folder_path
@@ -3317,24 +3328,24 @@ class MainWidget(QMainWindow):
         frame.name = file_path
 
     def _export_ROIs(self):
-        from segmentation_tools.utils import masks_to_rois
-        from .qt import FrameStackDialog
         from roifile import roiwrite
-        
-        save_output=FrameStackDialog.get_choice()
+        from segmentation_tools.utils import masks_to_rois
+
+        save_output = FrameStackDialog.get_choice()
         if save_output is None:
             return
-        if save_output=='stack':
+
+        elif save_output == 'stack':
             frames = self.stack.frames
-        elif save_output=='frame':
+        elif save_output == 'frame':
             frames = [self.frame]
         else:
             raise ValueError(f'Unexpected save_output value: {save_output}')
 
-        roi_path, _ = QFileDialog.getSaveFileName(self, "Save ROIs...", "", "Zipped Archive (*.zip)")
+        roi_path, _ = QFileDialog.getSaveFileName(self, 'Save ROIs...', '', 'Zipped Archive (*.zip)')
         if roi_path == '':
             return
-        
+
         for index, frame in enumerate(self._progress_bar(frames)):
             rois = masks_to_rois(frame.masks)
             if len(frames) > 1:
@@ -3425,20 +3436,27 @@ class MainWidget(QMainWindow):
 
         export.to_csv(file_path, index=False)
 
-    def _export_frame_heights(self):
-        self._export_heights(self.frame)
-
-    def _export_stack_heights(self):
-        self._export_heights(self.stack.frames)
-
-    def _export_heights(self, frames):
+    def _export_heights(self):
         if not self.file_loaded:
             return
-        save_path, _ = QFileDialog.getSaveFileName(self, 'Save heights...', filter='Numpy Archive (*.npz)', directory=self.save_dir)
         
+        save_output = FrameStackDialog.get_choice()
+        if save_output is None:
+            return
+
+        elif save_output == 'stack':
+            frames = self.stack.frames
+        elif save_output == 'frame':
+            frames = [self.frame]
+        else:
+            raise ValueError(f'Unexpected save_output value: {save_output}')
+        save_path, _ = QFileDialog.getSaveFileName(
+            self, 'Save heights...', filter='Numpy Archive (*.npz)', directory=self.save_dir
+        )
+
         if save_path == '':
             return
-        
+
         self.export_heights(frames, save_path)
         print(f'Saved heights to {save_path}')
         self.save_dir = Path(save_path).parent
@@ -3461,23 +3479,31 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         # dialog to save either frame or stack
-        heights_path, _ = QFileDialog.getOpenFileName(self, 'Load heights...', filter='Numpy Archive (*.npz)', directory=self.open_dir)
+        heights_path, _ = QFileDialog.getOpenFileName(
+            self, 'Load heights...', filter='Numpy Archive (*.npz)', directory=self.open_dir
+        )
         if heights_path == '':
             return
         heights_file = np.load(heights_path)
-        heights, coverslip_heights, z_scales = heights_file['heights'], heights_file['coverslip_heights'], heights_file['z_scales']
+        heights, coverslip_heights, z_scales = (
+            heights_file['heights'],
+            heights_file['coverslip_heights'],
+            heights_file['z_scales'],
+        )
         if len(heights) == 1:
-            frames=[self.frame]
+            frames = [self.frame]
         elif len(heights) == len(self.stack.frames):
             frames = self.stack.frames
         else:
-            raise ValueError(f'Number of heights arrays ({len(heights)}) does not match number of frames ({len(self.stack.frames)}).')
+            raise ValueError(
+                f'Number of heights arrays ({len(heights)}) does not match number of frames ({len(self.stack.frames)}).'
+            )
             return
 
         for frame, height, coverslip_height, z_scale in zip(frames, heights, coverslip_heights, z_scales):
-            frame.heights=height
-            frame.coverslip_height=coverslip_height
-            frame.z_scale=z_scale
+            frame.heights = height
+            frame.coverslip_height = coverslip_height
+            frame.z_scale = z_scale
         self.open_dir = Path(heights_path).parent
 
         print(f'Loaded heights from {heights_path} for {len(frames)} frames.')
@@ -3971,7 +3997,7 @@ class MainWidget(QMainWindow):
         if not hasattr(self, '_file_loaded'):
             self._file_loaded = False
         return self._file_loaded
-    
+
     @file_loaded.setter
     def file_loaded(self, value):
         self._file_loaded = value
@@ -3979,8 +4005,8 @@ class MainWidget(QMainWindow):
             self._save_action,
             self._save_as_action,
             self._export_csv_action,
-            self._export_frame_heights_action,
-            self._export_stack_heights_action,
+            self._export_heights_action,
+            self._export_ROIs_action,
             self._import_heights_action,
             self.import_images_action,
             self._save_stack_gif_action,
@@ -3992,7 +4018,7 @@ class MainWidget(QMainWindow):
             self.rotate_clockwise_action,
             self.rotate_counterclockwise_action,
             self.delete_frame_action,
-            self.make_substack_action
+            self.make_substack_action,
         ]
         for item in items:
             item.setEnabled(value)
@@ -4073,7 +4099,9 @@ class MainWidget(QMainWindow):
         self.canvas.draw_masks_parallel()
 
     def _open_files(self):
-        files, _ = QFileDialog.getOpenFileNames(self, 'Open file(s)', filter='*seg.npy *.tif *.tiff *.nd2', directory=self.open_dir)
+        files, _ = QFileDialog.getOpenFileNames(
+            self, 'Open file(s)', filter='*seg.npy *.tif *.tiff *.nd2', directory=self.open_dir
+        )
         if len(files) > 0:
             self.open_stack(files)
 
@@ -4131,7 +4159,9 @@ class MainWidget(QMainWindow):
             frames = []
             for file_path in img_files:
                 file_path = Path(file_path)
-                imgs = read_image_file(str(file_path), image_shape=image_shape, progress_bar=self._progress_bar, desc=f'Loading {file_path.name}')
+                imgs = read_image_file(
+                    str(file_path), image_shape=image_shape, progress_bar=self._progress_bar, desc=f'Loading {file_path.name}'
+                )
                 if imgs is None:
                     return False, None
                 for v, img in enumerate(self._progress_bar(imgs, desc=f'Processing {file_path.stem}')):
@@ -4224,7 +4254,9 @@ class MainWidget(QMainWindow):
             return
 
         if files is None:
-            files, _ = QFileDialog.getOpenFileNames(self, 'Open image file(s)', filter='*.tif *.tiff *.nd2', directory=self.open_dir)
+            files, _ = QFileDialog.getOpenFileNames(
+                self, 'Open image file(s)', filter='*.tif *.tiff *.nd2', directory=self.open_dir
+            )
         elif isinstance(files, str):
             files = [files]
 

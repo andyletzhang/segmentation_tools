@@ -105,7 +105,6 @@ def rotate_points(points:np.ndarray, shape, k=1):
 
     return np.array(points)
 
-from math import ceil
 def circular_colony_tiles(input, output=None, use_colonies='all', x_spacing=290, y_spacing=410, padding=400, verbose=True):
     """
     This script is designed to tile microscope stage positions for the MetaMorph imaging software.
@@ -168,6 +167,8 @@ def circular_colony_tiles(input, output=None, use_colonies='all', x_spacing=290,
     write_STG(output, head, tiled)
 
 def grid_from_bbox(min_corner, max_corner, x_spacing, y_spacing, padding=0, pad_from_center=True, reorder=True):
+    from math import ceil
+
     grid_size=max_corner-min_corner+2*padding
     
     # number of tiles needed in x and y directions

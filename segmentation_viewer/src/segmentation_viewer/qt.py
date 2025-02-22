@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QPointF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QDoubleValidator, QFont, QMouseEvent
+from PyQt6.QtGui import QColor, QIntValidator, QDoubleValidator, QFont, QMouseEvent
 from PyQt6.QtWidgets import (
     QColorDialog,
     QComboBox,
@@ -14,8 +14,10 @@ from PyQt6.QtWidgets import (
     QToolButton,
     QVBoxLayout,
     QWidget,
+    QSpacerItem,
+    QSizePolicy,
 )
-from superqt import QRangeSlider
+from superqt import QRangeSlider, QDoubleRangeSlider
 
 from segmentation_viewer.io import RangeStringValidator, range_string_to_list
 
@@ -37,12 +39,13 @@ class CustomComboBox(QComboBox):
         super().setCurrentText(text)
 
 
-class FineScrubQRangeSlider(QRangeSlider):
-    def __init__(self, *args, **kwargs):
+class FineScrubber():
+    def __init__(self, *args, scale=1, **kwargs):
         super().__init__(*args, **kwargs)
         self.fine_scrubbing = False
         self.fine_scrub_factor = 0.1  # Adjust this to change sensitivity
         self.original_press_pos = None
+        
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.RightButton:
@@ -101,6 +104,111 @@ class FineScrubQRangeSlider(QRangeSlider):
         else:
             super().mouseMoveEvent(event)
 
+    def rescale(self, min_val: float, max_val: float, step: float) -> None:
+        """
+        Rescale the slider's min/max, step size to the provided values.
+        """
+        self._singleStep = step
+        self._pageStep = step * 10
+        self.setRange(min_val, max_val)
+    
+class FineDoubleRangeSlider(QDoubleRangeSlider, FineScrubber):
+    def __init__(self, *args, scale=1, **kwargs):
+        super().__init__(*args, scale=scale, **kwargs)
+        self._singleStep=scale
+        self._pageStep=scale*10
+
+class FineRangeSlider(QRangeSlider, FineScrubber):
+    pass
+
+
+def labeled_LUT_slider(slider_name=None, mode='int', decimals=2, default_range=(0, 65535), parent=None, digit_width=5):
+    labels_and_slider = QHBoxLayout()
+    labels_and_slider.setSpacing(2)
+    if slider_name is not None:
+        slider_label = QLabel(slider_name)
+        labels_and_slider.addWidget(slider_label)
+
+    if mode == 'int':
+        slider = FineRangeSlider(orientation=Qt.Orientation.Horizontal, parent=parent)
+        validator=QIntValidator(*default_range)
+    elif mode == 'float':
+        slider = FineDoubleRangeSlider(orientation=Qt.Orientation.Horizontal, parent=parent)
+        validator=QDoubleValidator(*default_range, decimals)
+    else:
+        raise ValueError(f"Invalid slider mode: {mode}")
+    slider.setRange(*default_range)
+    slider.setValue(default_range)
+
+    range_labels = [QLineEdit(str(val)) for val in slider.value()]
+    for label in range_labels:
+        label.setFixedWidth(digit_width * 6)
+        label.setAlignment(Qt.AlignTop)
+        label.setValidator(validator)
+        label.setStyleSheet("""
+            QLineEdit {
+                border: none;
+                background: transparent;
+                padding: 0;
+            }
+        """)
+    range_labels[0].setAlignment(Qt.AlignRight)
+
+    def format_label(label):
+        if mode == 'int':
+            return str(int(label))
+        else:
+            return str(round(label, decimals))
+
+    def format_text(text):
+        if mode == 'int':
+            return int(text)
+        else:
+            return float(text)
+
+    # Connect QLineEdit changes to update the slider value
+    def update_min_slider_from_edit():
+        min_val = format_text(range_labels[0].text())
+        max_val = format_text(range_labels[1].text())
+
+        if min_val < slider.minimum():
+            slider.setMinimum(min_val)
+        elif min_val > max_val:
+            min_val = max_val
+            range_labels[0].setText(str(min_val))
+        slider.setValue((min_val, max_val))
+
+    def update_max_slider_from_edit():
+        min_val = format_text(range_labels[0].text())
+        max_val = format_text(range_labels[1].text())
+
+        if max_val > slider.maximum():
+            slider.setMaximum(max_val)
+        elif max_val < min_val:
+            max_val = min_val
+            range_labels[1].setText(str(max_val))
+        slider.setValue((min_val, max_val))
+
+    range_labels[0].editingFinished.connect(update_min_slider_from_edit)
+    range_labels[1].editingFinished.connect(update_max_slider_from_edit)
+
+    # Connect slider value changes to update the QLineEdit text
+    def update_edits_from_slider():
+        min_val, max_val = slider.value()
+        min_val=format_label(min_val)
+        max_val=format_label(max_val)
+        range_labels[0].setText(min_val)
+        range_labels[1].setText(max_val)
+
+    slider.valueChanged.connect(update_edits_from_slider)
+
+    labels_and_slider.addWidget(range_labels[0])
+    labels_and_slider.addSpacerItem(QSpacerItem(10, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed))
+    labels_and_slider.addWidget(slider)
+    labels_and_slider.addSpacerItem(QSpacerItem(10, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed))
+    labels_and_slider.addWidget(range_labels[1])
+
+    return labels_and_slider, slider, range_labels
 
 class SubstackDialog(QDialog):
     def __init__(self, array_length, parent=None):
@@ -142,7 +250,6 @@ class SubstackDialog(QDialog):
         except ValueError:
             QMessageBox.warning(self, 'Invalid Input', 'Invalid input. Please enter a valid range of frames.')
             return None
-
 
 class OverlaySettingsDialog(QDialog):
     settings_applied = pyqtSignal(dict)

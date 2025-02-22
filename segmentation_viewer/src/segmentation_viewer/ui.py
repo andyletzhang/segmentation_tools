@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .qt import CustomComboBox, FineScrubQRangeSlider
+from .qt import CustomComboBox, labeled_LUT_slider
 
 spacer = (0, 10)  # default spacer size (width, height)
 
@@ -1014,69 +1014,34 @@ def clear_layout(layout):
             del item
 
 
-def labeled_LUT_slider(slider_name=None, default_range=(0, 65535), parent=None, digit_width=5):
-    labels_and_slider = QHBoxLayout()
-    labels_and_slider.setSpacing(2)
-    if slider_name is not None:
-        slider_label = QLabel(slider_name)
-        labels_and_slider.addWidget(slider_label)
+def calculate_range_params(data: np.ndarray) -> tuple[float, float, float]:
+    """
+    Get the bounds and step size for the range slider based on the data.
+    
+    Args:
+        data: The data to determine the bounds and step size from
+    
+    Returns:
+        A tuple containing the minimum value, maximum value, and step size
+    """
+    data=np.asarray(data)
+    data = data[~np.isnan(data)].flatten()
+    if len(data) == 0:
+        return 0, 1, 1
+    min_val = np.min(data)
+    max_val = np.max(data)
+    if min_val == max_val:
+        return 0, 1, 1
+    if np.issubdtype(data.dtype, np.integer):
+        return min_val, max_val, 1
+    else:
+        if max_val-min_val > 100: # if the range is large, use integer steps
+            min_val = np.floor(min_val)
+            max_val = np.ceil(max_val)
+            step = 1
+        else:
+            unique_diffs = np.unique(np.diff(np.sort(data)))
+            step = unique_diffs[unique_diffs > 0].min()
+        return min_val, max_val, step
 
-    slider = FineScrubQRangeSlider(orientation=Qt.Orientation.Horizontal, parent=parent)
-    slider.setRange(*default_range)
-    slider.setValue(default_range)
 
-    range_labels = [QLineEdit(str(val)) for val in slider.value()]
-    for label in range_labels:
-        label.setFixedWidth(digit_width * 6)
-        label.setAlignment(Qt.AlignTop)
-        label.setValidator(QIntValidator(*default_range))
-        label.setStyleSheet("""
-            QLineEdit {
-                border: none;
-                background: transparent;
-                padding: 0;
-            }
-        """)
-    range_labels[0].setAlignment(Qt.AlignRight)
-
-    # Connect QLineEdit changes to update the slider value
-    def update_min_slider_from_edit():
-        min_val = int(range_labels[0].text())
-        max_val = int(range_labels[1].text())
-
-        if min_val < slider.minimum():
-            slider.setMinimum(min_val)
-        elif min_val > max_val:
-            min_val = max_val
-            range_labels[0].setText(str(min_val))
-        slider.setValue((min_val, max_val))
-
-    def update_max_slider_from_edit():
-        min_val = int(range_labels[0].text())
-        max_val = int(range_labels[1].text())
-
-        if max_val > slider.maximum():
-            slider.setMaximum(max_val)
-        elif max_val < min_val:
-            max_val = min_val
-            range_labels[1].setText(str(max_val))
-        slider.setValue((min_val, max_val))
-
-    range_labels[0].editingFinished.connect(update_min_slider_from_edit)
-    range_labels[1].editingFinished.connect(update_max_slider_from_edit)
-
-    # Connect slider value changes to update the QLineEdit text
-    def update_edits_from_slider():
-        min_val, max_val = slider.value()
-        range_labels[0].setText(str(min_val))
-        range_labels[1].setText(str(max_val))
-
-    slider.valueChanged.connect(update_edits_from_slider)
-
-    labels_and_slider.addWidget(range_labels[0])
-    labels_and_slider.addSpacerItem(QSpacerItem(10, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed))
-    labels_and_slider.addWidget(slider)
-    labels_and_slider.addSpacerItem(QSpacerItem(10, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed))
-    labels_and_slider.addWidget(range_labels[1])
-
-    return labels_and_slider, slider, range_labels

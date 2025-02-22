@@ -44,21 +44,19 @@ from tqdm import tqdm
 from .canvas import CellMaskPolygons, CellSplitLines, PyQtGraphCanvas
 from .command_line import CommandLineWindow
 from .io import ExportWizard
-from .qt import CustomComboBox, SubstackDialog, FrameStackDialog
+from .qt import CustomComboBox, FrameStackDialog, SubstackDialog, labeled_LUT_slider
 from .scripting import ScriptWindow
-from .ui import LeftToolbar, labeled_LUT_slider
+from .ui import LeftToolbar, calculate_range_params, clear_layout
 from .utils import create_html_table, load_stylesheet
 from .workers import BoundsProcessor
 
 # high priority
-# TODO: export masks to ImageJ ROIs, Tiff
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
 # ndimage labeled measurements on any of these attributes to create new ones
 # TODO: export segplot as gif
 # gif export color quality
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
-# TODO: fix segmentation stat LUTs, implement stack LUTs (when possible). Allow floats when appropriate
 
 # low priority
 # TODO: unify print statements with status bar messages
@@ -222,11 +220,8 @@ class MainWidget(QMainWindow):
                 'Export CSV...': (self._export_csv, 'Ctrl+Shift+E'),
                 'Export Heights...': (self._export_heights, None),
                 'Export ImageJ ROIs...': (self._export_ROIs, None),
-            },  
-            'Import': {
-                'Import Heights...': (self._import_heights, None),
-                'Import Images...': (self.import_images, None),
             },
+            'Import': {'Import Heights...': (self._import_heights, None), 'Import Images...': (self.import_images, None)},
             'Window Screenshot': (self.save_screenshot, None),
             'Save Stack GIF': (self._save_stack_gif, None),
             'Exit': (self.close, 'Ctrl+Q'),
@@ -249,10 +244,7 @@ class MainWidget(QMainWindow):
             'Rotate Stack Clockwise': (self.rotate_clockwise, None),
             'Rotate Stack Counterclockwise': (self.rotate_counterclockwise, None),
         }
-        stack_actions = {
-            'Delete Frame': (self.delete_frame, None),
-            'Make Substack...': (self.make_substack, None),
-        }
+        stack_actions = {'Delete Frame': (self.delete_frame, None), 'Make Substack...': (self.make_substack, None)}
         scripts_actions = {
             'Open Command Line': (self._open_command_line, None),
             'Open Script Editor': (self._open_script_editor, None),
@@ -289,7 +281,7 @@ class MainWidget(QMainWindow):
                     action = create_action(key, function, self, shortcut)
                     setattr(self, f'{function.__name__}_action', action)
                     menu.addAction(action)
-                    
+
         for menu, actions in zip(
             ['File', 'Edit', 'View', 'Image', 'Stack', 'Scripts', 'Help'],
             [file_actions, edit_actions, view_actions, image_actions, stack_actions, scripts_actions, help_actions],
@@ -426,9 +418,9 @@ class MainWidget(QMainWindow):
         normalize_layout.addWidget(self.stat_custom_button)
         self.stat_frame_button.setChecked(True)
         self.stat_LUT_type = 'frame'
-        slider_layout, self.stat_LUT_slider, self.stat_range_labels = labeled_LUT_slider(
-            default_range=(0, 255), parent=stat_overlay_widget
-        )
+        self.stat_LUT_layout = QVBoxLayout()
+        self.stat_LUT_layout.setContentsMargins(0, 0, 0, 0)
+        self.get_stat_LUT_slider()
 
         cell_ID_widget = QWidget(objectName='bordered')
         self.cell_ID_layout = QFormLayout(cell_ID_widget)
@@ -446,7 +438,7 @@ class MainWidget(QMainWindow):
         stat_overlay_layout.addLayout(seg_overlay_layout)
         stat_overlay_layout.addWidget(normalize_label)
         stat_overlay_layout.addWidget(normalize_widget)
-        stat_overlay_layout.addLayout(slider_layout)
+        stat_overlay_layout.addLayout(self.stat_LUT_layout)
 
         # Create a container widget for all content
         particle_stat_layout = QSplitter(Qt.Orientation.Vertical)
@@ -475,11 +467,18 @@ class MainWidget(QMainWindow):
         self.seg_overlay_attr.dropdownOpened.connect(self._get_overlay_attrs)
         self.seg_overlay_attr.activated.connect(self._new_seg_overlay)
         self.seg_overlay_attr.currentIndexChanged.connect(self._new_seg_overlay)
-        self.stat_LUT_slider.valueChanged.connect(self._stat_LUT_slider_changed)
         self.stat_frame_button.toggled.connect(self._update_stat_LUT)
         self.stat_stack_button.toggled.connect(self._update_stat_LUT)
         self.stat_custom_button.toggled.connect(self._update_stat_LUT)
         return right_scroll_area
+
+    def get_stat_LUT_slider(self, mode='int'):
+        clear_layout(self.stat_LUT_layout)
+        slider_layout, self.stat_LUT_slider, self.stat_range_labels = labeled_LUT_slider(
+            default_range=(0, 255), parent=None, digit_width=8, mode=mode
+        )
+        self.stat_LUT_layout.addLayout(slider_layout)
+        self.stat_LUT_slider.valueChanged.connect(self._stat_LUT_slider_changed)
 
     def _stat_tab_switched(self, index):
         if not self.file_loaded:
@@ -580,12 +579,9 @@ class MainWidget(QMainWindow):
         self.canvas.cb.setLevels(levels)  # TODO: better colorbar tick labels
 
     def _update_stat_LUT(self):
-        if self.stat_frame_button.isChecked():
-            self.stat_LUT_type = 'frame'
-        elif self.stat_stack_button.isChecked():
-            self.stat_LUT_type = 'stack'
-        else:
-            self.stat_LUT_type = 'custom'
+        buttons=[self.stat_frame_button, self.stat_stack_button, self.stat_custom_button]
+        selected=[button.isChecked() for button in buttons].index(True)
+        self.stat_LUT_type = ['frame', 'stack', 'custom'][selected]
 
         self._show_seg_overlay()
 
@@ -651,7 +647,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         current_attr = self.seg_overlay_attr.currentText()
-        keys = self._get_cell_frame_attrs()
+        keys = self._get_cell_frame_attrs(ignored={'frame', 'n', 'green', 'red', 'cycle_stage'})
         if hasattr(self.frame, 'heights'):
             keys.append('heights')
         keys = ['Select Cell Attribute'] + natsorted(keys)
@@ -694,9 +690,16 @@ class MainWidget(QMainWindow):
                 if len(stat) == 0:
                     print(f'Attribute {plot_attr} not found in cells')
                     return
-            LUT_range = (np.nanmin(stat), np.nanmax(stat))
+
+            min_val, max_val, step = calculate_range_params(stat)
+            self.stat_stack_bounds=tuple(get_quantile(stat[..., np.newaxis])[0])
+            if isinstance(step, float):
+                mode = 'float'
+            else:
+                mode = 'int'
+            self.get_stat_LUT_slider(mode=mode)
             self.stat_LUT_slider.blockSignals(True)
-            self.stat_LUT_slider.setRange(*LUT_range)
+            self.stat_LUT_slider.rescale(min_val, max_val, step)
             self.stat_LUT_slider.blockSignals(False)
 
             if self.stat_LUT_type == 'custom':  # change the LUT range to match the new data
@@ -739,14 +742,17 @@ class MainWidget(QMainWindow):
             levels = (0, 1)
             self.canvas.seg_stat_overlay.clear()
         else:
-            stat_range = (np.nanmin(stat), np.nanmax(stat))
             if self.stat_LUT_type == 'frame':
+                stat_range = tuple(get_quantile(stat[...,np.newaxis])[0])
                 levels = stat_range
             elif self.stat_LUT_type == 'stack':
-                levels = stat_range  # TODO: stack levels
+                levels = self.stat_stack_bounds
             elif self.stat_LUT_type == 'custom':
                 levels = self.stat_LUT_slider.value()
             self.canvas.seg_stat_overlay.setImage(self.canvas.image_transform(stat))
+
+        if self.stat_LUT_slider.__class__.__name__ == 'FineRangeSlider': # integer slider
+            levels=int(levels[0]), int(levels[1])
 
         self.stat_LUT_slider.blockSignals(True)
         self._set_stat_LUT_levels(levels)
@@ -3439,7 +3445,7 @@ class MainWidget(QMainWindow):
     def _export_heights(self):
         if not self.file_loaded:
             return
-        
+
         save_output = FrameStackDialog.get_choice()
         if save_output is None:
             return

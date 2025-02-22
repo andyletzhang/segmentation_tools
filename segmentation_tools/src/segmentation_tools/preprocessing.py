@@ -140,24 +140,25 @@ def get_quantile(img: np.ndarray, q=(1,99), mask_zeros: bool = False):
     else:
         return xp.array(results)
     
-def quantile_mono(img, q=(1, 99), mask_zeros: bool = False):
+def quantile_mono(img, q=(1, 99), mask_zeros: bool = False, mask_nans: bool=True):
     """Calculate percentiles for a single channel"""
     # Transfer data to GPU
     img = xp.asarray(img)
 
     if img.max()==0:
         return xp.array([0, 1])
+    
+    mask=np.zeros_like(img, dtype=bool)
+    if mask_nans:
+        mask|=xp.isnan(img)
     if mask_zeros:
         # Create mask for non-zero values
-        nonzero_mask = img != 0
+        mask |= img == 0
             
-        # Calculate percentiles only on non-zero values
-        img_filtered = img[nonzero_mask]
-        bounds = xp.percentile(img_filtered, q=q, axis=None)
-    else:
-        bounds = xp.percentile(img, q=q, axis=None)
+    # Calculate percentiles only on non-zero values
+    img_filtered = img[~mask]
+    bounds = xp.percentile(img_filtered, q=q, axis=None)
    
-    # Transfer results back to CPU
     return bounds
 
 

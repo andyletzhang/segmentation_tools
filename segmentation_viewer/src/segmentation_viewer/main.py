@@ -54,7 +54,6 @@ from .workers import BoundsProcessor
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
 # ndimage labeled measurements on any of these attributes to create new ones
 # TODO: export segplot as gif
-# gif export color quality
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
 
@@ -222,8 +221,16 @@ class MainWidget(QMainWindow):
                 'Export ImageJ ROIs...': (self._export_ROIs, None),
             },
             'Import': {'Import Heights...': (self._import_heights, None), 'Import Images...': (self.import_images, None)},
-            'Window Screenshot': (self.save_screenshot, None),
-            'Save Stack Video': (self._export_stack_video, None),
+            'Save Screenshot': {
+                'Window': (self._save_screenshot, None),
+                'Image Plot': (self._save_img_plot, None),
+                'Segmentation Plot': (self._save_seg_plot, None),
+            },
+            'Save Video': {
+                'Window': (self._export_window_video, None),
+                'Image Plot': (self._export_img_plot_video, None),
+                'Segmentation Plot': (self._export_seg_plot_video, None),
+            },
             'Exit': (self.close, 'Ctrl+Q'),
         }
         edit_actions = {
@@ -579,8 +586,8 @@ class MainWidget(QMainWindow):
         self.canvas.cb.setLevels(levels)  # TODO: better colorbar tick labels
 
     def _update_stat_LUT(self):
-        buttons=[self.stat_frame_button, self.stat_stack_button, self.stat_custom_button]
-        selected=[button.isChecked() for button in buttons].index(True)
+        buttons = [self.stat_frame_button, self.stat_stack_button, self.stat_custom_button]
+        selected = [button.isChecked() for button in buttons].index(True)
         self.stat_LUT_type = ['frame', 'stack', 'custom'][selected]
 
         self._show_seg_overlay()
@@ -692,7 +699,7 @@ class MainWidget(QMainWindow):
                     return
 
             min_val, max_val, step = calculate_range_params(stat)
-            self.stat_stack_bounds=tuple(get_quantile(stat[..., np.newaxis])[0])
+            self.stat_stack_bounds = tuple(get_quantile(stat[..., np.newaxis])[0])
             if isinstance(step, float):
                 mode = 'float'
             else:
@@ -743,7 +750,7 @@ class MainWidget(QMainWindow):
             self.canvas.seg_stat_overlay.clear()
         else:
             if self.stat_LUT_type == 'frame':
-                stat_range = tuple(get_quantile(stat[...,np.newaxis])[0])
+                stat_range = tuple(get_quantile(stat[..., np.newaxis])[0])
                 levels = stat_range
             elif self.stat_LUT_type == 'stack':
                 levels = self.stat_stack_bounds
@@ -751,8 +758,8 @@ class MainWidget(QMainWindow):
                 levels = self.stat_LUT_slider.value()
             self.canvas.seg_stat_overlay.setImage(self.canvas.image_transform(stat))
 
-        if self.stat_LUT_slider.__class__.__name__ == 'FineRangeSlider': # integer slider
-            levels=int(levels[0]), int(levels[1])
+        if self.stat_LUT_slider.__class__.__name__ == 'FineRangeSlider':  # integer slider
+            levels = int(levels[0]), int(levels[1])
 
         self.stat_LUT_slider.blockSignals(True)
         self._set_stat_LUT_levels(levels)
@@ -3911,139 +3918,171 @@ class MainWidget(QMainWindow):
         else:
             return None
 
-    def save_screenshot(self, event=None, file_path=None):
+    def _save_screenshot(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, 'Save screenshot as...', filter='*.png', directory=self.save_dir)
+        if file_path == '':
+            return
+        self.save_screenshot(file_path=file_path)
+        print(f'Saved screenshot to {file_path}')
+    
+    def _save_img_plot(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, 'Save image plot as...', filter='*.png', directory=self.save_dir)
+        if file_path == '':
+            return
+        self.canvas.save_img_plot(file_path)
+        print(f'Saved image plot to {file_path}')
+
+    def _save_seg_plot(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, 'Save segmentation plot as...', filter='*.png', directory=self.save_dir)
+        if file_path == '':
+            return
+        self.canvas.save_seg_plot(file_path)
+        print(f'Saved segmentation plot to {file_path}')
+
+    def save_screenshot(self, file_path):
         """
         Take a screenshot of the main window and save it to a file.
 
         Parameters
         ----------
         file_path : str
-            The file path to save the screenshot to. If None, a file dialog is opened.
+            The file path to save the screenshot to.
         """
-
-        if file_path is None:
-            file_path, _ = QFileDialog.getSaveFileName(self, 'Save screenshot as...', filter='*.png', directory=self.save_dir)
-            if file_path == '':
-                return
         screenshot = self.take_screenshot()
         if screenshot is None:
             return
         screenshot.save(file_path, 'png')  # Save to file
         self.save_dir = Path(file_path).parent
-        print(f'Saved screenshot to {file_path}')
 
-    def _export_stack_video(self):
-        if not self.file_loaded:
-            return
-        
+    def _export_window_video(self):
+        self._export_video_prompt(screenshot='window')
+
+    def _export_img_plot_video(self):
+        self._export_video_prompt(screenshot='image')
+
+    def _export_seg_plot_video(self):
+        self._export_video_prompt(screenshot='segmentation')
+
+    def _export_video_prompt(self, screenshot='window', fps=10):
         # Define supported formats with their extensions and descriptions
         formats = {
-            "GIF (*.gif)": {"ext": "gif", "ffmpeg_opts": {
-                "codec": None,  # ffmpeg will automatically use gif encoder
-                "extra": ["-filter_complex", "[0:v] split [a][b];[a] palettegen [p];[b][p] paletteuse"]}
+            'GIF (*.gif)': {
+                'ext': 'gif',
+                'ffmpeg_opts': {
+                    'codec': None,  # ffmpeg will automatically use gif encoder
+                    'extra': ['-filter_complex', '[0:v] split [a][b];[a] palettegen [p];[b][p] paletteuse'],
+                },
             },
-            "MP4 (*.mp4)": {"ext": "mp4", "ffmpeg_opts": {
-                "codec": "h264",  # Using built-in h264 encoder
-                "extra": ["-pix_fmt", "yuv420p", "-crf", "23"]}
+            'MP4 (*.mp4)': {
+                'ext': 'mp4',
+                'ffmpeg_opts': {
+                    'codec': 'h264',  # Using built-in h264 encoder
+                    'extra': ['-pix_fmt', 'yuv420p', '-crf', '23'],
+                },
             },
-            "MKV (FFV1) (*.mkv)": {"ext": "mkv", "ffmpeg_opts": {
-                "codec": "ffv1",
-                "extra": ["-level", "3"]}
-            },
-            "Lossless PNG Video (*.mkv)": {"ext": "mkv", "ffmpeg_opts": {
-                "codec": "png",
-                "extra": []}
-            }
+            'MKV (FFV1) (*.mkv)': {'ext': 'mkv', 'ffmpeg_opts': {'codec': 'ffv1', 'extra': ['-level', '3']}},
+            'Lossless PNG Video (*.mkv)': {'ext': 'mkv', 'ffmpeg_opts': {'codec': 'png', 'extra': []}},
         }
-        
-        filter_str = ";;".join(formats.keys())
+
+        filter_str = ';;'.join(formats.keys())
         file_path, selected_filter = QFileDialog.getSaveFileName(
-            self,
-            'Save video as...',
-            directory=self.save_dir,
-            filter=filter_str
+            self, 'Save video as...', directory=self.save_dir, filter=filter_str
         )
-        
+
         if file_path == '':
             return
-            
+
         # Get the format settings based on selected filter
         format_settings = formats[selected_filter]
-        
+
         # Ensure correct extension
-        if not file_path.lower().endswith(f".{format_settings['ext']}"):
-            file_path += f".{format_settings['ext']}"
-        
-        delay = 100  # ms between frames
+        if not file_path.lower().endswith(f'.{format_settings["ext"]}'):
+            file_path += f'.{format_settings["ext"]}'
+
         try:
-            self.export_stack_video(file_path, delay=delay, format_settings=format_settings['ffmpeg_opts'])
+            self.export_window_video(file_path, screenshot=screenshot, fps=fps, format_settings=format_settings['ffmpeg_opts'])
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to save video: {str(e)}')
             return
-            
-        self.save_dir = Path(file_path).parent
-        print(f'Saved stack as {selected_filter} to {file_path}')
 
-    def export_stack_video(self, file_path, delay=100, format_settings=None):
+        self.save_dir = Path(file_path).parent
+        print(f'Saved video as {selected_filter} to {file_path}')
+
+    def export_window_video(self, file_path: str, screenshot: str='window', fps: int=10, format_settings: dict=None):
         """
         Save the stack with its current visual settings as a video.
-        
-        Parameters
-        ----------
-        file_path : str
-            The file path to save the video to.
-        delay : int
-            The delay between frames in milliseconds.
-        format_settings : dict
-            Dictionary containing ffmpeg codec and extra options.
         """
         import tempfile
-        import subprocess
-        
+
         temp_dir = tempfile.mkdtemp()
-        
+
+        if screenshot == 'window':
+            screenshot_func = self.take_screenshot
+        elif screenshot == 'image':
+            screenshot_func = self.canvas.save_img_plot
+        elif screenshot == 'segmentation':
+            screenshot_func = self.canvas.save_seg_plot
+        else:
+            raise ValueError(f'Invalid screenshot type: {screenshot}')
+
         # Ensure main window is active and process events
         self.activateWindow()
         self.raise_()
-        
+
         # hide crosshairs while taking screenshots
         self.canvas.hide_crosshairs()
-        
+
         # Process events and give a small delay for window activation
         QApplication.processEvents()
         QTimer.singleShot(100, lambda: None)
-        
+
         # Convert each frame to PNG
         for frame_number in range(len(self.stack.frames)):
             self.change_current_frame(frame_number)
             QApplication.processEvents()
             QTimer.singleShot(0, lambda: None)
-            
-            frame_path = os.path.join(temp_dir, f"{frame_number:05d}.png")
-            screenshot = self.take_screenshot()
-            screenshot.save(frame_path, 'png')
-        
-        fps = 1000/delay
-        
-        # Build ffmpeg command
-        ffmpeg_cmd = ["ffmpeg", "-y", "-framerate", str(fps),
-                    "-i", os.path.join(temp_dir, "%05d.png")]
-        
-        if format_settings["codec"]:
-            ffmpeg_cmd.extend(["-c:v", format_settings["codec"]])
-        
-        ffmpeg_cmd.extend(format_settings["extra"])
-        ffmpeg_cmd.append(file_path)
-        
-        # Run ffmpeg
-        subprocess.run(ffmpeg_cmd, check=True)
-        
+
+            frame_path = os.path.join(temp_dir, f'{frame_number:05d}.png')
+            screenshot_func(frame_path)  # save a png of the current frame to the temp directory
+
+        self.pngs_to_video(os.path.join(temp_dir, '%05d.png'), out_path=file_path, fps=fps, format_settings=format_settings)
+
         # Clean up temporary images
         for f in os.listdir(temp_dir):
             os.remove(os.path.join(temp_dir, f))
         os.rmdir(temp_dir)
-        
         self.canvas.show_crosshairs()
+
+    def export_plot_video(self, format_settings, out_path=None, fps=10, plot='img'):
+        pass
+
+    @staticmethod
+    def pngs_to_video(png_fmt, out_path, format_settings, fps=10):
+        """
+        Convert a series of PNG images to a video file using ffmpeg.
+
+        Parameters
+        ----------
+        png_fmt : str
+            The file path format string for the PNG images.
+        video_path : str
+            The file path to save the video to.
+        fps : int
+            The frames per second of the video.
+        """
+        import subprocess
+
+        # Build ffmpeg command
+        ffmpeg_cmd = ['ffmpeg', '-y', '-framerate', str(fps), '-i', png_fmt]
+
+        if format_settings['codec']:
+            ffmpeg_cmd.extend(['-c:v', format_settings['codec']])
+
+        ffmpeg_cmd.extend(format_settings['extra'])
+        ffmpeg_cmd.append(out_path)
+
+        # Run ffmpeg
+        subprocess.run(ffmpeg_cmd, check=True)
 
     @property
     def file_loaded(self):
@@ -4062,7 +4101,11 @@ class MainWidget(QMainWindow):
             self._export_ROIs_action,
             self._import_heights_action,
             self.import_images_action,
-            self._export_stack_video_action,
+            self._save_img_plot_action,
+            self._save_seg_plot_action,
+            self._export_window_video_action,
+            self._export_img_plot_video_action,
+            self._export_seg_plot_video_action,
             self.clear_masks_action,
             self._generate_outlines_action,
             self._mend_gaps_action,

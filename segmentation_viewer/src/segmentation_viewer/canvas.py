@@ -453,6 +453,75 @@ class PyQtGraphCanvas(QWidget):
         self.img_hline.setPos(y)
         self.main_window._update_coordinate_label(int(x), int(y))
 
+    def save_img_plot(self, filename):
+        img = self.draw_plot(plot='img')
+        img.save(filename, compress_level=0, format='png')
+
+    def save_seg_plot(self, filename):
+        img = self.draw_plot(plot='seg')
+        img.save(filename, compress_level=0, format='png')
+
+    def draw_plot(self, plot: str='img'):
+        """Take a screenshot of the image plot."""
+        if plot == 'img':
+            plot = self.img_plot
+        elif plot == 'seg':
+            plot = self.seg_plot
+        else:
+            raise ValueError(f'Invalid plot type: {plot}')
+
+        image_shape = self.img_data.shape[:2]
+        images = plot.get_image_items()
+        # RGBA composition
+        RGBA_images = []
+        for img in reversed(images):
+            if not img.isVisible(): # only draw enabled layers
+                continue
+            if img.image.shape[:2] != image_shape: # skip if the image is not the same size as the main image
+                continue
+            
+            img_rgba = self.img_item_to_RGBA(img)
+            RGBA_images.append(self.inverse_image_transform(img_rgba)) # remove visual transformation
+        if len(RGBA_images) == 0:
+            return None
+        return self.composite_images_pillow(RGBA_images)
+    
+    def img_item_to_RGBA(self, img: pg.ImageItem) -> np.ndarray:
+        # apply levels
+        image = img.image.copy()
+        nan_mask=np.isnan(image)
+        image[nan_mask]=0
+        if img.levels is not None:
+            levels = img.levels
+            image = np.clip(image, levels[0], levels[1])
+            image = (image - levels[0]) / (levels[1] - levels[0]) * 255
+        
+        image = image.astype(np.uint8)
+        # apply LUT if necessary
+        if img.lut is not None:
+            image = img.lut[image]
+
+        if image.ndim == 2:
+            image = np.repeat(image[..., np.newaxis], 3, axis=-1)
+
+        # add alpha channel
+        if image.shape[-1] == 3:
+            alpha = np.ones((*image.shape[:2], 1), dtype=np.uint8) * 255
+            image = np.concatenate((image, alpha), axis=-1)
+        
+        image[nan_mask] = 0
+
+        return image
+
+    def composite_images_pillow(self, images):
+        from PIL import Image
+
+        """Composites a list of PIL RGBA images using Pillow."""
+        base = Image.fromarray(images[0], mode='RGBA')
+        for img in images[1:]:
+            base = Image.alpha_composite(base, Image.fromarray(img, mode='RGBA'))
+        return base
+
     @property
     def cursor_pixels(self):
         """Get the cursor position as integers."""
@@ -497,7 +566,7 @@ class PyQtGraphCanvas(QWidget):
         execution_times['RGB_checks handling'] = time.time() - start_time
 
         start_time = time.time()
-        self.seg_data = np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1)
+        self.seg_data = np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1).astype(np.uint8)
         execution_times['self.seg_data = np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1)'] = (
             time.time() - start_time
         )
@@ -573,6 +642,9 @@ class SegPlot(pg.PlotWidget):
         else:
             event.ignore()
 
+    def get_image_items(self):
+        return [item for item in self.items() if isinstance(item, pg.ImageItem) and item.image is not None]
+
 
 class RGB_ImageItem:
     def __init__(self, plot: pg.PlotWidget, img_data=None, parent=None):
@@ -626,6 +698,10 @@ class RGB_ImageItem:
 
         if self.canvas.is_inverted:
             rgb_array = inverted_contrast(rgb_array)
+
+        # add alpha channel
+        alpha = np.ones((height, width, 1), dtype=np.uint8) * 255
+        rgb_array = np.concatenate((rgb_array, alpha), axis=-1)
         return rgb_array
 
     def refresh(self):

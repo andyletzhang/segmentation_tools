@@ -347,7 +347,7 @@ class PyQtGraphCanvas(QWidget):
             color = [*to_rgb(color), alpha]
 
             # get bounding box of cell mask
-            xmin, xmax, ymin, ymax = self.get_bounding_box(cell_mask)
+            xmin, xmax, ymin, ymax = get_bounding_box(cell_mask)
             if xmin is None:
                 raise IndexError(f'No pixels found for cell number {cell_index}.')
 
@@ -360,7 +360,7 @@ class PyQtGraphCanvas(QWidget):
                 seg_cell_mask[cell_mask_bbox, -1] = 1
 
             if img_type == 'outlines' or seg_type == 'outlines':
-                outlines = self.get_mask_boundary(cell_mask_bbox)
+                outlines = get_mask_boundary(cell_mask_bbox)
                 if img_type == 'outlines':
                     img_cell_mask[~outlines] = 0
                 if seg_type == 'outlines':
@@ -399,32 +399,6 @@ class PyQtGraphCanvas(QWidget):
             frame.stored_mask_overlay = overlays
 
         return
-
-    def get_bounding_box(self, cell_mask):
-        # UTIL
-        # Find the rows and columns that contain True values
-        rows = np.any(cell_mask, axis=1)
-        cols = np.any(cell_mask, axis=0)
-
-        # Find the indices of these rows and columns
-        row_indices = np.where(rows)[0]
-        col_indices = np.where(cols)[0]
-
-        # Calculate the bounding box coordinates
-        if row_indices.size and col_indices.size:
-            min_row, max_row = row_indices[[0, -1]]
-            min_col, max_col = col_indices[[0, -1]]
-            return min_row, max_row + 1, min_col, max_col + 1
-        else:
-            # If no True values are found, raise
-            return None, None, None, None
-
-    def get_mask_boundary(self, mask):
-        # UTIL
-        from skimage.segmentation import find_boundaries
-
-        boundaries = find_boundaries(mask, mode='inner')
-        return boundaries
 
     def get_plot_coords(self, pos=None, pixels=True):
         """Get the pixel coordinates of the mouse cursor."""
@@ -480,47 +454,11 @@ class PyQtGraphCanvas(QWidget):
             if img.image.shape[:2] != image_shape: # skip if the image is not the same size as the main image
                 continue
             
-            img_rgba = self.img_item_to_RGBA(img)
+            img_rgba = img_item_to_RGBA(img)
             RGBA_images.append(self.inverse_image_transform(img_rgba)) # remove visual transformation
         if len(RGBA_images) == 0:
             return None
-        return self.composite_images_pillow(RGBA_images)
-    
-    def img_item_to_RGBA(self, img: pg.ImageItem) -> np.ndarray:
-        # apply levels
-        image = img.image.copy()
-        nan_mask=np.isnan(image)
-        image[nan_mask]=0
-        if img.levels is not None:
-            levels = img.levels
-            image = np.clip(image, levels[0], levels[1])
-            image = (image - levels[0]) / (levels[1] - levels[0]) * 255
-        
-        image = image.astype(np.uint8)
-        # apply LUT if necessary
-        if img.lut is not None:
-            image = img.lut[image]
-
-        if image.ndim == 2:
-            image = np.repeat(image[..., np.newaxis], 3, axis=-1)
-
-        # add alpha channel
-        if image.shape[-1] == 3:
-            alpha = np.ones((*image.shape[:2], 1), dtype=np.uint8) * 255
-            image = np.concatenate((image, alpha), axis=-1)
-        
-        image[nan_mask] = 0
-
-        return image
-
-    def composite_images_pillow(self, images):
-        from PIL import Image
-
-        """Composites a list of PIL RGBA images using Pillow."""
-        base = Image.fromarray(images[0], mode='RGBA')
-        for img in images[1:]:
-            base = Image.alpha_composite(base, Image.fromarray(img, mode='RGBA'))
-        return base
+        return composite_images_pillow(RGBA_images)
 
     @property
     def cursor_pixels(self):
@@ -620,6 +558,66 @@ class PyQtGraphCanvas(QWidget):
         if hasattr(self, 'mask_processor'):
             self.mask_processor.abort_all_tasks()
 
+# util functions
+def img_item_to_RGBA(img: pg.ImageItem) -> np.ndarray:
+    # apply levels
+    image = img.image.copy()
+    nan_mask=np.isnan(image)
+    image[nan_mask]=0
+    if img.levels is not None:
+        levels = img.levels
+        image = np.clip(image, levels[0], levels[1])
+        image = (image - levels[0]) / (levels[1] - levels[0]) * 255
+    
+    image = image.astype(np.uint8)
+    # apply LUT if necessary
+    if img.lut is not None:
+        image = img.lut[image]
+
+    if image.ndim == 2:
+        image = np.repeat(image[..., np.newaxis], 3, axis=-1)
+
+    # add alpha channel
+    if image.shape[-1] == 3:
+        alpha = np.ones((*image.shape[:2], 1), dtype=np.uint8) * 255
+        image = np.concatenate((image, alpha), axis=-1)
+    
+    image[nan_mask] = 0
+
+    return image
+
+def composite_images_pillow(images):
+    from PIL import Image
+
+    """Composites a list of PIL RGBA images using Pillow."""
+    base = Image.fromarray(images[0], mode='RGBA')
+    for img in images[1:]:
+        base = Image.alpha_composite(base, Image.fromarray(img, mode='RGBA'))
+    return base
+
+def get_mask_boundary(self, mask):
+    from skimage.segmentation import find_boundaries
+
+    boundaries = find_boundaries(mask, mode='inner')
+    return boundaries
+
+def get_bounding_box(cell_mask):
+    # Find the rows and columns that contain True values
+    rows = np.any(cell_mask, axis=1)
+    cols = np.any(cell_mask, axis=0)
+
+    # Find the indices of these rows and columns
+    row_indices = np.where(rows)[0]
+    col_indices = np.where(cols)[0]
+
+    # Calculate the bounding box coordinates
+    if row_indices.size and col_indices.size:
+        min_row, max_row = row_indices[[0, -1]]
+        min_col, max_col = col_indices[[0, -1]]
+        return min_row, max_row + 1, min_col, max_col + 1
+    else:
+        # If no True values are found, raise
+        return None, None, None, None
 
 class SegPlot(pg.PlotWidget):
     """
@@ -823,7 +821,7 @@ class CellMaskPolygon(QGraphicsPolygonItem):
         self.update_polygon()
         self.last_handle_pos = (y, x)
 
-    def get_enclosed_pixels(self):
+    def get_enclosed_pixels(self) -> np.ndarray:
         """Return all pixels enclosed by the polygon."""
         from skimage.draw import polygon
 

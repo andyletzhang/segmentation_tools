@@ -2863,11 +2863,9 @@ class MainWidget(QMainWindow):
         if cell is False:
             return False
         cell.color_ID = self.canvas.random_color_ID()
-        mask_command = MaskCommand(
+        mask_command = AddCellCommand(
             self,
-            add=True,
             cell=cell,
-            frame=frame,
             mask=binary_mask,
             description=f'Add mask {new_mask_n} in frame {frame.frame_number}',
         )
@@ -2880,8 +2878,8 @@ class MainWidget(QMainWindow):
             frame = self.frame
         cell = frame.cells[cell_n]
         mask = frame.masks == cell_n + 1
-        mask_command = MaskCommand(
-            self, add=False, cell=cell, frame=frame, mask=mask, description=f'Delete mask {cell_n} in frame {frame.frame_number}'
+        mask_command = DeleteCellCommand(
+            self, cell=cell, mask=mask, description=f'Delete mask {cell_n} in frame {frame.frame_number}'
         )
         self.undo_stack.push(mask_command)
         print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
@@ -4442,69 +4440,116 @@ class MainWidget(QMainWindow):
         self.canvas.close()
         event.accept()
 
-
-class MaskCommand(QUndoCommand):
+class BaseCellCommand(QUndoCommand):
     '''
-    Undoable command for adding or deleting a cell.
+    Base class for cell add/delete operations.
     '''
     def __init__(
         self,
         main_window: MainWidget,
         cell: Cell,
-        frame: SegmentedImage,
         mask: np.ndarray,
-        add: bool = True,
         description: str = '',
     ):
         super().__init__(description)
         self.main_window = main_window
         self.cell = cell
-        self.frame = frame
-        self.add = add
         self.mask = mask
-
         self.tracking_command = None
         if hasattr(self.main_window.stack, 'tracked_centroids'):
             tracking_data = self.main_window.stack.tracked_centroids
             row = tracking_data[
-                (tracking_data.frame == self.frame.frame_number) & 
+                (tracking_data.frame == self.cell.frame) & 
                 (tracking_data.cell_number == self.cell.n)
             ]
-            self.tracking_command = TrackingRowCommand(
-                main_window=self.main_window,
-                frame_number=self.frame.frame_number,
-                cell_number=self.cell.n,
-                row=row if not row.empty else None,
-                add=add,
-                description="Update tracking data"
-            )
+            self.tracking_command = self._create_tracking_command(row)
+    
+    def _create_tracking_command(self, row):
+        """Create appropriate tracking command (to be implemented by subclasses)"""
+        raise NotImplementedError
 
     def redo(self):
-        if self.add:
-            self.add_cell()
-        else:
-            self.delete_cell()
+        self._redo_operation()
         if self.tracking_command is not None:
             self.tracking_command.redo()
-
+    
     def undo(self):
-        if self.add:
-            self.delete_cell()
-        else:
-            self.add_cell()
+        self._undo_operation()
         if self.tracking_command is not None:
             self.tracking_command.undo()
+    
+    def _redo_operation(self):
+        """Implemented by subclasses"""
+        raise NotImplementedError
+    
+    def _undo_operation(self):
+        """Implemented by subclasses"""
+        raise NotImplementedError
 
-    def delete_cell(self):
+
+class AddCellCommand(BaseCellCommand):
+    '''
+    Undoable command for adding a cell.
+    '''
+    def __init__(
+        self,
+        main_window: MainWidget,
+        cell: Cell,
+        mask: np.ndarray,
+        description: str = 'Add Cell',
+    ):
+        super().__init__(main_window, cell, mask, description)
+    
+    def _create_tracking_command(self, row):
+        return AddTrackingRowCommand(
+            main_window=self.main_window,
+            frame_number=self.cell.frame,
+            cell_number=self.cell.n,
+            row=row if not row.empty else None,
+            description="Create tracking data for new cell"
+        )
+    
+    def _redo_operation(self):
+        self.main_window.add_cell(self.cell, self.mask)
+    
+    def _undo_operation(self):
         self.main_window.delete_cell(self.cell, self.mask)
 
-    def add_cell(self):
+
+class DeleteCellCommand(BaseCellCommand):
+    '''
+    Undoable command for deleting a cell.
+    '''
+    def __init__(
+        self,
+        main_window: MainWidget,
+        cell: Cell,
+        mask: np.ndarray,
+        description: str = 'Delete Cell',
+    ):
+        super().__init__(main_window, cell, mask, description)
+    
+    def _create_tracking_command(self, row):
+        return DeleteTrackingRowCommand(
+            main_window=self.main_window,
+            frame_number=self.cell.frame,
+            cell_number=self.cell.n,
+            row=row if not row.empty else None,
+            description="Remove tracking data for deleted cell"
+        )
+    
+    def _redo_operation(self):
+        self.main_window.delete_cell(self.cell, self.mask)
+    
+    def _undo_operation(self):
         self.main_window.add_cell(self.cell, self.mask)
 
 
 class TrackingRowCommand(QUndoCommand):
     '''
-    Undoable command for adding or deleting a row from the tracking data.
+class BaseTrackingRowCommand(QUndoCommand):
+    '''
+    Base class for tracking row operations.
     '''
     def __init__(
         self,
@@ -4512,47 +4557,70 @@ class TrackingRowCommand(QUndoCommand):
         frame_number: int,
         cell_number: int,
         row: pd.DataFrame | None = None,
-        add: bool = True,
         description: str = '',
     ):
         super().__init__(description)
         self.main_window = main_window
         self.frame_number = frame_number
         self.cell_number = cell_number
-        self.row = row
-        self.add = add
-
+        self.row = self._determine_row(row)
+    
+    def _determine_row(self, row):
+        """Determine the row to work with, implemented by subclasses"""
+        raise NotImplementedError
+    
     def redo(self):
-        if self.add:
-            self.add_row()
-        else:
-            self.delete_row()
-
+        self._redo_operation()
+    
     def undo(self):
-        if self.add:
-            self.delete_row()
-        else:
-            self.add_row()
-
+        self._undo_operation()
+    
+    def _redo_operation(self):
+        """Implemented by subclasses"""
+        raise NotImplementedError
+    
+    def _undo_operation(self):
+        """Implemented by subclasses"""
+        raise NotImplementedError
+    
     def delete_row(self):
         t = self.main_window.stack.tracked_centroids
-        if self.row is None: # row was not provided, fetch it
-            self.row = t.loc[(t.frame == self.frame_number) & (t.cell_number == self.cell_number)]
         t.drop(self.row.index, inplace=True)
         t.loc[(t.frame == self.frame_number) & (t.cell_number > self.cell_number), 'cell_number'] -= 1
-
-
+    
     def add_row(self):
-        if self.row is None: # create a new row
-            self.row = self.new_tracking_row()
         t = self.main_window.stack.tracked_centroids
         t.loc[(t.frame == self.frame_number) & (t.cell_number >= self.cell_number), 'cell_number'] += 1
         self.main_window.stack.tracked_centroids = pd.concat([t, self.row]).sort_values(['frame', 'particle'])
 
+
+class AddTrackingRowCommand(BaseTrackingRowCommand):
+    '''
+    Undoable command for adding a row to the tracking data.
+    '''
+    def __init__(
+        self,
+        main_window: MainWidget,
+        frame_number: int,
+        cell_number: int,
+        row: pd.DataFrame | None = None,
+        description: str = 'Add Tracking Row',
+    ):
+        super().__init__(main_window, frame_number, cell_number, row, description)
+    
+    def _determine_row(self, row):
+        return self.new_tracking_row() if row is None else row
+    
+    def _redo_operation(self):
+        self.add_row()
+    
+    def _undo_operation(self):
+        self.delete_row()
+
     def new_tracking_row(self):
         t = self.main_window.stack.tracked_centroids
         cell = self.main_window.stack.frames[self.frame_number].cells[self.cell_number]
-    
+   
         new_particle_ID = t['particle'].max() + 1
         data = {
             'cell_number': cell.n,
@@ -4560,8 +4628,7 @@ class TrackingRowCommand(QUndoCommand):
             'x': cell.centroid[1],
             'frame': self.frame_number,
             'particle': new_particle_ID
-            }
-
+        }
         if hasattr(cell, 'color_ID'):
             data['color_ID'] = cell.color_ID
         placeholder_particle = {idx: None for idx in t.columns}
@@ -4569,6 +4636,33 @@ class TrackingRowCommand(QUndoCommand):
         row = pd.DataFrame([placeholder_particle], index=[t.index.max() + 1])
         return row
 
+
+class DeleteTrackingRowCommand(BaseTrackingRowCommand):
+    '''
+    Undoable command for deleting a row from the tracking data.
+    '''
+    def __init__(
+        self,
+        main_window: MainWidget,
+        frame_number: int,
+        cell_number: int,
+        row: pd.DataFrame | None = None,
+        description: str = 'Delete Tracking Row',
+    ):
+        super().__init__(main_window, frame_number, cell_number, row, description)
+    
+    def _determine_row(self, row):
+        if row is None:
+            return self.main_window.stack.tracked_centroids.loc[
+                (self.main_window.stack.tracked_centroids.frame == self.frame_number)
+                & (self.main_window.stack.tracked_centroids.cell_number == self.cell_number)].copy()
+        return row
+    
+    def _redo_operation(self):
+        self.delete_row()
+    
+    def _undo_operation(self):
+        self.add_row()
 def main():
     pg.setConfigOptions(useOpenGL=True)
     # pg.setConfigOptions(enableExperimental=True)

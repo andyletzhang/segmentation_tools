@@ -3085,36 +3085,37 @@ class MainWidget(QMainWindow):
         frame_number : int
             The frame number to merge the cells in. If None, the current frame is used.
         """
+        if frame_number is None:
+            frame_number = self.frame.frame_number
 
         if cell_n1 == cell_n2:
             return
-
-        if cell_n1 > cell_n2:
-            selected_cell_n = cell_n1 - 1  # new cells will be renumbered
+        
+        if cell_n1 + 1 == self.stack.frames[frame_number].n_cells:
+            selected_cell=cell_n1-1
         else:
-            selected_cell_n = cell_n1
+            selected_cell=cell_n1
 
         if frame_number is None:
             frame_number = self.frame_number
         # purge cell 2
-        new_cell, _ = self.stack.merge_cells(cell_n1, cell_n2, frame_number=frame_number)
+
+        cell1 = self.frame.cells[cell_n1]
+        cell2 = self.frame.cells[cell_n2]
+        mask1 = self.frame.masks == cell_n1 + 1
+        mask2 = self.frame.masks == cell_n2 + 1
+
+        command = MergeCellsCommand(self, [cell1, cell2], [mask1, mask2], description=f'Merge cells {cell_n1} and {cell_n2} in frame {frame_number}')
+        self.undo_stack.push(command)
+
         print(f'Merged cell {cell_n2} into cell {cell_n1} in frame {frame_number}')
 
         if hasattr(self.stack, 'tracked_centroids'):
             self.left_toolbar.also_save_tracking.setChecked(True)
 
-        # add new cell mask to the overlay
-        self.canvas.add_cell_highlight(
-            selected_cell_n,
-            alpha=self.canvas.masks_alpha,
-            color=new_cell.color_ID,
-            layer='mask',
-            frame=self.stack.frames[frame_number],
-        )
-
         if frame_number == self.frame_number:
             self._update_tracking_overlay()
-            self.select_cell(cell=selected_cell_n)
+            self.select_cell(cell=selected_cell)
             self._update_ROIs_label()
             self._update_display()
 
@@ -4542,9 +4543,49 @@ class DeleteCellCommand(BaseCellCommand):
     def _undo_operation(self):
         self.main_window.add_cell(self.cell, self.mask)
 
-
-class TrackingRowCommand(QUndoCommand):
+class MergeCellsCommand(QUndoCommand):
     '''
+    Undoable command for merging two cells.
+    '''
+    def __init__(
+        self,
+        main_window: MainWidget,
+        cells: list[Cell, Cell],
+        masks: list[np.ndarray, np.ndarray],
+        description: str = '',
+    ):
+        super().__init__(description)
+        self.main_window = main_window
+        self.cell1, self.cell2 = cells
+        if self.cell1.frame != self.cell2.frame:
+            raise ValueError('Cells must be in the same frame to merge.')
+        self.mask1, self.mask2 = masks
+        self.merged_mask=self.mask1 | self.mask2
+        self.merged_cell=self.cell1.copy()
+        self.merged_cell.outline=outlines_list(self.merged_mask)[0]
+
+        self.commands = [
+            DeleteCellCommand(self.main_window, self.cell1, self.mask1, description='Delete cell 1'),
+            DeleteCellCommand(self.main_window, self.cell2, self.mask2, description='Delete cell 2'),
+            AddCellCommand(self.main_window, self.merged_cell, self.merged_mask, description='Add merged cell'),
+        ]
+
+        if self.cell1.n < self.cell2.n: # reorder delete commands to preserve cell numbering
+            self.commands=[self.commands[1], self.commands[0], self.commands[2]]
+
+        if hasattr(self.main_window.stack, 'tracked_centroids'): # assign merged cell to particle 1
+            particle1=self.commands[0].tracking_command.row.particle.item()
+            self.commands[2].tracking_command.row.loc[:, 'particle'] = particle1
+
+
+    def redo(self):
+        for command in self.commands:
+            command.redo()
+
+    def undo(self):
+        for command in reversed(self.commands):
+            command.undo()
+
 class BaseTrackingRowCommand(QUndoCommand):
     '''
     Base class for tracking row operations.

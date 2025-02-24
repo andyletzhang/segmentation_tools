@@ -53,7 +53,8 @@ from .workers import BoundsProcessor
 # high priority
 # TODO: Things that need fixing after undoing is implemented:
 # reselect cells after undoing delete cell, merge cells
-# color IDs for merge particle tracks
+# color IDs for merge particle tracks, split particle tracks
+# reselect/deselect for split particle tracks
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
 # ndimage labeled measurements on any of these attributes to create new ones
 # TODO: frame histogram should have options for aggregating over frame or stack
@@ -2146,28 +2147,12 @@ class MainWidget(QMainWindow):
             The new particle number assigned to the second half of the split particle.
             If no split was made, returns None.
         """
-        new_particle = self.stack.split_particle_track(self.selected_particle_n, self.frame_number)
-
-        if new_particle is None:
-            return None
-
-        self.selected_particle_n = new_particle
-
-        # assign a random color to the new particle
-        new_color = self.canvas.random_cell_color()
-        for cell in self.stack.get_particle(self.selected_particle_n):
-            cell.color_ID = new_color
-            frame = self.stack.frames[cell.frame]
-            if hasattr(frame, 'stored_mask_overlay'):
-                self.canvas.add_cell_highlight(cell.n, frame=frame, color=new_color, alpha=self.canvas.masks_alpha, layer='mask')
-
-        print(f'Split particle {self.selected_particle_n} at frame {self.frame_number}')
+        command = SplitParticleTracksCommand(self.stack.tracked_centroids, self.selected_particle_n, self.frame_number)
+        self.undo_stack.push(command)
 
         self.left_toolbar.also_save_tracking.setChecked(True)
         self._plot_particle_statistic()
         self._update_tracking_overlay()
-
-        return new_particle
 
     def merge_particle_tracks(self, first_particle, second_particle):
         """
@@ -4632,6 +4617,44 @@ class MergeParticleTracksCommand(QUndoCommand):
             # Restore only the particle IDs of affected rows
             self.df.loc[self.affected_indices, 'particle'] = self.original_values
 
+class SplitParticleTracksCommand(QUndoCommand):
+    """
+    QUndoCommand for splitting a particle track at a specified frame.
+    
+    Assigns a new particle ID to all frames >= split_frame.
+    """
+    
+    def __init__(self, df, particle_id, split_frame, description=None):
+        """
+        Initialize the split command.
+        
+        Args:
+            df: The pandas DataFrame containing particle data
+            particle_id: ID of the particle to split
+            split_frame: Frame number where the split occurs
+            description: Optional command description
+        """
+        super().__init__(description or f"Split particle {particle_id} at frame {split_frame}")
+        
+        self.df = df
+        self.particle_id = particle_id
+        self.split_frame = split_frame
+        self.new_particle_id = self.df['particle'].max() + 1
+    
+    def redo(self):
+        """Perform the split operation."""
+        # Split the particle by assigning the new ID to all frames >= split_frame
+        split_mask = (self.df['particle'] == self.particle_id) & (self.df['frame'] >= self.split_frame)
+        self.df.loc[split_mask, 'particle'] = self.new_particle_id
+    
+    def undo(self):
+        """
+        Undo the split by merging the tracks back.
+        This reassigns the original ID to all frames that got the new ID.
+        """
+        # Find all rows with the new particle ID and restore them to the original ID
+        merge_mask = (self.df['particle'] == self.new_particle_id)
+        self.df.loc[merge_mask, 'particle'] = self.particle_id
 
 class BaseTrackingRowCommand(QUndoCommand):
     """

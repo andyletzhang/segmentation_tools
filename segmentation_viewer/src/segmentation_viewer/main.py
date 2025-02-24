@@ -4449,11 +4449,13 @@ class BaseCellCommand(QUndoCommand):
         cell: Cell,
         mask: np.ndarray,
         description: str = '',
+        show: bool = True,
     ):
         super().__init__(description)
         self.main_window = main_window
         self.cell = cell
         self.mask = mask
+        self.show = show
         self.tracking_command = None
         if hasattr(self.main_window.stack, 'tracked_centroids'):
             tracking_data = self.main_window.stack.tracked_centroids
@@ -4468,11 +4470,17 @@ class BaseCellCommand(QUndoCommand):
         raise NotImplementedError
 
     def redo(self):
+        if self.show:
+            if self.main_window.frame_number != self.cell.frame:
+                self.main_window.change_current_frame(self.cell.frame)
         self._redo_operation()
         if self.tracking_command is not None:
             self.tracking_command.redo()
     
     def undo(self):
+        if self.show:
+            if self.main_window.frame_number != self.cell.frame:
+                self.main_window.change_current_frame(self.cell.frame)
         self._undo_operation()
         if self.tracking_command is not None:
             self.tracking_command.undo()
@@ -4720,7 +4728,7 @@ class DeleteCellsCommand(QUndoCommand):
         self.masks = masks
         self.cell_commands=[]
         for cell, mask in zip(self.cells, self.masks): # initialize cell commands
-            command = DeleteCellCommand(self.main_window, cell, mask, description='Delete cell')
+            command = DeleteCellCommand(self.main_window, cell, mask, description='Delete cell', show=False)
             self.cell_commands.append(command)
         
     def redo(self):

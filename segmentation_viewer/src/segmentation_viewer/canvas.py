@@ -248,6 +248,7 @@ class PyQtGraphCanvas(QWidget):
 
         if frame == self.main_window.frame:
             drawing_layers = True
+
         else:
             if layer != 'mask':
                 Warning(

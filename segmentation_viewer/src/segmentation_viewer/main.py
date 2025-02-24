@@ -2078,7 +2078,7 @@ class MainWidget(QMainWindow):
 
         self.stack.track_centroids(**kwargs)
 
-    def _recolor_tracks(self):
+    def _recolor_tracks(self, draw: bool=True):
         # recolor cells so each particle has one color over time
         for frame in self.stack.frames:
             if hasattr(frame, 'stored_mask_overlay'):
@@ -2091,7 +2091,8 @@ class MainWidget(QMainWindow):
             tracked_frame = t[t.frame == frame.frame_number].sort_values('cell_number')
             frame.set_cell_attrs('color_ID', self.canvas.cell_cmap(tracked_frame['color']))
 
-        self.canvas.draw_masks_parallel()
+        if draw:
+            self.canvas.draw_masks_parallel()
 
     def particle_from_cell(self, cell_number, frame_number=None):
         """
@@ -4140,12 +4141,14 @@ class MainWidget(QMainWindow):
             return
 
         self.stack = loaded_stack
+        self.frame = self.stack.frames[0]
+
         self.globals_dict['stack'] = self.stack
 
         self.file_loaded = True
         if hasattr(self.stack, 'tracked_centroids'):
             self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(True)
-            self._recolor_tracks()
+            self._recolor_tracks(draw=False)
         else:
             self.left_toolbar.propagate_FUCCI_checkbox.setChecked(False)
             self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(False)
@@ -4159,7 +4162,6 @@ class MainWidget(QMainWindow):
         self.statusBar().showMessage(out_message, 3000)
         self.open_dir = Path(self.stack.name).parent
 
-        self.frame = self.stack.frames[0]
         if hasattr(self.frame, 'zstack'):
             self.is_zstack = True
             self.zstack_slider.setVisible(True)

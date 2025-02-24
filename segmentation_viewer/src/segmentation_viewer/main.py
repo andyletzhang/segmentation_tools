@@ -1313,21 +1313,20 @@ class MainWidget(QMainWindow):
         else:
             particle_n = self.selected_particle_n
             current_frame_n = self.frame_number
-            t = self.stack.tracked_centroids
-
-            head_cell_numbers, head_frame_numbers = np.array(
-                t[(t.particle == particle_n) & (t.frame <= current_frame_n)][['cell_number', 'frame']]
-            ).T
-            self.left_toolbar.also_save_tracking.setChecked(True)
+            
             to_delete = []
-            for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
-                frame = self.stack.frames[frame_n]
-                if hasattr(frame, 'stored_mask_overlay'):
-                    self.canvas.add_cell_highlight(cell_n, frame, color='none', layer='mask')
-                to_delete.append(frame.cells[cell_n])
+            masks=[]
+            for cell in self.stack.get_particle(particle_n):
+                if cell.frame <= current_frame_n:
+                    masks.append(cell.parent.masks == cell.n + 1)
+                    to_delete.append(cell)
 
-            for cell in to_delete:
-                self.delete_cell(cell)
+            if len(to_delete) == 0:
+                return
+
+            self.left_toolbar.also_save_tracking.setChecked(True)
+            command = DeleteCellsCommand(self, cells=to_delete, masks=masks, description=f'Delete particle {particle_n} tail from frame {current_frame_n}')
+            self.undo_stack.push(command)
 
             # reselect the particle
             self.select_cell(particle=particle_n)
@@ -1346,21 +1345,20 @@ class MainWidget(QMainWindow):
         else:
             particle_n = self.selected_particle_n
             current_frame_n = self.frame_number
-            t = self.stack.tracked_centroids
 
-            tail_cell_numbers, tail_frame_numbers = np.array(
-                t[(t.particle == particle_n) & (t.frame >= current_frame_n)][['cell_number', 'frame']]
-            ).T
-            self.left_toolbar.also_save_tracking.setChecked(True)
             to_delete = []
-            for cell_n, frame_n in zip(tail_cell_numbers, tail_frame_numbers):
-                frame = self.stack.frames[frame_n]
-                if hasattr(frame, 'stored_mask_overlay'):
-                    self.canvas.add_cell_highlight(cell_n, frame, color='none', layer='mask')
-                to_delete.append(frame.cells[cell_n])
+            masks=[]
+            for cell in self.stack.get_particle(particle_n):
+                if cell.frame >= current_frame_n:
+                    masks.append(cell.parent.masks == cell.n + 1)
+                    to_delete.append(cell)
 
-            for cell in to_delete:
-                self.delete_cell(cell)
+            if len(to_delete) == 0:
+                return
+
+            self.left_toolbar.also_save_tracking.setChecked(True)
+            command=DeleteCellsCommand(self, cells=to_delete, masks=masks, description=f'Delete particle {particle_n} tail from frame {current_frame_n}')
+            self.undo_stack.push(command)
 
             # reselect the particle
             self.select_cell(particle=particle_n)
@@ -1378,7 +1376,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
-            self.delete_cell(self.selected_cell)
+            self._delete_cell(self.selected_cell_n)
             return
 
         else:
@@ -1388,15 +1386,14 @@ class MainWidget(QMainWindow):
             self.left_toolbar.also_save_tracking.setChecked(True)
 
             cell_numbers, frame_numbers = np.array(t[t.particle == particle_n][['cell_number', 'frame']]).T
-            to_delete = []
-            for cell_n, frame_n in zip(cell_numbers, frame_numbers):
-                frame = self.stack.frames[frame_n]
-                if hasattr(frame, 'stored_mask_overlay'):
-                    self.canvas.add_cell_highlight(cell_n, frame, color='none', layer='mask')
-                to_delete.append(frame.cells[cell_n])
+            to_delete = self.stack.get_particle(particle_n)
+            masks=[]
 
-            for cell in to_delete:
-                self.delete_cell(cell)
+            for cell in self.stack.get_particle(particle_n):
+                masks.append(cell.parent.masks == cell.n + 1)
+
+            command = DeleteCellsCommand(self, cells=to_delete, masks=masks, description=f'Delete particle {particle_n}')
+            self.undo_stack.push(command)
             self._update_tracking_overlay()
 
     def clear_tracking(self):
@@ -2909,7 +2906,8 @@ class MainWidget(QMainWindow):
         frame = self.stack.frames[cell.frame]
 
         # remove mask overlay
-        self.canvas.add_cell_highlight(cell.n, frame=frame, color='none', layer='mask')
+        if hasattr(frame, 'stored_mask_overlay'):
+            self.canvas.add_cell_highlight(cell.n, frame=frame, color='none', layer='mask')
 
         # remove cell data
         frame.remove_cell(cell, mask)
@@ -4663,6 +4661,35 @@ class DeleteTrackingRowCommand(BaseTrackingRowCommand):
     
     def _undo_operation(self):
         self.add_row()
+
+class DeleteCellsCommand(QUndoCommand):
+    '''
+    Undoable command for adding or deleting a group of cells.
+    '''
+    def __init__(
+        self,
+        main_window: MainWidget,
+        cells: list[Cell],
+        masks: list[np.ndarray],
+        description: str = '',
+    ):
+        super().__init__(description)
+        self.main_window = main_window
+        self.cells = cells
+        self.masks = masks
+        self.cell_commands=[]
+        for cell, mask in zip(self.cells, self.masks): # initialize cell commands
+            command = DeleteCellCommand(self.main_window, cell, mask, description='Delete cell')
+            self.cell_commands.append(command)
+        
+    def redo(self):
+        for command in self.cell_commands:
+            command.redo()
+
+    def undo(self):
+        for command in reversed(self.cell_commands):
+            command.undo()
+
 def main():
     pg.setConfigOptions(useOpenGL=True)
     # pg.setConfigOptions(enableExperimental=True)

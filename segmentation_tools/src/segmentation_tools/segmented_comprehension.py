@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from natsort import natsorted
 from scipy import ndimage
+import copy
 
 from . import preprocessing
 from .utils import masks_to_outlines, outlines_list
@@ -313,6 +314,9 @@ class Cell:
             self.theta = (theta + np.pi / 2) % np.pi
 
         return self.fit_params
+
+    def copy(self):
+        return copy.deepcopy(self)
 
 
 class SegmentedStack:
@@ -1452,6 +1456,8 @@ class SegmentedImage:
             for later_cell in self.cells[cell_n:]:
                 later_cell.n += 1
             self.masks[self.masks > cell_n] += 1
+        else:
+            cell.n=self.n_cells
 
         self.cells = np.insert(self.cells, cell_n, cell)
         self.n_cells += 1

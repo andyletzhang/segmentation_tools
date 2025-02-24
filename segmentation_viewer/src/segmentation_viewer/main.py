@@ -11,7 +11,7 @@ import pandas as pd
 import pyqtgraph as pg
 from natsort import natsorted
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QUndoStack, QUndoCommand, QFontMetrics, QIcon, QIntValidator
+from PyQt6.QtGui import QFontMetrics, QIcon, QIntValidator, QUndoCommand, QUndoStack
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -51,6 +51,9 @@ from .utils import create_html_table, load_stylesheet
 from .workers import BoundsProcessor
 
 # high priority
+# TODO: Things that need fixing after undoing is implemented:
+# reselect cells after undoing delete cell, merge cells
+# color IDs for merge particle tracks
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
 # ndimage labeled measurements on any of these attributes to create new ones
 # TODO: frame histogram should have options for aggregating over frame or stack
@@ -74,7 +77,6 @@ from .workers import BoundsProcessor
 # 2. Iterate over unique IDs instead of range(n_cells), and/or skip empty IDs
 # 3. Rewrite delete cell to remove mask ID without renumbering
 
-# TODO: undo/redo
 # TODO: add mouse and keyboard shortcuts to interface
 # TODO: FUCCI tab - show cc occupancies as a stacked bar
 # TODO: expand/collapse segmentation plot
@@ -679,7 +681,6 @@ class MainWidget(QMainWindow):
         self.seg_overlay_attr.setCurrentIndex(current_index)
 
     def _new_seg_overlay(self):
-        # TODO: adapt LUT range slider to accept floats
         if not self.file_loaded:
             return
         plot_attr = self.seg_overlay_attr.currentText()
@@ -1313,9 +1314,9 @@ class MainWidget(QMainWindow):
         else:
             particle_n = self.selected_particle_n
             current_frame_n = self.frame_number
-            
+
             to_delete = []
-            masks=[]
+            masks = []
             for cell in self.stack.get_particle(particle_n):
                 if cell.frame <= current_frame_n:
                     masks.append(cell.parent.masks == cell.n + 1)
@@ -1325,7 +1326,9 @@ class MainWidget(QMainWindow):
                 return
 
             self.left_toolbar.also_save_tracking.setChecked(True)
-            command = DeleteCellsCommand(self, cells=to_delete, masks=masks, description=f'Delete particle {particle_n} tail from frame {current_frame_n}')
+            command = DeleteCellsCommand(
+                self, cells=to_delete, masks=masks, description=f'Delete particle {particle_n} tail from frame {current_frame_n}'
+            )
             self.undo_stack.push(command)
 
             # reselect the particle
@@ -1347,7 +1350,7 @@ class MainWidget(QMainWindow):
             current_frame_n = self.frame_number
 
             to_delete = []
-            masks=[]
+            masks = []
             for cell in self.stack.get_particle(particle_n):
                 if cell.frame >= current_frame_n:
                     masks.append(cell.parent.masks == cell.n + 1)
@@ -1357,7 +1360,9 @@ class MainWidget(QMainWindow):
                 return
 
             self.left_toolbar.also_save_tracking.setChecked(True)
-            command=DeleteCellsCommand(self, cells=to_delete, masks=masks, description=f'Delete particle {particle_n} tail from frame {current_frame_n}')
+            command = DeleteCellsCommand(
+                self, cells=to_delete, masks=masks, description=f'Delete particle {particle_n} tail from frame {current_frame_n}'
+            )
             self.undo_stack.push(command)
 
             # reselect the particle
@@ -1387,7 +1392,7 @@ class MainWidget(QMainWindow):
 
             cell_numbers, frame_numbers = np.array(t[t.particle == particle_n][['cell_number', 'frame']]).T
             to_delete = self.stack.get_particle(particle_n)
-            masks=[]
+            masks = []
 
             for cell in self.stack.get_particle(particle_n):
                 masks.append(cell.parent.masks == cell.n + 1)
@@ -2075,7 +2080,7 @@ class MainWidget(QMainWindow):
 
         self.stack.track_centroids(**kwargs)
 
-    def _recolor_tracks(self, draw: bool=True):
+    def _recolor_tracks(self, draw: bool = True):
         # recolor cells so each particle has one color over time
         for frame in self.stack.frames:
             if hasattr(frame, 'stored_mask_overlay'):
@@ -2180,62 +2185,8 @@ class MainWidget(QMainWindow):
         if hasattr(self.stack, 'tracked_centroids'):
             if first_particle == second_particle:  # same particle, no need to merge
                 return
-            else:
-                first_particle_cell = self.stack.get_particle(first_particle)[0]
-                if (
-                    first_particle_cell.frame == self.frame_number
-                ):  # merging parent only appears in current frame. Merging not possible.
-                    return
-                merged_color = first_particle_cell.color_ID
-                merged, new_head, new_tail = self.stack.merge_particle_tracks(first_particle, second_particle, self.frame_number)
-                self.left_toolbar.also_save_tracking.setChecked(True)
-                if new_head is not None:
-                    new_head_color = self.canvas.random_cell_color()
-                    for cell in self.stack.get_particle(new_head):
-                        cell.color_ID = new_head_color
-                        if hasattr(self.stack.frames[cell.frame], 'stored_mask_overlay'):
-                            self.canvas.add_cell_highlight(
-                                cell.n,
-                                frame=self.stack.frames[cell.frame],
-                                color=new_head_color,
-                                alpha=self.canvas.masks_alpha,
-                                layer='mask',
-                            )
-                if new_tail is not None:
-                    new_tail_color = self.canvas.random_cell_color()
-                    for cell in self.stack.get_particle(new_tail):
-                        cell.color_ID = new_tail_color
-                        if hasattr(self.stack.frames[cell.frame], 'stored_mask_overlay'):
-                            self.canvas.add_cell_highlight(
-                                cell.n,
-                                frame=self.stack.frames[cell.frame],
-                                color=new_tail_color,
-                                alpha=self.canvas.masks_alpha,
-                                layer='mask',
-                            )
-
-                for cell in self.stack.get_particle(merged):
-                    cell.color_ID = merged_color
-                    if hasattr(self.stack.frames[cell.frame], 'stored_mask_overlay'):
-                        self.canvas.add_cell_highlight(
-                            cell.n,
-                            frame=self.stack.frames[cell.frame],
-                            color=merged_color,
-                            alpha=self.canvas.masks_alpha,
-                            layer='mask',
-                        )
-
-                print(f'Merged particles {first_particle} and {second_particle} at frame {self.frame_number}')
-                self._plot_particle_statistic()
-                self._update_tracking_overlay()
-                current_cell = self.cell_from_particle(merged)
-                self.canvas.add_cell_highlight(current_cell, color=merged_color, alpha=self.canvas.masks_alpha, layer='mask')
-
-                new_tail_cell = self.cell_from_particle(new_tail)
-                if new_tail_cell is not None:
-                    self.canvas.add_cell_highlight(
-                        new_tail_cell, color=new_tail_color, alpha=self.canvas.masks_alpha, layer='mask'
-                    )
+            command = MergeParticleTracksCommand(self.stack.tracked_centroids, first_particle, second_particle, self.frame_number)
+            self.undo_stack.push(command)
 
     def _set_LUTs(self, refresh=True):
         """Set the LUTs for the image display based on the current slider values."""
@@ -2861,10 +2812,7 @@ class MainWidget(QMainWindow):
             return False
         cell.color_ID = self.canvas.random_color_ID()
         mask_command = AddCellCommand(
-            self,
-            cell=cell,
-            mask=binary_mask,
-            description=f'Add mask {new_mask_n} in frame {frame.frame_number}',
+            self, cell=cell, mask=binary_mask, description=f'Add mask {new_mask_n} in frame {frame.frame_number}'
         )
         self.undo_stack.push(mask_command)
         print(f'Added cell {new_mask_n}')
@@ -3090,11 +3038,11 @@ class MainWidget(QMainWindow):
 
         if cell_n1 == cell_n2:
             return
-        
+
         if cell_n1 + 1 == self.stack.frames[frame_number].n_cells:
-            selected_cell=cell_n1-1
+            selected_cell = cell_n1 - 1
         else:
-            selected_cell=cell_n1
+            selected_cell = cell_n1
 
         if frame_number is None:
             frame_number = self.frame_number
@@ -3105,7 +3053,9 @@ class MainWidget(QMainWindow):
         mask1 = self.frame.masks == cell_n1 + 1
         mask2 = self.frame.masks == cell_n2 + 1
 
-        command = MergeCellsCommand(self, [cell1, cell2], [mask1, mask2], description=f'Merge cells {cell_n1} and {cell_n2} in frame {frame_number}')
+        command = MergeCellsCommand(
+            self, [cell1, cell2], [mask1, mask2], description=f'Merge cells {cell_n1} and {cell_n2} in frame {frame_number}'
+        )
         self.undo_stack.push(command)
 
         print(f'Merged cell {cell_n2} into cell {cell_n1} in frame {frame_number}')
@@ -3124,7 +3074,7 @@ class MainWidget(QMainWindow):
     def merge_particle_masks(self, particle_n1: int, particle_n2: int):
         """
         Merges the masks of particle_n2 into particle_n1 in every frame.
-        This is done by a series of cell mask merges.
+        This is done by a series of cell mask merges and particle reassignments.
 
         Parameters
         ----------
@@ -4439,18 +4389,13 @@ class MainWidget(QMainWindow):
         self.canvas.close()
         event.accept()
 
+
 class BaseCellCommand(QUndoCommand):
-    '''
+    """
     Base class for cell add/delete operations.
-    '''
-    def __init__(
-        self,
-        main_window: MainWidget,
-        cell: Cell,
-        mask: np.ndarray,
-        description: str = '',
-        show: bool = True,
-    ):
+    """
+
+    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = '', show: bool = True):
         super().__init__(description)
         self.main_window = main_window
         self.cell = cell
@@ -4459,12 +4404,9 @@ class BaseCellCommand(QUndoCommand):
         self.tracking_command = None
         if hasattr(self.main_window.stack, 'tracked_centroids'):
             tracking_data = self.main_window.stack.tracked_centroids
-            row = tracking_data[
-                (tracking_data.frame == self.cell.frame) & 
-                (tracking_data.cell_number == self.cell.n)
-            ]
+            row = tracking_data[(tracking_data.frame == self.cell.frame) & (tracking_data.cell_number == self.cell.n)]
             self.tracking_command = self._create_tracking_command(row)
-    
+
     def _create_tracking_command(self, row):
         """Create appropriate tracking command (to be implemented by subclasses)"""
         raise NotImplementedError
@@ -4476,7 +4418,7 @@ class BaseCellCommand(QUndoCommand):
         self._redo_operation()
         if self.tracking_command is not None:
             self.tracking_command.redo()
-    
+
     def undo(self):
         if self.show:
             if self.main_window.frame_number != self.cell.frame:
@@ -4484,83 +4426,71 @@ class BaseCellCommand(QUndoCommand):
         self._undo_operation()
         if self.tracking_command is not None:
             self.tracking_command.undo()
-    
+
     def _redo_operation(self):
         """Implemented by subclasses"""
         raise NotImplementedError
-    
+
     def _undo_operation(self):
         """Implemented by subclasses"""
         raise NotImplementedError
 
 
 class AddCellCommand(BaseCellCommand):
-    '''
+    """
     Undoable command for adding a cell.
-    '''
-    def __init__(
-        self,
-        main_window: MainWidget,
-        cell: Cell,
-        mask: np.ndarray,
-        description: str = 'Add Cell',
-    ):
+    """
+
+    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = 'Add Cell'):
         super().__init__(main_window, cell, mask, description)
-    
+
     def _create_tracking_command(self, row):
         return AddTrackingRowCommand(
             main_window=self.main_window,
             frame_number=self.cell.frame,
             cell_number=self.cell.n,
             row=row if not row.empty else None,
-            description="Create tracking data for new cell"
+            description='Create tracking data for new cell',
         )
-    
+
     def _redo_operation(self):
         self.main_window.add_cell(self.cell, self.mask)
-    
+
     def _undo_operation(self):
         self.main_window.delete_cell(self.cell, self.mask)
 
 
 class DeleteCellCommand(BaseCellCommand):
-    '''
+    """
     Undoable command for deleting a cell.
-    '''
-    def __init__(
-        self,
-        main_window: MainWidget,
-        cell: Cell,
-        mask: np.ndarray,
-        description: str = 'Delete Cell',
-    ):
+    """
+
+    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = 'Delete Cell'):
         super().__init__(main_window, cell, mask, description)
-    
+
     def _create_tracking_command(self, row):
         return DeleteTrackingRowCommand(
             main_window=self.main_window,
             frame_number=self.cell.frame,
             cell_number=self.cell.n,
             row=row if not row.empty else None,
-            description="Remove tracking data for deleted cell"
+            description='Remove tracking data for deleted cell',
         )
-    
+
     def _redo_operation(self):
         self.main_window.delete_cell(self.cell, self.mask)
-    
+
     def _undo_operation(self):
         self.main_window.add_cell(self.cell, self.mask)
 
+
 class MergeCellsCommand(QUndoCommand):
-    '''
+    """
     Undoable command for merging two cells.
-    '''
+    """
+
     def __init__(
-        self,
-        main_window: MainWidget,
-        cells: list[Cell, Cell],
-        masks: list[np.ndarray, np.ndarray],
-        description: str = '',
+        self, main_window: MainWidget, cells: list[Cell, Cell], masks: list[np.ndarray, np.ndarray], description: str = ''
     ):
         super().__init__(description)
         self.main_window = main_window
@@ -4568,9 +4498,9 @@ class MergeCellsCommand(QUndoCommand):
         if self.cell1.frame != self.cell2.frame:
             raise ValueError('Cells must be in the same frame to merge.')
         self.mask1, self.mask2 = masks
-        self.merged_mask=self.mask1 | self.mask2
-        self.merged_cell=self.cell1.copy()
-        self.merged_cell.outline=outlines_list(self.merged_mask)[0]
+        self.merged_mask = self.mask1 | self.mask2
+        self.merged_cell = self.cell1.copy()
+        self.merged_cell.outline = outlines_list(self.merged_mask)[0]
 
         self.commands = [
             DeleteCellCommand(self.main_window, self.cell1, self.mask1, description='Delete cell 1'),
@@ -4578,13 +4508,12 @@ class MergeCellsCommand(QUndoCommand):
             AddCellCommand(self.main_window, self.merged_cell, self.merged_mask, description='Add merged cell'),
         ]
 
-        if self.cell1.n < self.cell2.n: # reorder delete commands to preserve cell numbering
-            self.commands=[self.commands[1], self.commands[0], self.commands[2]]
+        if self.cell1.n < self.cell2.n:  # reorder delete commands to preserve cell numbering
+            self.commands = [self.commands[1], self.commands[0], self.commands[2]]
 
-        if hasattr(self.main_window.stack, 'tracked_centroids'): # assign merged cell to particle 1
-            particle1=self.commands[0].tracking_command.row.particle.item()
+        if hasattr(self.main_window.stack, 'tracked_centroids'):  # assign merged cell to particle 1
+            particle1 = self.commands[0].tracking_command.row.particle.item()
             self.commands[2].tracking_command.row.loc[:, 'particle'] = particle1
-
 
     def redo(self):
         for command in self.commands:
@@ -4594,47 +4523,153 @@ class MergeCellsCommand(QUndoCommand):
         for command in reversed(self.commands):
             command.undo()
 
-class BaseTrackingRowCommand(QUndoCommand):
-    '''
-    Base class for tracking row operations.
-    '''
+
+class MergeParticleMasksCommand(QUndoCommand):
+    """
+    Undoable command for merging two particle masks.
+    """
+
     def __init__(
-        self,
-        main_window: MainWidget,
-        frame_number: int,
-        cell_number: int,
-        row: pd.DataFrame | None = None,
-        description: str = '',
+        self, main_window: MainWidget, particles: list[int, int], masks: list[np.ndarray, np.ndarray], description: str = ''
+    ):
+        pass
+
+
+class MergeParticleTracksCommand(QUndoCommand):
+    """
+    QUndoCommand for merging two particle tracks at a specified frame.
+    Memory-optimized version that only stores affected rows.
+
+    - All frames of particle2 from merge_frame onward will be assigned to particle1
+    - If particle1 continues beyond merge_frame, it gets a new ID
+    - If particle2 exists before merge_frame, it gets a new ID
+    """
+
+    def __init__(self, df, particle1, particle2, merge_frame, description=None):
+        """
+        Initialize the merge command.
+
+        Args:
+            df: The pandas DataFrame containing particle data
+            particle1: ID of the first particle
+            particle2: ID of the second particle
+            merge_frame: Frame number where the merge occurs
+            description: Optional command description
+        """
+        super().__init__(description or f'Merge particles {particle2} into {particle1} at frame {merge_frame}')
+
+        self.df = df
+        self.particle1 = particle1
+        self.particle2 = particle2
+        self.merge_frame = merge_frame
+
+        # store the affected rows and their original values
+        self.affected_indices = None
+        self.original_values = None
+        self.new_particle1_id = None
+        self.new_particle2_id = None
+
+    def redo(self):
+        """Perform the merge operation."""
+        # First execution: identify and store the original state of affected rows
+        if self.affected_indices is None:
+            # Create masks for all affected rows
+            particle1_mask = self.df['particle'] == self.particle1
+            particle2_mask = self.df['particle'] == self.particle2
+
+            # Check if particle1 persists beyond merge_frame
+            particle1_after_mask = particle1_mask & (self.df['frame'] >= self.merge_frame)
+            particle1_after = self.df[particle1_after_mask]
+            next_ID = self.df['particle'].max() + 1
+            if len(particle1_after) > 0:
+                self.new_particle1_id = next_ID
+                next_ID += 1
+            else:
+                self.new_particle1_id = None
+
+            # Check if particle2 exists before merge_frame
+            particle2_before_mask = particle2_mask & (self.df['frame'] < self.merge_frame)
+            particle2_before = self.df[particle2_before_mask]
+            if len(particle2_before) > 0:
+                self.new_particle2_id = next_ID
+            else:
+                self.new_particle2_id = None
+
+            # Rows where particle2 will be merged into particle1
+            merge_mask = particle2_mask & (self.df['frame'] >= self.merge_frame)
+
+            # Combine all affected masks
+            affected_mask = merge_mask
+            if self.new_particle1_id is not None:
+                affected_mask = affected_mask | particle1_after_mask
+            if self.new_particle2_id is not None:
+                affected_mask = affected_mask | particle2_before_mask
+
+            # Store the indices and original values
+            self.affected_indices = self.df[affected_mask].index
+            self.original_values = self.df.loc[self.affected_indices, 'particle'].copy()
+
+        # Perform the merge operations
+        print('IDs:', self.particle1, self.particle2, '->', self.new_particle1_id, self.new_particle2_id)
+
+        # 1. If particle1 persists beyond merge_frame, assign it a new ID
+        if self.new_particle1_id is not None:
+            continuation_mask = (self.df['particle'] == self.particle1) & (self.df['frame'] >= self.merge_frame)
+            self.df.loc[continuation_mask, 'particle'] = self.new_particle1_id
+
+        # 2. Merge particle2 into particle1 for frame >= merge_frame
+        merge_mask = (self.df['particle'] == self.particle2) & (self.df['frame'] >= self.merge_frame)
+        self.df.loc[merge_mask, 'particle'] = self.particle1
+
+        # 3. If particle2 exists before merge_frame, assign it a new ID
+        if self.new_particle2_id is not None:
+            before_mask = (self.df['particle'] == self.particle2) & (self.df['frame'] < self.merge_frame)
+            self.df.loc[before_mask, 'particle'] = self.new_particle2_id
+
+    def undo(self):
+        """Restore only the modified rows to their original state."""
+        if self.affected_indices is not None and self.original_values is not None:
+            # Restore only the particle IDs of affected rows
+            self.df.loc[self.affected_indices, 'particle'] = self.original_values
+
+
+class BaseTrackingRowCommand(QUndoCommand):
+    """
+    Base class for tracking row operations.
+    """
+
+    def __init__(
+        self, main_window: MainWidget, frame_number: int, cell_number: int, row: pd.DataFrame | None = None, description: str = ''
     ):
         super().__init__(description)
         self.main_window = main_window
         self.frame_number = frame_number
         self.cell_number = cell_number
         self.row = self._determine_row(row)
-    
+
     def _determine_row(self, row):
         """Determine the row to work with, implemented by subclasses"""
         raise NotImplementedError
-    
+
     def redo(self):
         self._redo_operation()
-    
+
     def undo(self):
         self._undo_operation()
-    
+
     def _redo_operation(self):
         """Implemented by subclasses"""
         raise NotImplementedError
-    
+
     def _undo_operation(self):
         """Implemented by subclasses"""
         raise NotImplementedError
-    
+
     def delete_row(self):
         t = self.main_window.stack.tracked_centroids
         t.drop(self.row.index, inplace=True)
         t.loc[(t.frame == self.frame_number) & (t.cell_number > self.cell_number), 'cell_number'] -= 1
-    
+
     def add_row(self):
         t = self.main_window.stack.tracked_centroids
         t.loc[(t.frame == self.frame_number) & (t.cell_number >= self.cell_number), 'cell_number'] += 1
@@ -4642,9 +4677,10 @@ class BaseTrackingRowCommand(QUndoCommand):
 
 
 class AddTrackingRowCommand(BaseTrackingRowCommand):
-    '''
+    """
     Undoable command for adding a row to the tracking data.
-    '''
+    """
+
     def __init__(
         self,
         main_window: MainWidget,
@@ -4654,27 +4690,27 @@ class AddTrackingRowCommand(BaseTrackingRowCommand):
         description: str = 'Add Tracking Row',
     ):
         super().__init__(main_window, frame_number, cell_number, row, description)
-    
+
     def _determine_row(self, row):
         return self.new_tracking_row() if row is None else row
-    
+
     def _redo_operation(self):
         self.add_row()
-    
+
     def _undo_operation(self):
         self.delete_row()
 
     def new_tracking_row(self):
         t = self.main_window.stack.tracked_centroids
         cell = self.main_window.stack.frames[self.frame_number].cells[self.cell_number]
-   
+
         new_particle_ID = t['particle'].max() + 1
         data = {
             'cell_number': cell.n,
             'y': cell.centroid[0],
             'x': cell.centroid[1],
             'frame': self.frame_number,
-            'particle': new_particle_ID
+            'particle': new_particle_ID,
         }
         if hasattr(cell, 'color_ID'):
             data['color_ID'] = cell.color_ID
@@ -4685,9 +4721,10 @@ class AddTrackingRowCommand(BaseTrackingRowCommand):
 
 
 class DeleteTrackingRowCommand(BaseTrackingRowCommand):
-    '''
+    """
     Undoable command for deleting a row from the tracking data.
-    '''
+    """
+
     def __init__(
         self,
         main_window: MainWidget,
@@ -4697,40 +4734,37 @@ class DeleteTrackingRowCommand(BaseTrackingRowCommand):
         description: str = 'Delete Tracking Row',
     ):
         super().__init__(main_window, frame_number, cell_number, row, description)
-    
+
     def _determine_row(self, row):
         if row is None:
             return self.main_window.stack.tracked_centroids.loc[
                 (self.main_window.stack.tracked_centroids.frame == self.frame_number)
-                & (self.main_window.stack.tracked_centroids.cell_number == self.cell_number)].copy()
+                & (self.main_window.stack.tracked_centroids.cell_number == self.cell_number)
+            ].copy()
         return row
-    
+
     def _redo_operation(self):
         self.delete_row()
-    
+
     def _undo_operation(self):
         self.add_row()
 
+
 class DeleteCellsCommand(QUndoCommand):
-    '''
+    """
     Undoable command for adding or deleting a group of cells.
-    '''
-    def __init__(
-        self,
-        main_window: MainWidget,
-        cells: list[Cell],
-        masks: list[np.ndarray],
-        description: str = '',
-    ):
+    """
+
+    def __init__(self, main_window: MainWidget, cells: list[Cell], masks: list[np.ndarray], description: str = ''):
         super().__init__(description)
         self.main_window = main_window
         self.cells = cells
         self.masks = masks
-        self.cell_commands=[]
-        for cell, mask in zip(self.cells, self.masks): # initialize cell commands
+        self.cell_commands = []
+        for cell, mask in zip(self.cells, self.masks):  # initialize cell commands
             command = DeleteCellCommand(self.main_window, cell, mask, description='Delete cell', show=False)
             self.cell_commands.append(command)
-        
+
     def redo(self):
         for command in self.cell_commands:
             command.redo()
@@ -4738,6 +4772,7 @@ class DeleteCellsCommand(QUndoCommand):
     def undo(self):
         for command in reversed(self.cell_commands):
             command.undo()
+
 
 def main():
     pg.setConfigOptions(useOpenGL=True)

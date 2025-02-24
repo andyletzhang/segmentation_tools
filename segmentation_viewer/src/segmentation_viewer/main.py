@@ -11,7 +11,7 @@ import pandas as pd
 import pyqtgraph as pg
 from natsort import natsorted
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFontMetrics, QIcon, QIntValidator
+from PyQt6.QtGui import QUndoStack, QUndoCommand, QFontMetrics, QIcon, QIntValidator
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -44,7 +44,7 @@ from tqdm import tqdm
 from .canvas import CellMaskPolygons, CellSplitLines, PyQtGraphCanvas
 from .command_line import CommandLineWindow
 from .io import ExportWizard
-from .qt import CustomComboBox, FrameStackDialog, SubstackDialog, labeled_LUT_slider
+from .qt import CustomComboBox, FrameStackDialog, SubstackDialog, UndoHistoryWindow, labeled_LUT_slider
 from .scripting import ScriptWindow
 from .ui import LeftToolbar, calculate_range_params, clear_layout
 from .utils import create_html_table, load_stylesheet
@@ -53,7 +53,6 @@ from .workers import BoundsProcessor
 # high priority
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
 # ndimage labeled measurements on any of these attributes to create new ones
-# TODO: export segplot as gif
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
 
@@ -107,6 +106,8 @@ class MainWidget(QMainWindow):
         self.circle_mask = None
         self.mitosis_mode = 0
         self.bounds_processor = BoundsProcessor(self, n_cores=1)
+        self.undo_stack = QUndoStack(self)
+        self.undo_stack.setUndoLimit(10)
 
         # Status bar
         self.status_cell = QLabel('Selected Cell: None', self)
@@ -176,6 +177,7 @@ class MainWidget(QMainWindow):
         self.default_visual_settings['LUTs'] = None
         self.left_toolbar.saved_visual_settings = [self.default_visual_settings for _ in range(4)]
         self.FUCCI_mode = False
+        self.undo_window = None
 
         self._load_config()
         self._apply_overlay_settings()
@@ -234,6 +236,9 @@ class MainWidget(QMainWindow):
             'Exit': (self.close, 'Ctrl+Q'),
         }
         edit_actions = {
+            'Undo': (self.undo, 'Ctrl+Z'),
+            'Redo': (self.redo, 'Ctrl+Shift+Z'),
+            'Undo History': (self._show_undo_history, None),
             'Clear Masks': (self.clear_masks, None),
             'Generate Outlines': (self._generate_outlines, None),
             'Mend Gaps': (self._mend_gaps, None),
@@ -301,6 +306,12 @@ class MainWidget(QMainWindow):
             action = create_action(key, function, self, shortcut)
             setattr(self, f'{function.__name__}_action', action)
             self.addAction(action)
+
+    def undo(self):
+        self.undo_stack.undo()
+
+    def redo(self):
+        self.undo_stack.redo()
 
     def _load_config(self):
         from platformdirs import user_config_dir
@@ -2388,6 +2399,13 @@ class MainWidget(QMainWindow):
             self.script_window = ScriptWindow(self, self.globals_dict, self.locals_dict)
             self.script_window.show()
 
+    def _show_undo_history(self):
+        if self.undo_window is None or not self.undo_window.isVisible():
+            self.undo_window = UndoHistoryWindow(self.undo_stack, parent=self)
+        else:
+            self.undo_window.raise_()
+            self.undo_window.activateWindow()
+
     def select_cell(self, particle=None, cell=None):
         """
         Select a cell or particle by number. If None, selection is cleared.
@@ -4153,6 +4171,7 @@ class MainWidget(QMainWindow):
         else:
             out_message = f'Loaded stack {self.stack.name} with {len(self.stack.frames)} frames.'
         print(out_message)
+        self.undo_stack.clear()
         self.statusBar().showMessage(out_message, 3000)
         self.open_dir = Path(self.stack.name).parent
 

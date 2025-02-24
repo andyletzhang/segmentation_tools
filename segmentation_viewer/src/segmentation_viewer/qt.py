@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
     QWidget,
     QSpacerItem,
     QSizePolicy,
+    QUndoView,
+    QMainWindow,
 )
 from superqt import QRangeSlider, QDoubleRangeSlider
 
@@ -628,3 +630,20 @@ class FrameStackDialog(QDialog):
             return dialog.output
         else:
             return None
+
+class UndoHistoryWindow(QMainWindow):
+    """A child window that displays the undo stack history."""
+    def __init__(self, stack, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("History")
+
+        # Create central widget
+        central_widget = QWidget(self)
+        layout = QVBoxLayout(central_widget)
+
+        # Add QUndoView
+        self.undo_view = QUndoView(stack)
+        layout.addWidget(self.undo_view)
+
+        self.setCentralWidget(central_widget)
+        self.show()

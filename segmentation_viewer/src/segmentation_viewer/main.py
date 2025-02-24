@@ -1733,7 +1733,7 @@ class MainWidget(QMainWindow):
             frame.coverslip_height = coverslip_height
         self.left_toolbar.coverslip_height.setText(f'{coverslip_height:.2f}')
 
-    def calibrate_coverslip_height(self, frames):
+    def calibrate_coverslip_height(self, frames, membrane_channel=2):
         """
         Identify the bottom of the sample from the specified frames.
 
@@ -1757,7 +1757,9 @@ class MainWidget(QMainWindow):
             if self.is_grayscale:
                 z_profile.append(np.mean(np.concatenate([frame.zstack[z_index].flatten() for frame in frames])))
             else:
-                z_profile.append(np.mean(np.concatenate([frame.zstack[z_index, ..., 2].flatten() for frame in frames])))
+                z_profile.append(
+                    np.mean(np.concatenate([frame.zstack[z_index, ..., membrane_channel].flatten() for frame in frames]))
+                )
 
         if not hasattr(self.frame, 'z_scale'):
             print(f'No z-scale available for {self.frame.name}. Defaulting to 1.')
@@ -1793,7 +1795,7 @@ class MainWidget(QMainWindow):
         self._export_heights_action.setEnabled(True)
         self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
 
-    def measure_heights(self, frames, peak_prominence=0.01, coverslip_height=None):
+    def measure_heights(self, frames, peak_prominence=0.01, coverslip_height=None, membrane_channel=2):
         """
         Compute the heightmap of the monolayer for the specified frames.
 
@@ -1822,7 +1824,7 @@ class MainWidget(QMainWindow):
                 if self.is_grayscale:
                     membrane = frame.zstack
                 else:
-                    membrane = frame.zstack[..., 2]  # TODO: allow user to specify membrane channel
+                    membrane = frame.zstack[..., membrane_channel]  # TODO: allow user to specify membrane channel
                 frame.heights = get_heights(membrane, peak_prominence=peak_prominence)
                 frame.to_heightmap()
 

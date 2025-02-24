@@ -259,10 +259,16 @@ class PyQtGraphCanvas(QWidget):
         masks = frame.masks
 
         if cell_colors is None:  # single color mode
+            if np.issubdtype(type(color), np.integer):
+                color = self.cell_cmap(color)
             color = [*to_rgb(color), alpha]  # convert color to RGBA
             mask_overlay = np.isin(masks - 1, cell_indices)[..., np.newaxis] * color
 
         else:  # multi-color mode
+            for n in range(len(cell_colors)):
+                color = cell_colors[n]
+                if np.issubdtype(type(color), np.integer):
+                    cell_colors[n] = self.cell_cmap(color)
             num_labels = masks.max() + 1  # number of unique labels (including background)
             mask_overlay = np.zeros((*masks.shape, 4))
             cell_colors = np.array([[*to_rgb(c), alpha] for c in cell_colors])
@@ -340,7 +346,7 @@ class PyQtGraphCanvas(QWidget):
             overlays[0][cell_mask] = 0
             overlays[1][cell_mask] = 0
         else:
-            if isinstance(color, int):
+            if np.issubdtype(type(color), np.integer):
                 color = self.cell_cmap(color)
 
             # Convert color to RGBA

@@ -19,6 +19,302 @@ from .utils import masks_to_outlines, outlines_list
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
 
 
+def scaled_properties(cls):
+    for _, func in list(cls.__dict__.items()):
+        if hasattr(func, '_scaling'):
+            original_name = func.__name__
+            scaling = func._scaling
+            scaled_name = original_name.replace('_pixels', '')
+
+            # Define the original property
+            def original_property(self, func=func):
+                return func(self)
+
+            # Define the scaled property
+            def scaled_property(self, func=func):
+                try:
+                    scale = self.parent.scale
+                except AttributeError:
+                    scale = None
+
+                if scale is None:
+                    return None
+                else:
+                    value = func(self)
+                    if value is None:
+                        return None
+                    return value * scale**scaling
+
+            # Add the properties to the class
+            setattr(cls, original_name, property(original_property))
+            setattr(cls, scaled_name, property(scaled_property))
+    return cls
+
+
+@scaled_properties
+class Cell:
+    """class for each labeled cell membrane."""
+
+    def __init__(self, n, outline, parent=None, frame_number=None, **kwargs):
+        self.frame = frame_number
+        self.n = n
+        self.outline = outline
+        self.parent = parent
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    def area_pixels(self):
+        area = 0.5 * np.abs(
+            np.dot(self.outline.T[0], np.roll(self.outline.T[1], 1)) - np.dot(self.outline.T[1], np.roll(self.outline.T[0], 1))
+        )
+        return area
+
+    area_pixels._scaling = 2
+
+    def perimeter_pixels(self):
+        if len(self.outline) == 0:
+            return 0
+        else:
+            perimeter = np.sum(np.linalg.norm(np.diff(self.outline, axis=0, append=[self.outline[0]]).T, axis=0))
+            return perimeter
+
+    perimeter_pixels._scaling = 1
+
+    @property
+    def circularity(self):
+        circularity = 4 * np.pi * self.area_pixels / self.perimeter_pixels**2
+        return circularity
+
+    @property
+    def centroid(self):
+        if hasattr(self, '_centroid'):
+            return self._centroid
+        else:  # centroid via Green's theorem
+            self.get_centroid()
+            return self._centroid
+
+    @property
+    def corrected_centroid(self):
+        if not hasattr(self.parent, 'drift'):
+            return self.centroid
+        else:
+            return self.centroid - self.parent.drift
+
+    @centroid.setter
+    def centroid(self, centroid):
+        self._centroid = centroid
+
+    def get_centroid(self):
+        x = self.outline[:, 0]
+        y = self.outline[:, 1]
+        A = self.area_pixels
+        Cx = np.sum((x + np.roll(x, 1)) * (x * np.roll(y, 1) - np.roll(x, 1) * y))
+        Cy = np.sum((y + np.roll(y, 1)) * (x * np.roll(y, 1) - np.roll(x, 1) * y))
+
+        self._centroid = np.array([Cx, Cy]) / (6 * A)
+
+        return self._centroid
+
+    def sort_vertices(self):
+        """
+        determines which vertices are connected by ordering polar angles to each vertex w.r.t. the centroid.
+        some edge cases where this won't work (unusual concave structures, radial line segments) but I think these are sufficiently unlikely in physiological cells.
+        could replace this with a sort_vertices which pulls them by outline now that I have that.
+        only calculable for cells with reconstructed vertices ('good cells').
+        """
+        zeroed_coords = self.vertices - self.centroid  # zero vertices to the centroid
+        angles = np.arctan2(zeroed_coords[:, 0], zeroed_coords[:, 1])  # get polar angles
+        vertex_order = np.argsort(angles)  # sort polar angles
+        return self.vertices[vertex_order]
+
+    @property
+    def sorted_vertices(self):
+        if hasattr(self, '_sorted_vertices'):
+            return self._sorted_vertices
+        else:
+            self._sorted_vertices = self.sort_vertices()
+            return self._sorted_vertices
+
+    def TCJ_axis(self):
+        """
+        Compute the axis orientation based on the spatial distribution of tricellular junctions (TCJs).
+
+        Returns:
+            float or bool: Orientation angle of the axis if computation is successful, False otherwise.
+        """
+
+        try:
+            TCJs = np.flip(self.sorted_vertices, axis=1)
+        except AttributeError:
+            # If the cell doesn't have a full set of neighbors or get_TCJs() hasn't been run
+            return False
+
+        # Calculate the center of mass of TCJs
+        CoM_J = TCJs.mean(axis=0)
+
+        # Calculate the scatter matrix
+        a = [np.outer(junction - CoM_J, junction - CoM_J) for junction in TCJs]
+        S = np.mean(a, axis=0)
+
+        # Compute eigenvalues and eigenvectors of the scatter matrix
+        eigenvalues, eigenvectors = np.linalg.eig(S)
+
+        # Determine the major axis and calculate its angle
+        shapeAxis = eigenvectors.T[np.argmax(eigenvalues)]
+        self.circ_J = np.min([eigenvalues[0] / eigenvalues[1], eigenvalues[1] / eigenvalues[0]])
+        self.theta_J = np.arctan2(*np.flip(shapeAxis))
+
+        return self.theta_J
+
+    def perimeter_axis(self):
+        """
+        Compute the axis orientation based on the perimeter of the cell.
+
+        Returns:
+            float: Orientation angle of the axis.
+        """
+        vertices = self.outline
+
+        # Calculate segment lengths
+        segment_lengths = np.linalg.norm(np.diff(vertices, append=[vertices[0]], axis=0), axis=1)
+
+        # Calculate center of mass of the perimeter
+        CoM_P = (
+            np.sum(
+                [1 / 2 * (vertices[i] + vertices[(i + 1) % len(vertices)]) * segment_lengths[i] for i in range(len(vertices))],
+                axis=0,
+            )
+            / self.perimeter_pixels
+        )
+
+        # Translate vertices to center of mass
+        zeroed_vertices = vertices - CoM_P
+
+        # Calculate scatter matrix
+        summation = []
+        for i in range(len(vertices)):
+            v_current = zeroed_vertices[i]
+            v_next = zeroed_vertices[(i + 1) % len(vertices)]
+            summation.append(
+                segment_lengths[i]
+                * (
+                    (np.outer(v_next, v_next) + np.outer(v_current, v_current)) / 3
+                    + (np.outer(v_next, v_current) + np.outer(v_current, v_next)) / 6
+                )
+            )
+        S_P = np.sum(summation, axis=0)
+
+        # Compute eigenvalues and eigenvectors of the scatter matrix
+        eigenvalues, eigenvectors = np.linalg.eig(S_P)
+
+        # Determine the major axis and calculate its angle
+        shapeAxis = eigenvectors.T[np.argmax(eigenvalues)]
+        self.circ_P = np.min([eigenvalues[0] / eigenvalues[1], eigenvalues[1] / eigenvalues[0]])
+        self.theta_P = np.arctan2(*np.flip(shapeAxis))
+
+        return self.theta_P
+
+    def poly_perimeter_axis(self):
+        """
+        Compute the axis orientation based on the perimeter of the polygon formed by connecting TCJs.
+
+        Returns:
+            float or bool: Orientation angle of the axis if computation is successful, False otherwise.
+        """
+        try:
+            TCJs = np.flip(self.sorted_vertices, axis=1)
+        except AttributeError:
+            # If the cell doesn't have a full set of neighbors or get_TCJs() hasn't been run
+            return False
+
+        # Calculate segment lengths of the polygon
+        poly_segment_lengths = np.linalg.norm(np.diff(TCJs, append=[TCJs[0]], axis=0), axis=1)
+        poly_perimeter = poly_segment_lengths.sum()
+
+        # Calculate center of mass of the polygon perimeter
+        CoM_P = (
+            np.sum([1 / 2 * (TCJs[i] + TCJs[(i + 1) % len(TCJs)]) * poly_segment_lengths[i] for i in range(len(TCJs))], axis=0)
+            / poly_perimeter
+        )
+
+        # Translate TCJs to center of mass
+        zeroed_TCJs = TCJs - CoM_P
+
+        # Calculate scatter matrix
+        summation = []
+        for i in range(len(TCJs)):
+            v_current = zeroed_TCJs[i]
+            v_next = zeroed_TCJs[(i + 1) % len(TCJs)]
+            summation.append(
+                poly_segment_lengths[i]
+                * (
+                    (np.outer(v_next, v_next) + np.outer(v_current, v_current)) / 3
+                    + (np.outer(v_next, v_current) + np.outer(v_current, v_next)) / 6
+                )
+            )
+        S_P = np.sum(summation, axis=0)
+
+        # Compute eigenvalues and eigenvectors of the scatter matrix
+        eigenvalues, eigenvectors = np.linalg.eig(S_P)
+
+        # Determine the major axis and calculate its angle
+        shapeAxis = eigenvectors.T[np.argmax(eigenvalues)]
+        self.circ_polyP = np.min([eigenvalues[0] / eigenvalues[1], eigenvalues[1] / eigenvalues[0]])
+        self.theta_polyP = np.arctan2(*np.flip(shapeAxis))
+
+        return self.theta_polyP
+
+    @property
+    def shape_parameter(self):
+        """
+        calculates the shape parameter q=perimeter/area**2 using vertex data.
+        only calculable for cells with reconstructed vertices ('good cells').
+        """
+        shape_parameter = self.vertex_perimeter / (self.vertex_area**0.5)
+        return shape_parameter
+
+    @property
+    def vertex_area(self):
+        """returns the area of the cell as calculated from the vertices."""
+        y, x = self.sorted_vertices.T
+        vertex_area = 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
+        return vertex_area
+
+    @property
+    def vertex_perimeter(self):
+        """returns the perimeter of the cell as calculated from the vertices."""
+        vertex_perimeter = np.sum(np.linalg.norm(np.diff(self.sorted_vertices, append=[self.sorted_vertices[0]], axis=0), axis=1))
+        return vertex_perimeter
+
+    def fit_ellipse(self):
+        """
+        uses skimage's EllipseModel to fit an ellipse to the outline of the cell.
+        """
+        from skimage.measure import EllipseModel
+
+        ellipse_model = EllipseModel()
+
+        ellipse_model.estimate(self.outline)
+        if ellipse_model.params:
+            a, b, theta = ellipse_model.params[2:]
+        else:
+            return False
+
+        self.fit_params = (
+            ellipse_model.params
+        )  # mildly redundant but preserve all the fit parameters for more convenient plotting
+
+        if a > b:
+            self.aspect = a / b
+            self.theta = theta % np.pi
+        else:
+            self.aspect = b / a
+            self.theta = (theta + np.pi / 2) % np.pi
+
+        return self.fit_params
+
+
 class SegmentedStack:
     """
     A base class for time lapse or multipoint data.
@@ -226,6 +522,14 @@ class SegmentedStack:
         new_cell, idx = frame.merge_cells(cell_n1, cell_n2)
         return new_cell, idx
 
+    def add_cell(self, cell: Cell, mask: np.ndarray):
+        frame = self.frames[cell.frame]
+        frame.add_cell(cell, mask=mask)
+
+    def remove_cell(self, cell, mask: np.ndarray | None = None):
+        frame = self.frames[cell.frame]
+        frame.remove_cell(cell, mask=mask)
+
     # -------------Magic-------------
     def __len__(self):
         return len(self.frames)
@@ -331,6 +635,34 @@ class TimeStack(SegmentedStack):
             t.loc[t.frame == frame_number, 'cell_number'].map(cell_remap).astype(t.cell_number.dtype)
         )
 
+    def add_cell(self, cell: Cell, mask: np.ndarray):
+        super().add_cell(cell, mask=mask)
+        frame_number = cell.frame
+        if hasattr(self, 'tracked_centroids'):
+            t = self.tracked_centroids
+            t.loc[(t.frame == frame_number) & (t.cell_number >= cell.n), 'cell_number'] += 1
+            new_particle_ID = t['particle'].max() + 1
+            data = {
+                'cell_number': cell.n,
+                'y': cell.centroid[0],
+                'x': cell.centroid[1],
+                'frame': frame_number,
+                'particle': new_particle_ID,
+            }
+            if hasattr(cell, 'color_ID'):
+                data['color_ID'] = cell.color_ID
+            placeholder_particle = {idx: None for idx in t.columns}
+            placeholder_particle.update({k: v for k, v in data.items() if k in t.columns})
+            self.tracked_centroids = pd.concat([t, pd.DataFrame(placeholder_particle, index=[t.index.max() + 1])])
+
+    def remove_cell(self, cell, mask: np.ndarray | None = None):
+        super().remove_cell(cell, mask=mask)
+        frame_number = cell.frame
+        if hasattr(self, 'tracked_centroids'):
+            t = self.tracked_centroids
+            t.drop(t[(t.frame == frame_number) & (t.cell_number == cell.n)].index, inplace=True)
+            t.loc[(t.frame == frame_number) & (t.cell_number > cell.n), 'cell_number'] -= 1
+
     # -------------Particle Operations-------------
     def merge_particle_tracks(self, first_ID, second_ID, frame):
         """
@@ -358,7 +690,9 @@ class TimeStack(SegmentedStack):
         # merge particles
         t['particle'] = t['particle'].replace({second_ID: first_ID})
         if hasattr(self, 'mitoses'):
-            self.mitoses[['mother', 'daughter1', 'daughter2']] = self.mitoses[['mother', 'daughter1', 'daughter2']].replace({second_ID: first_ID})
+            self.mitoses[['mother', 'daughter1', 'daughter2']] = self.mitoses[['mother', 'daughter1', 'daughter2']].replace(
+                {second_ID: first_ID}
+            )
 
         # new merged ID
         f, c = t.loc[t.particle == first_ID][['frame', 'cell_number']].values[0]
@@ -403,7 +737,9 @@ class TimeStack(SegmentedStack):
                 needs_editing = ((self.mitoses[['mother', 'daughter1', 'daughter2']] == particle_ID).any(axis=1)) & (
                     self.mitoses['frame'] >= split_frame
                 )
-                self.mitoses.loc[needs_editing, ['mother', 'daughter1', 'daughter2']] = self.mitoses.loc[needs_editing, ['mother', 'daughter1', 'daughter2']].replace({particle_ID: new_particle_ID})
+                self.mitoses.loc[needs_editing, ['mother', 'daughter1', 'daughter2']] = self.mitoses.loc[
+                    needs_editing, ['mother', 'daughter1', 'daughter2']
+                ].replace({particle_ID: new_particle_ID})
             return new_particle_ID
 
     # -------------Retrieve Tracking Data-------------
@@ -1051,8 +1387,9 @@ class SegmentedImage:
         return new_cell, idx
 
     def delete_cells(self, cell_numbers):
-        """deletes a cell from the image."""
-        if len(cell_numbers) < 5:  # small number of cells
+        """deletes a cell from the image by number."""
+        cell_numbers = [n for n in cell_numbers if n in self.masks]
+        if len(cell_numbers) < 5:  # small number of cells, iterative approach
             to_clear = np.zeros(self.masks.shape, dtype=bool)
             for cell_number in cell_numbers:
                 to_clear |= self.masks == cell_number + 1
@@ -1074,6 +1411,22 @@ class SegmentedImage:
 
         return idx
 
+    def remove_cell(self, cell: Cell, mask: np.ndarray | None = None):
+        """removes a cell from the image by object."""
+        if mask is None:
+            mask = self.masks == cell.n + 1
+
+        self.masks[mask] = 0
+        self.outlines[mask] = False
+        self.cells = np.delete(self.cells, cell.n)
+
+        if cell.n < self.n_cells:
+            for later_cell in self.cells[cell.n :]:
+                later_cell.n -= 1
+            self.masks[self.masks > cell.n + 1] -= 1
+
+        self.n_cells -= 1
+
     def find_edge_cells(self, margin=1):
         """finds masks that are within some number of pixels from the edge of the image."""
         top = self.masks[:margin, :].flatten()
@@ -1091,6 +1444,19 @@ class SegmentedImage:
         edge_cells = self.find_edge_cells(margin)
         self.delete_cells(edge_cells)
         return edge_cells
+
+    def add_cell(self, cell: Cell, mask: np.ndarray):
+        """adds a cell to the image."""
+        cell_n = cell.n
+        if cell_n < self.n_cells:  # need to renumber existing cells
+            for later_cell in self.cells[cell_n:]:
+                later_cell.n += 1
+            self.masks[self.masks > cell_n] += 1
+
+        self.cells = np.insert(self.cells, cell_n, cell)
+        self.n_cells += 1
+        self.masks[mask] = cell_n + 1
+        self.outlines[cell.outline[:, 1], cell.outline[:, 0]] = True
 
     # ------------FUCCI----------------
     def get_red_green_intensities(self, percentile=90, blur_sigma=4):
@@ -1226,7 +1592,9 @@ class SegmentedImage:
 
     def set_cell_attr(self, attribute, values):
         if len(values) != len(self.cells):
-            raise ValueError(f'Error setting attribute {attribute}: Length of values ({len(values)}) must match the number of cells ({len(self.cells)}) in the image')
+            raise ValueError(
+                f'Error setting attribute {attribute}: Length of values ({len(values)}) must match the number of cells ({len(self.cells)}) in the image'
+            )
         for cell, value in zip(self.cells, values):
             setattr(cell, attribute, value)
 
@@ -1482,297 +1850,3 @@ class HeightMap(SegmentedImage):
 
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
-def scaled_properties(cls):
-    for _, func in list(cls.__dict__.items()):
-        if hasattr(func, '_scaling'):
-            original_name = func.__name__
-            scaling = func._scaling
-            scaled_name = original_name.replace('_pixels', '')
-
-            # Define the original property
-            def original_property(self, func=func):
-                return func(self)
-
-            # Define the scaled property
-            def scaled_property(self, func=func):
-                try:
-                    scale = self.parent.scale
-                except AttributeError:
-                    scale = None
-
-                if scale is None:
-                    return None
-                else:
-                    value = func(self)
-                    if value is None:
-                        return None
-                    return value * scale**scaling
-
-            # Add the properties to the class
-            setattr(cls, original_name, property(original_property))
-            setattr(cls, scaled_name, property(scaled_property))
-    return cls
-
-
-@scaled_properties
-class Cell:
-    """class for each labeled cell membrane."""
-
-    def __init__(self, n, outline, parent=None, frame_number=None, **kwargs):
-        self.frame = frame_number
-        self.n = n
-        self.outline = outline
-        self.parent = parent
-
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-
-    def area_pixels(self):
-        area = 0.5 * np.abs(
-            np.dot(self.outline.T[0], np.roll(self.outline.T[1], 1)) - np.dot(self.outline.T[1], np.roll(self.outline.T[0], 1))
-        )
-        return area
-
-    area_pixels._scaling = 2
-
-    def perimeter_pixels(self):
-        if len(self.outline) == 0:
-            return 0
-        else:
-            perimeter = np.sum(np.linalg.norm(np.diff(self.outline, axis=0, append=[self.outline[0]]).T, axis=0))
-            return perimeter
-
-    perimeter_pixels._scaling = 1
-
-    @property
-    def circularity(self):
-        circularity = 4 * np.pi * self.area_pixels / self.perimeter_pixels**2
-        return circularity
-
-    @property
-    def centroid(self):
-        if hasattr(self, '_centroid'):
-            return self._centroid
-        else:  # centroid via Green's theorem
-            self.get_centroid()
-            return self._centroid
-
-    @property
-    def corrected_centroid(self):
-        if not hasattr(self.parent, 'drift'):
-            return self.centroid
-        else:
-            return self.centroid - self.parent.drift
-
-    @centroid.setter
-    def centroid(self, centroid):
-        self._centroid = centroid
-
-    def get_centroid(self):
-        x = self.outline[:, 0]
-        y = self.outline[:, 1]
-        A = self.area_pixels
-        Cx = np.sum((x + np.roll(x, 1)) * (x * np.roll(y, 1) - np.roll(x, 1) * y))
-        Cy = np.sum((y + np.roll(y, 1)) * (x * np.roll(y, 1) - np.roll(x, 1) * y))
-
-        self._centroid = np.array([Cx, Cy]) / (6 * A)
-
-        return self._centroid
-
-    def sort_vertices(self):
-        """
-        determines which vertices are connected by ordering polar angles to each vertex w.r.t. the centroid.
-        some edge cases where this won't work (unusual concave structures, radial line segments) but I think these are sufficiently unlikely in physiological cells.
-        could replace this with a sort_vertices which pulls them by outline now that I have that.
-        only calculable for cells with reconstructed vertices ('good cells').
-        """
-        zeroed_coords = self.vertices - self.centroid  # zero vertices to the centroid
-        angles = np.arctan2(zeroed_coords[:, 0], zeroed_coords[:, 1])  # get polar angles
-        vertex_order = np.argsort(angles)  # sort polar angles
-        return self.vertices[vertex_order]
-
-    @property
-    def sorted_vertices(self):
-        if hasattr(self, '_sorted_vertices'):
-            return self._sorted_vertices
-        else:
-            self._sorted_vertices = self.sort_vertices()
-            return self._sorted_vertices
-
-    def TCJ_axis(self):
-        """
-        Compute the axis orientation based on the spatial distribution of tricellular junctions (TCJs).
-
-        Returns:
-            float or bool: Orientation angle of the axis if computation is successful, False otherwise.
-        """
-
-        try:
-            TCJs = np.flip(self.sorted_vertices, axis=1)
-        except AttributeError:
-            # If the cell doesn't have a full set of neighbors or get_TCJs() hasn't been run
-            return False
-
-        # Calculate the center of mass of TCJs
-        CoM_J = TCJs.mean(axis=0)
-
-        # Calculate the scatter matrix
-        a = [np.outer(junction - CoM_J, junction - CoM_J) for junction in TCJs]
-        S = np.mean(a, axis=0)
-
-        # Compute eigenvalues and eigenvectors of the scatter matrix
-        eigenvalues, eigenvectors = np.linalg.eig(S)
-
-        # Determine the major axis and calculate its angle
-        shapeAxis = eigenvectors.T[np.argmax(eigenvalues)]
-        self.circ_J = np.min([eigenvalues[0] / eigenvalues[1], eigenvalues[1] / eigenvalues[0]])
-        self.theta_J = np.arctan2(*np.flip(shapeAxis))
-
-        return self.theta_J
-
-    def perimeter_axis(self):
-        """
-        Compute the axis orientation based on the perimeter of the cell.
-
-        Returns:
-            float: Orientation angle of the axis.
-        """
-        vertices = self.outline
-
-        # Calculate segment lengths
-        segment_lengths = np.linalg.norm(np.diff(vertices, append=[vertices[0]], axis=0), axis=1)
-
-        # Calculate center of mass of the perimeter
-        CoM_P = (
-            np.sum(
-                [1 / 2 * (vertices[i] + vertices[(i + 1) % len(vertices)]) * segment_lengths[i] for i in range(len(vertices))],
-                axis=0,
-            )
-            / self.perimeter_pixels
-        )
-
-        # Translate vertices to center of mass
-        zeroed_vertices = vertices - CoM_P
-
-        # Calculate scatter matrix
-        summation = []
-        for i in range(len(vertices)):
-            v_current = zeroed_vertices[i]
-            v_next = zeroed_vertices[(i + 1) % len(vertices)]
-            summation.append(
-                segment_lengths[i]
-                * (
-                    (np.outer(v_next, v_next) + np.outer(v_current, v_current)) / 3
-                    + (np.outer(v_next, v_current) + np.outer(v_current, v_next)) / 6
-                )
-            )
-        S_P = np.sum(summation, axis=0)
-
-        # Compute eigenvalues and eigenvectors of the scatter matrix
-        eigenvalues, eigenvectors = np.linalg.eig(S_P)
-
-        # Determine the major axis and calculate its angle
-        shapeAxis = eigenvectors.T[np.argmax(eigenvalues)]
-        self.circ_P = np.min([eigenvalues[0] / eigenvalues[1], eigenvalues[1] / eigenvalues[0]])
-        self.theta_P = np.arctan2(*np.flip(shapeAxis))
-
-        return self.theta_P
-
-    def poly_perimeter_axis(self):
-        """
-        Compute the axis orientation based on the perimeter of the polygon formed by connecting TCJs.
-
-        Returns:
-            float or bool: Orientation angle of the axis if computation is successful, False otherwise.
-        """
-        try:
-            TCJs = np.flip(self.sorted_vertices, axis=1)
-        except AttributeError:
-            # If the cell doesn't have a full set of neighbors or get_TCJs() hasn't been run
-            return False
-
-        # Calculate segment lengths of the polygon
-        poly_segment_lengths = np.linalg.norm(np.diff(TCJs, append=[TCJs[0]], axis=0), axis=1)
-        poly_perimeter = poly_segment_lengths.sum()
-
-        # Calculate center of mass of the polygon perimeter
-        CoM_P = (
-            np.sum([1 / 2 * (TCJs[i] + TCJs[(i + 1) % len(TCJs)]) * poly_segment_lengths[i] for i in range(len(TCJs))], axis=0)
-            / poly_perimeter
-        )
-
-        # Translate TCJs to center of mass
-        zeroed_TCJs = TCJs - CoM_P
-
-        # Calculate scatter matrix
-        summation = []
-        for i in range(len(TCJs)):
-            v_current = zeroed_TCJs[i]
-            v_next = zeroed_TCJs[(i + 1) % len(TCJs)]
-            summation.append(
-                poly_segment_lengths[i]
-                * (
-                    (np.outer(v_next, v_next) + np.outer(v_current, v_current)) / 3
-                    + (np.outer(v_next, v_current) + np.outer(v_current, v_next)) / 6
-                )
-            )
-        S_P = np.sum(summation, axis=0)
-
-        # Compute eigenvalues and eigenvectors of the scatter matrix
-        eigenvalues, eigenvectors = np.linalg.eig(S_P)
-
-        # Determine the major axis and calculate its angle
-        shapeAxis = eigenvectors.T[np.argmax(eigenvalues)]
-        self.circ_polyP = np.min([eigenvalues[0] / eigenvalues[1], eigenvalues[1] / eigenvalues[0]])
-        self.theta_polyP = np.arctan2(*np.flip(shapeAxis))
-
-        return self.theta_polyP
-
-    @property
-    def shape_parameter(self):
-        """
-        calculates the shape parameter q=perimeter/area**2 using vertex data.
-        only calculable for cells with reconstructed vertices ('good cells').
-        """
-        shape_parameter = self.vertex_perimeter / (self.vertex_area**0.5)
-        return shape_parameter
-
-    @property
-    def vertex_area(self):
-        """returns the area of the cell as calculated from the vertices."""
-        y, x = self.sorted_vertices.T
-        vertex_area = 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
-        return vertex_area
-
-    @property
-    def vertex_perimeter(self):
-        """returns the perimeter of the cell as calculated from the vertices."""
-        vertex_perimeter = np.sum(np.linalg.norm(np.diff(self.sorted_vertices, append=[self.sorted_vertices[0]], axis=0), axis=1))
-        return vertex_perimeter
-
-    def fit_ellipse(self):
-        """
-        uses skimage's EllipseModel to fit an ellipse to the outline of the cell.
-        """
-        from skimage.measure import EllipseModel
-
-        ellipse_model = EllipseModel()
-
-        ellipse_model.estimate(self.outline)
-        if ellipse_model.params:
-            a, b, theta = ellipse_model.params[2:]
-        else:
-            return False
-
-        self.fit_params = (
-            ellipse_model.params
-        )  # mildly redundant but preserve all the fit parameters for more convenient plotting
-
-        if a > b:
-            self.aspect = a / b
-            self.theta = theta % np.pi
-        else:
-            self.aspect = b / a
-            self.theta = (theta + np.pi / 2) % np.pi
-
-        return self.fit_params

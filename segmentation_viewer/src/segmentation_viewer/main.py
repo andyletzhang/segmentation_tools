@@ -1307,7 +1307,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
-            self.delete_cell_mask(self.selected_cell_n)
+            self.delete_cell(self.selected_cell)
             return
 
         else:
@@ -1319,11 +1319,15 @@ class MainWidget(QMainWindow):
                 t[(t.particle == particle_n) & (t.frame <= current_frame_n)][['cell_number', 'frame']]
             ).T
             self.left_toolbar.also_save_tracking.setChecked(True)
+            to_delete = []
             for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
                 frame = self.stack.frames[frame_n]
                 if hasattr(frame, 'stored_mask_overlay'):
                     self.canvas.add_cell_highlight(cell_n, frame, color='none', layer='mask')
-                self.delete_cell_mask(cell_n, frame)
+                to_delete.append(frame.cells[cell_n])
+
+            for cell in to_delete:
+                self.delete_cell(cell)
 
             # reselect the particle
             self.select_cell(particle=particle_n)
@@ -1336,7 +1340,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
-            self.delete_cell_mask(self.selected_cell_n)
+            self.delete_cell(self.selected_cell)
             return
 
         else:
@@ -1344,15 +1348,19 @@ class MainWidget(QMainWindow):
             current_frame_n = self.frame_number
             t = self.stack.tracked_centroids
 
-            head_cell_numbers, head_frame_numbers = np.array(
+            tail_cell_numbers, tail_frame_numbers = np.array(
                 t[(t.particle == particle_n) & (t.frame >= current_frame_n)][['cell_number', 'frame']]
             ).T
             self.left_toolbar.also_save_tracking.setChecked(True)
-            for cell_n, frame_n in zip(head_cell_numbers, head_frame_numbers):
+            to_delete = []
+            for cell_n, frame_n in zip(tail_cell_numbers, tail_frame_numbers):
                 frame = self.stack.frames[frame_n]
                 if hasattr(frame, 'stored_mask_overlay'):
                     self.canvas.add_cell_highlight(cell_n, frame, color='none', layer='mask')
-                self.delete_cell_mask(cell_n, frame)
+                to_delete.append(frame.cells[cell_n])
+
+            for cell in to_delete:
+                self.delete_cell(cell)
 
             # reselect the particle
             self.select_cell(particle=particle_n)
@@ -1370,7 +1378,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
-            self.delete_cell_mask(self.selected_cell_n)
+            self.delete_cell(self.selected_cell)
             return
 
         else:
@@ -1380,11 +1388,15 @@ class MainWidget(QMainWindow):
             self.left_toolbar.also_save_tracking.setChecked(True)
 
             cell_numbers, frame_numbers = np.array(t[t.particle == particle_n][['cell_number', 'frame']]).T
+            to_delete = []
             for cell_n, frame_n in zip(cell_numbers, frame_numbers):
                 frame = self.stack.frames[frame_n]
                 if hasattr(frame, 'stored_mask_overlay'):
                     self.canvas.add_cell_highlight(cell_n, frame, color='none', layer='mask')
-                self.delete_cell_mask(cell_n, frame)
+                to_delete.append(frame.cells[cell_n])
+
+            for cell in to_delete:
+                self.delete_cell(cell)
             self._update_tracking_overlay()
 
     def clear_tracking(self):
@@ -2646,7 +2658,7 @@ class MainWidget(QMainWindow):
 
                     elif event.modifiers() == Qt.KeyboardModifier.ControlModifier:
                         # delete cell from current frame
-                        self.delete_cell_mask(current_cell_n)
+                        self._delete_cell(current_cell_n)
                         if current_particle_n is None:
                             self.select_cell(None)  # deselect the cell
                         else:
@@ -2768,13 +2780,6 @@ class MainWidget(QMainWindow):
         else:
             return cell_n - 1
 
-    def _split_cell(self):
-        self.drawing_cell_split = False
-        self.split_cell_masks()
-        self.cell_split.clearPoints()
-        self.select_cell(particle=self.selected_particle_n)
-        self._update_display()
-
     def _close_cell_roi(self):
         """Close the cell ROI and add the new cell mask to the frame."""
         self.drawing_cell_roi = False
@@ -2786,13 +2791,41 @@ class MainWidget(QMainWindow):
             & (enclosed_pixels[:, 1] >= 0)
             & (enclosed_pixels[:, 1] < self.frame.masks.shape[1])
         ]
-        new_mask_n = self.add_cell_mask(enclosed_pixels)
-        if new_mask_n is not False:
-            print(f'Added cell {new_mask_n}')
+        self._add_cell(enclosed_pixels)
         self.cell_roi.clearPoints()
         self._update_display()
 
-    def random_color(self, n_samples=None):
+    def pixels_to_cell(self, pixels: np.ndarray, new_mask_n: int | None = None, frame: int | None = None):
+        if frame is None:
+            frame = self.frame
+        if new_mask_n is None:
+            new_mask_n = frame.n_cells
+
+        binary_mask = np.zeros_like(frame.masks, dtype=bool)
+        binary_mask[pixels[:, 0], pixels[:, 1]] = True
+        binary_mask = binary_mask & (frame.masks == 0)
+
+        if binary_mask.sum() < 5:  # check if the mask is more than 4 pixels (minimum for cellpose to generate an outline)
+            return False, None
+
+        if frame.has_outlines:
+            outline = outlines_list(binary_mask)[0]
+        else:
+            outline = np.empty((0, 2), dtype=int)
+
+        cell = Cell(
+            new_mask_n,
+            outline,
+            color_ID=self.canvas.random_color_ID(),
+            frame_number=frame.frame_number,
+            parent=frame,
+            red=False,
+            green=False,
+        )
+
+        return cell, binary_mask
+
+    def random_color(self, n_samples: int | None = None):
         """
         Generate a collection of random cell mask colors.
 
@@ -2819,64 +2852,83 @@ class MainWidget(QMainWindow):
             self.left_toolbar.RGB_mode()
 
     # --------------Segmentation functions----------------
-    def add_cell_mask(self, enclosed_pixels):
-        """
-        Add a new cell mask to the current frame based on the enclosed pixels.
+    def _add_cell(self, enclosed_pixels: np.ndarray, new_mask_n: int | None = None, frame: int | None = None):
+        if frame is None:
+            frame = self.frame
+        if new_mask_n is None:
+            new_mask_n = frame.n_cells
 
-        Parameters
-        ----------
-        enclosed_pixels : np.ndarray
-            An array of pixel coordinates enclosed by the new cell mask.
-
-        Returns
-        -------
-        new_mask_n : int
-            The cell number of the new mask.
-        """
-
-        new_mask_n = self.frame.n_cells  # new cell number
-        cell_mask = np.zeros_like(self.frame.masks, dtype=bool)
-        cell_mask[enclosed_pixels[:, 0], enclosed_pixels[:, 1]] = True
-        new_mask = cell_mask & (self.frame.masks == 0)
-
-        if new_mask.sum() < 5:  # check if the mask is more than 4 pixels (minimum for cellpose to generate an outline)
+        cell, binary_mask = self.pixels_to_cell(enclosed_pixels, new_mask_n, frame)
+        if cell is False:
             return False
-
-        self.frame.masks[new_mask] = new_mask_n + 1
-
-        cell_color_n = self.canvas.random_color_ID()
-        cell_color = self.canvas.cell_cmap(cell_color_n)
-        if self.frame.has_outlines:
-            outline = outlines_list(new_mask)[0]
-        else:
-            outline = np.empty((0, 2), dtype=int)
-
-        self.frame.outlines[outline[:, 1], outline[:, 0]] = True
-        centroid = np.mean(enclosed_pixels, axis=0)
-        self.add_cell(
-            new_mask_n, outline, color_ID=cell_color, centroid=centroid, frame_number=self.frame_number, red=False, green=False
+        cell.color_ID = self.canvas.random_color_ID()
+        mask_command = MaskCommand(
+            self,
+            add=True,
+            cell=cell,
+            frame=frame,
+            mask=binary_mask,
+            description=f'Add mask {new_mask_n} in frame {frame.frame_number}',
         )
-
-        if hasattr(self.stack, 'tracked_centroids'):
-            t = self.stack.tracked_centroids
-            new_particle_ID = t['particle'].max() + 1
-            new_particle = pd.DataFrame(
-                [[new_mask_n, centroid[0], centroid[1], self.frame_number, new_particle_ID, cell_color_n]],
-                columns=t.columns,
-                index=[t.index.max() + 1],
-            )  # TODO: handle situations where tracked_centroids has more or fewer columns
-            self.stack.tracked_centroids = pd.concat([t, new_particle])
-            self.stack.tracked_centroids = self.stack.tracked_centroids.sort_values(['frame', 'particle'])
-            self.left_toolbar.also_save_tracking.setChecked(True)
-
-        self.canvas.draw_outlines()
-        self._update_tracking_overlay()
-        self.canvas.add_cell_highlight(new_mask_n, alpha=self.canvas.masks_alpha, color=cell_color, layer='mask')
-
-        self._update_ROIs_label()
+        self.undo_stack.push(mask_command)
+        print(f'Added cell {new_mask_n}')
         return new_mask_n
 
-    def split_cell_masks(self, min_size=5):
+    def _delete_cell(self, cell_n: int, frame: SegmentedImage | None = None):
+        if frame is None:
+            frame = self.frame
+        cell = frame.cells[cell_n]
+        mask = frame.masks == cell_n + 1
+        mask_command = MaskCommand(
+            self, add=False, cell=cell, frame=frame, mask=mask, description=f'Delete mask {cell_n} in frame {frame.frame_number}'
+        )
+        self.undo_stack.push(mask_command)
+        print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
+
+    def add_cell(self, cell: Cell, mask: np.ndarray):
+        """
+        Add a cell object to the current frame.
+        """
+        frame = self.stack.frames[cell.frame]
+
+        # add cell data
+        frame.add_cell(cell, mask)
+
+        # add mask overlay
+        self.canvas.add_cell_highlight(cell.n, alpha=self.canvas.masks_alpha, frame=frame, color=cell.color_ID, layer='mask')
+
+        # update display
+        if frame == self.frame:
+            self._update_tracking_overlay()
+            self._update_display()
+            self._update_ROIs_label()
+
+    def delete_cell(self, cell: Cell, mask: np.ndarray | None = None, update_display: bool = True):
+        """
+        Delete a cell object from the current frame.
+        """
+        frame = self.stack.frames[cell.frame]
+
+        # remove mask overlay
+        self.canvas.add_cell_highlight(cell.n, frame=frame, color='none', layer='mask')
+
+        # remove cell data
+        frame.remove_cell(cell, mask)
+
+        # update display
+        if update_display and frame == self.frame:
+            self._update_tracking_overlay()
+            self._update_display()
+            self._update_ROIs_label()
+
+    def _split_cell(self):
+        self.drawing_cell_split = False
+        self.split_cell_masks()
+        self.cell_split.clearPoints()
+        self.select_cell(particle=self.selected_particle_n)
+        self._update_display()
+
+    def split_cell_masks(self, min_size: int = 5):
         """
         Split cells that intersect with the current curve.
 
@@ -3014,54 +3066,15 @@ class MainWidget(QMainWindow):
             for new_label in new_labels:
                 enclosed_pixels = np.array(np.where(new_masks == new_label)).T
                 if len(enclosed_pixels) > 0:
-                    self.add_cell_mask(enclosed_pixels)
+                    cell, binary_mask = self.pixels_to_cell(enclosed_pixels)
+                    self.add_cell(cell, binary_mask)
 
         if split:
             del self.frame.stored_mask_overlay
 
-    def add_cell(self, n, outline, color_ID=None, red=False, green=False, frame_number=None, **kwargs):
-        """
-        Add a new cell to the current frame.
+        return split
 
-        Parameters
-        ----------
-        n : int
-            The cell number.
-        outline : np.ndarray
-            The outline of the cell mask.
-        color_ID : int
-            The color ID of the cell mask. If None, a random color is generated.
-        frame_number : int
-            The frame number to add the cell to. If None, the current frame is used.
-
-        Any other keyword arguments are passed to the Cell constructor.
-
-        Returns
-        -------
-        new_cell : Cell
-            The new cell object.
-        """
-        if frame_number is None:
-            frame_number = self.frame_number
-        else:
-            frame = self.stack.frames[frame_number]
-
-        new_cell = Cell(
-            n,
-            outline,
-            color_ID=color_ID,
-            red=red,
-            green=green,
-            frame_number=frame_number,
-            parent=self.stack.frames[self.frame_number],
-            **kwargs,
-        )
-        frame.cells = np.append(self.frame.cells, new_cell)
-        frame.n_cells += 1
-
-        return new_cell
-
-    def merge_cell_masks(self, cell_n1, cell_n2, frame_number=None):
+    def merge_cell_masks(self, cell_n1: int, cell_n2: int, frame_number: int | None = None):
         """
         Merges the cell_n2 mask into cell_n1.
         This is done by reassigning the cell_n2 mask to cell_n1 and deleting cell_n2.
@@ -3110,7 +3123,7 @@ class MainWidget(QMainWindow):
 
         # self.check_cell_numbers() # for troubleshooting
 
-    def merge_particle_masks(self, particle_n1, particle_n2):
+    def merge_particle_masks(self, particle_n1: int, particle_n2: int):
         """
         Merges the masks of particle_n2 into particle_n1 in every frame.
         This is done by a series of cell mask merges.
@@ -3184,7 +3197,7 @@ class MainWidget(QMainWindow):
         self.generate_outlines(frames)
         self.statusBar().showMessage('Generated outlines.', 1000)
 
-    def generate_outlines(self, frames):
+    def generate_outlines(self, frames: list[SegmentedImage]):
         """
         Generate cell outlines for a list of frames.
 
@@ -3200,37 +3213,6 @@ class MainWidget(QMainWindow):
                 cell.outline = outline
                 cell.get_centroid()
             frame.has_outlines = True
-
-    def delete_cell_mask(self, cell_n, frame=None, update_display=True):
-        """
-        Delete a cell mask from the current frame.
-
-        Parameters
-        ----------
-        cell_n : int
-            The cell number to delete.
-        frame : Frame
-            The frame to delete the cell from. If None, the current frame is used.
-        update_display : bool
-            Whether to update the display after deleting the cell.
-        """
-
-        if frame is None:
-            frame = self.frame
-
-        if frame == self.frame:  # remove the cell mask from the mask overlay
-            self.canvas.add_cell_highlight(cell_n, color='none', layer='mask')
-
-        self.stack.delete_cells([cell_n], frame_number=frame.frame_number)
-        if hasattr(self.stack, 'tracked_centroids'):
-            self.left_toolbar.also_save_tracking.setChecked(True)
-
-        if update_display:
-            print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
-            if frame == self.frame:
-                self._update_tracking_overlay()
-                self._update_display()
-                self._update_ROIs_label()
 
     def save_tracking(self, event=None, file_path=None):
         """
@@ -3736,7 +3718,7 @@ class MainWidget(QMainWindow):
             self.outlines_visible = not self.outlines_visible
         elif event.key() == Qt.Key.Key_Delete:
             if self.selected_cell_n is not None:
-                self.delete_cell_mask(self.selected_cell_n)
+                self._delete_cell(self.selected_cell_n)
                 self.select_cell(None)
 
         # cancel drawing
@@ -3944,7 +3926,7 @@ class MainWidget(QMainWindow):
             return
         self.save_screenshot(file_path=file_path)
         print(f'Saved screenshot to {file_path}')
-    
+
     def _save_img_plot(self):
         file_path, _ = QFileDialog.getSaveFileName(self, 'Save image plot as...', filter='*.png', directory=self.save_dir)
         if file_path == '':
@@ -4028,7 +4010,7 @@ class MainWidget(QMainWindow):
         self.save_dir = Path(file_path).parent
         print(f'Saved video as {selected_filter} to {file_path}')
 
-    def export_window_video(self, file_path: str, screenshot: str='window', fps: int=10, format_settings: dict=None):
+    def export_window_video(self, file_path: str, screenshot: str = 'window', fps: int = 10, format_settings: dict = None):
         """
         Save the stack with its current visual settings as a video.
         """
@@ -4458,6 +4440,132 @@ class MainWidget(QMainWindow):
         self.canvas.close()
         event.accept()
 
+
+class MaskCommand(QUndoCommand):
+    '''
+    Undoable command for adding or deleting a cell.
+    '''
+    def __init__(
+        self,
+        main_window: MainWidget,
+        cell: Cell,
+        frame: SegmentedImage,
+        mask: np.ndarray,
+        add: bool = True,
+        description: str = '',
+    ):
+        super().__init__(description)
+        self.main_window = main_window
+        self.cell = cell
+        self.frame = frame
+        self.add = add
+        self.mask = mask
+
+        self.tracking_command = None
+        if hasattr(self.main_window.stack, 'tracked_centroids'):
+            tracking_data = self.main_window.stack.tracked_centroids
+            row = tracking_data[
+                (tracking_data.frame == self.frame.frame_number) & 
+                (tracking_data.cell_number == self.cell.n)
+            ]
+            self.tracking_command = TrackingRowCommand(
+                main_window=self.main_window,
+                frame_number=self.frame.frame_number,
+                cell_number=self.cell.n,
+                row=row if not row.empty else None,
+                add=add,
+                description="Update tracking data"
+            )
+
+    def redo(self):
+        if self.add:
+            self.add_cell()
+        else:
+            self.delete_cell()
+        if self.tracking_command is not None:
+            self.tracking_command.redo()
+
+    def undo(self):
+        if self.add:
+            self.delete_cell()
+        else:
+            self.add_cell()
+        if self.tracking_command is not None:
+            self.tracking_command.undo()
+
+    def delete_cell(self):
+        self.main_window.delete_cell(self.cell, self.mask)
+
+    def add_cell(self):
+        self.main_window.add_cell(self.cell, self.mask)
+
+
+class TrackingRowCommand(QUndoCommand):
+    '''
+    Undoable command for adding or deleting a row from the tracking data.
+    '''
+    def __init__(
+        self,
+        main_window: MainWidget,
+        frame_number: int,
+        cell_number: int,
+        row: pd.DataFrame | None = None,
+        add: bool = True,
+        description: str = '',
+    ):
+        super().__init__(description)
+        self.main_window = main_window
+        self.frame_number = frame_number
+        self.cell_number = cell_number
+        self.row = row
+        self.add = add
+
+    def redo(self):
+        if self.add:
+            self.add_row()
+        else:
+            self.delete_row()
+
+    def undo(self):
+        if self.add:
+            self.delete_row()
+        else:
+            self.add_row()
+
+    def delete_row(self):
+        t = self.main_window.stack.tracked_centroids
+        if self.row is None: # row was not provided, fetch it
+            self.row = t.loc[(t.frame == self.frame_number) & (t.cell_number == self.cell_number)]
+        t.drop(self.row.index, inplace=True)
+        t.loc[(t.frame == self.frame_number) & (t.cell_number > self.cell_number), 'cell_number'] -= 1
+
+
+    def add_row(self):
+        if self.row is None: # create a new row
+            self.row = self.new_tracking_row()
+        t = self.main_window.stack.tracked_centroids
+        t.loc[(t.frame == self.frame_number) & (t.cell_number >= self.cell_number), 'cell_number'] += 1
+        self.main_window.stack.tracked_centroids = pd.concat([t, self.row]).sort_values(['frame', 'particle'])
+
+    def new_tracking_row(self):
+        t = self.main_window.stack.tracked_centroids
+        cell = self.main_window.stack.frames[self.frame_number].cells[self.cell_number]
+    
+        new_particle_ID = t['particle'].max() + 1
+        data = {
+            'cell_number': cell.n,
+            'y': cell.centroid[0],
+            'x': cell.centroid[1],
+            'frame': self.frame_number,
+            'particle': new_particle_ID
+            }
+
+        if hasattr(cell, 'color_ID'):
+            data['color_ID'] = cell.color_ID
+        placeholder_particle = {idx: None for idx in t.columns}
+        placeholder_particle.update({k: v for k, v in data.items() if k in t.columns})
+        row = pd.DataFrame([placeholder_particle], index=[t.index.max() + 1])
+        return row
 
 def main():
     pg.setConfigOptions(useOpenGL=True)

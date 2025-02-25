@@ -69,7 +69,7 @@ class Cell:
     @property
     def outline(self):
         if not hasattr(self, '_outline'):
-            self._outline = outlines_list(self.mask)
+            self._outline = outlines_list(self.mask)[0]
         return self._outline
 
     @outline.setter
@@ -1466,17 +1466,16 @@ class SegmentedImage:
 
     def add_cell(self, cell: Cell, mask: np.ndarray):
         """adds a cell to the image."""
-        cell_n = cell.n
-        if cell_n < self.n_cells:  # need to renumber existing cells
-            for later_cell in self.cells[cell_n:]:
+        if cell.n < self.n_cells:  # need to renumber existing cells
+            for later_cell in self.cells[cell.n:]:
                 later_cell.n += 1
-            self.masks[self.masks > cell_n] += 1
+            self.masks[self.masks > cell.n] += 1
         else:
-            cell.n=self.n_cells
+            cell.n = self.n_cells
 
-        self.cells = np.insert(self.cells, cell_n, cell)
+        self.cells = np.insert(self.cells, cell.n, cell)
         self.n_cells += 1
-        self.masks[mask] = cell_n + 1
+        self.masks[mask] = cell.n + 1
         self.outlines[cell.outline[:, 1], cell.outline[:, 0]] = True
 
     # ------------FUCCI----------------

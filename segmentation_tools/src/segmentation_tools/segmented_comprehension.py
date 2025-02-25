@@ -56,14 +56,25 @@ def scaled_properties(cls):
 class Cell:
     """class for each labeled cell membrane."""
 
-    def __init__(self, n, outline, parent=None, frame_number=None, **kwargs):
+    def __init__(self, n, outline=None, parent=None, frame_number=None, **kwargs):
         self.frame = frame_number
         self.n = n
-        self.outline = outline
+        if outline is not None:
+            self._outline = outline
         self.parent = parent
 
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    @property
+    def outline(self):
+        if not hasattr(self, '_outline'):
+            self._outline = outlines_list(self.mask)
+        return self._outline
+
+    @outline.setter
+    def outline(self, outline):
+        self._outline = outline
 
     def area_pixels(self):
         area = 0.5 * np.abs(

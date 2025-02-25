@@ -2790,7 +2790,6 @@ class MainWidget(QMainWindow):
             self, cell=cell, mask=binary_mask, description=f'Add mask {new_mask_n} in frame {frame.frame_number}'
         )
         self.undo_stack.push(mask_command)
-        print(f'Added cell {new_mask_n}')
         return new_mask_n
 
     def _delete_cell(self, cell_n: int, frame: SegmentedImage | None = None):
@@ -2801,7 +2800,6 @@ class MainWidget(QMainWindow):
             self, cell=cell, description=f'Delete mask {cell_n} in frame {frame.frame_number}'
         )
         self.undo_stack.push(mask_command)
-        print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
 
     def add_cell(self, cell: Cell, mask: np.ndarray):
         """
@@ -3032,8 +3030,6 @@ class MainWidget(QMainWindow):
         )
         self.undo_stack.push(command)
 
-        print(f'Merged cell {cell_n2} into cell {cell_n1} in frame {frame_number}')
-
         if hasattr(self.stack, 'tracked_centroids'):
             self.left_toolbar.also_save_tracking.setChecked(True)
 
@@ -3061,8 +3057,6 @@ class MainWidget(QMainWindow):
             self, particle_n1, particle_n2, description=f'Merge particle {particle_n2} into particle {particle_n1}'
         )
         self.undo_stack.push(command)
-
-        print(f'Merged particle {particle_n2} into particle {particle_n1}')
 
     def _check_cell_numbers(self):
         """for troubleshooting: check if the cell numbers in the frame and the masks align."""

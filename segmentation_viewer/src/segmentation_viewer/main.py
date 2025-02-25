@@ -4514,7 +4514,8 @@ class MergeParticleMasksCommand(QUndoCommand):
 
         for frame in relabel_frames:
             cell2_idx = df[(df['particle'] == self.particle2) & (df['frame'] == frame)].index[0]
-
+            cell2 = particle2[particle2_frames.index(frame)]
+            
             # Create a command to reassign the cell from particle2 to particle1
             reassign_cmd = ReassignParticleCommand(self.main_window, cell2_idx, self.particle2, self.particle1)
             self.commands.append(reassign_cmd)

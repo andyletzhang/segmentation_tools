@@ -331,7 +331,7 @@ class Cell:
         return self.fit_params
 
     def copy(self):
-        return copy.deepcopy(self)
+        return copy.copy(self)
 
 
 class SegmentedStack:

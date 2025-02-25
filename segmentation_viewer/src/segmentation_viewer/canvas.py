@@ -7,8 +7,7 @@ import pyqtgraph as pg
 from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QBrush, QColor, QCursor, QImage, QPainter, QPainterPath, QPen, QPolygonF
 from PyQt6.QtWidgets import QGraphicsPathItem, QGraphicsPolygonItem, QGraphicsScene, QHBoxLayout, QWidget
-from shapely.geometry import LineString
-from shapely.ops import polygonize, unary_union
+from segmentation_tools.shape_operations import get_enclosed_pixels, get_mask_boundary, get_bounding_box
 
 from .workers import MaskProcessor
 
@@ -120,11 +119,11 @@ class PyQtGraphCanvas(QWidget):
     def hide_crosshairs(self):
         for line in [self.img_vline, self.img_hline, self.seg_vline, self.seg_hline]:
             line.setVisible(False)
-    
+
     def show_crosshairs(self):
         for line in [self.img_vline, self.img_hline, self.seg_vline, self.seg_hline]:
             line.setVisible(True)
-            
+
     def wheelEvent(self, event):
         """Redirect wheel events to the main window."""
         self.main_window._canvas_wheelEvent(event)
@@ -442,7 +441,7 @@ class PyQtGraphCanvas(QWidget):
         img = self.draw_plot(plot='seg')
         img.save(filename, compress_level=0, format='png')
 
-    def draw_plot(self, plot: str='img'):
+    def draw_plot(self, plot: str = 'img'):
         """Take a screenshot of the image plot."""
         if plot == 'img':
             plot = self.img_plot
@@ -456,13 +455,13 @@ class PyQtGraphCanvas(QWidget):
         # RGBA composition
         RGBA_images = []
         for img in reversed(images):
-            if not img.isVisible(): # only draw enabled layers
+            if not img.isVisible():  # only draw enabled layers
                 continue
-            if img.image.shape[:2] != image_shape: # skip if the image is not the same size as the main image
+            if img.image.shape[:2] != image_shape:  # skip if the image is not the same size as the main image
                 continue
-            
+
             img_rgba = img_item_to_RGBA(img)
-            RGBA_images.append(self.inverse_image_transform(img_rgba)) # remove visual transformation
+            RGBA_images.append(self.inverse_image_transform(img_rgba))  # remove visual transformation
         if len(RGBA_images) == 0:
             return None
         return composite_images_pillow(RGBA_images)
@@ -565,17 +564,18 @@ class PyQtGraphCanvas(QWidget):
         if hasattr(self, 'mask_processor'):
             self.mask_processor.abort_all_tasks()
 
+
 # util functions
 def img_item_to_RGBA(img: pg.ImageItem) -> np.ndarray:
     # apply levels
     image = img.image.copy()
-    nan_mask=np.isnan(image)
-    image[nan_mask]=0
+    nan_mask = np.isnan(image)
+    image[nan_mask] = 0
     if img.levels is not None:
         levels = img.levels
         image = np.clip(image, levels[0], levels[1])
         image = (image - levels[0]) / (levels[1] - levels[0]) * 255
-    
+
     image = image.astype(np.uint8)
     # apply LUT if necessary
     if img.lut is not None:
@@ -588,10 +588,11 @@ def img_item_to_RGBA(img: pg.ImageItem) -> np.ndarray:
     if image.shape[-1] == 3:
         alpha = np.ones((*image.shape[:2], 1), dtype=np.uint8) * 255
         image = np.concatenate((image, alpha), axis=-1)
-    
+
     image[nan_mask] = 0
 
     return image
+
 
 def composite_images_pillow(images):
     from PIL import Image
@@ -602,29 +603,6 @@ def composite_images_pillow(images):
         base = Image.alpha_composite(base, Image.fromarray(img, mode='RGBA'))
     return base
 
-def get_mask_boundary(self, mask):
-    from skimage.segmentation import find_boundaries
-
-    boundaries = find_boundaries(mask, mode='inner')
-    return boundaries
-
-def get_bounding_box(cell_mask):
-    # Find the rows and columns that contain True values
-    rows = np.any(cell_mask, axis=1)
-    cols = np.any(cell_mask, axis=0)
-
-    # Find the indices of these rows and columns
-    row_indices = np.where(rows)[0]
-    col_indices = np.where(cols)[0]
-
-    # Calculate the bounding box coordinates
-    if row_indices.size and col_indices.size:
-        min_row, max_row = row_indices[[0, -1]]
-        min_col, max_col = col_indices[[0, -1]]
-        return min_row, max_row + 1, min_col, max_col + 1
-    else:
-        # If no True values are found, raise
-        return None, None, None, None
 
 class SegPlot(pg.PlotWidget):
     """
@@ -801,8 +779,8 @@ class CellMaskPolygons:
     def points(self):
         return self.img_poly.points
 
-    def get_enclosed_pixels(self):
-        return self.img_poly.get_enclosed_pixels()
+    def enclosed_pixels(self):
+        return self.img_poly.enclosed_pixels()
 
 
 class CellMaskPolygon(QGraphicsPolygonItem):
@@ -828,31 +806,13 @@ class CellMaskPolygon(QGraphicsPolygonItem):
         self.update_polygon()
         self.last_handle_pos = (y, x)
 
-    def get_enclosed_pixels(self) -> np.ndarray:
+    def enclosed_pixels(self) -> np.ndarray:
         """Return all pixels enclosed by the polygon."""
-        from skimage.draw import polygon
 
         points = np.array([(p.x(), p.y() - 0.5) for p in self.points])
         points = np.vstack((points, points[0]))  # close the polygon
-        line = LineString(points)
-        split_line = unary_union(line)
-        # Get the bounding box of the polygon
-        xmin, ymin = (points.min(axis=0) - 0.5).astype(int)
-        all_polygons = list(polygonize(split_line))
 
-        enclosed_pixels = []
-        for shapely_polygon in all_polygons:
-            poly_verts = np.array(shapely_polygon.exterior.coords)
-
-            # Use skimage.draw.polygon to get the pixels within the polygon
-            rr, cc = polygon(poly_verts[:, 1] - ymin, poly_verts[:, 0] - xmin)
-
-            # Adjust the coordinates to the original image space
-            polygon_pixels = np.vstack((rr + ymin, cc + xmin)).T
-            enclosed_pixels.append(polygon_pixels)
-
-        enclosed_pixels = np.concatenate(enclosed_pixels, axis=0)
-        return enclosed_pixels
+        return get_enclosed_pixels(points)
 
 
 class CellSplitLines:

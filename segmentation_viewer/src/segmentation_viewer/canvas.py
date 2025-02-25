@@ -294,6 +294,12 @@ class PyQtGraphCanvas(QWidget):
 
         return mask_overlay, opaque_mask
 
+    def redraw_cell_mask(self, cell, **highlight_kwargs):
+        if not hasattr(self.main_window.stack.frames[cell.frame], 'stored_mask_overlay'):
+            return # no mask overlay to update
+        highlight_kwargs={'color': cell.color_ID, 'layer':'mask', 'mode':'overwrite'} | highlight_kwargs
+        self.add_cell_highlight(cell.n, frame=cell.frame, **highlight_kwargs)
+
     def add_cell_highlight(
         self,
         cell_index,
@@ -314,9 +320,17 @@ class PyQtGraphCanvas(QWidget):
             frame = self.main_window.stack.frames[frame]
 
         if alpha is None:
-            alpha = self.selected_cell_alpha
+            if layer == 'mask':
+                alpha = self.masks_alpha
+            elif layer == 'selection':
+                alpha = self.selected_cell_alpha
+            else:
+                raise ValueError(f'Must pass alpha to layer {layer}')
         if color is None:
-            color = self.selected_cell_color
+            if layer == 'selection':
+                color = self.selected_cell_color
+            else:
+                color = self.random_color_ID()
 
         # get the binarized mask for the specified cell
         cell_mask = self.image_transform(frame.masks == cell_index + 1)

@@ -1077,8 +1077,7 @@ class MainWidget(QMainWindow):
                 masks, _, _ = self.cellpose_model.eval(img, channels=[2, 1], diameter=diameter)
             else:
                 masks, _, _ = self.cellpose_model.eval(frame.img, channels=channels, diameter=diameter)
-            frame.masks = masks
-            self.replace_segmentation(frame)
+            self.replace_segmentation(frame, masks)
 
             if frame == self.frame:
                 self._update_ROIs_label()
@@ -1097,8 +1096,7 @@ class MainWidget(QMainWindow):
             frames = [self.frame]
 
         for frame in frames:
-            frame.masks = np.zeros_like(frame.masks)
-            self.replace_segmentation(frame)
+            self.replace_segmentation(frame, np.zeros_like(frame.masks))
             if hasattr(self.stack, 'tracked_centroids'):
                 t = self.stack.tracked_centroids
                 self.stack.tracked_centroids = t[t.frame != frame.frame_number]
@@ -1155,18 +1153,19 @@ class MainWidget(QMainWindow):
 
             return custom_iterator()
 
-    def replace_segmentation(self, frame):
+    def replace_segmentation(self, frame, masks):
         """
         Replace frame cells and outlines using frame.masks as reference.
         Called after any re-segmentation operation.
         """
-
-        frame.has_outlines = False
+        frame.masks = masks
         frame.outlines = masks_to_outlines(frame.masks)
         frame.n_cells = np.max(frame.masks)
+
         frame.cells = np.array(
-            [Cell(n, np.empty((0, 2)), frame_number=frame.frame_number, parent=frame) for n in range(frame.n_cells)]
+            [Cell(n, outline=outline, frame_number=frame.frame_number, parent=frame) for n, outline in enumerate(outlines_list(frame.masks))]
         )
+        
         if hasattr(frame, 'stored_mask_overlay'):
             del frame.stored_mask_overlay
             self.canvas.draw_masks_bg(frame)
@@ -2051,19 +2050,6 @@ class MainWidget(QMainWindow):
         memory : int
             The maximum number of frames a cell can be lost for before being considered a new cell. Defaults to 0.
         """
-
-        needs_outlines = []
-        for frame in self.stack.frames:
-            if not frame.has_outlines:
-                needs_outlines.append(frame)
-
-        for frame in self._progress_bar(needs_outlines, desc='Generating outlines'):
-            outlines = outlines_list(frame.masks)
-            for cell, outline in zip(frame.cells, outlines):
-                cell.outline = outline
-                cell.get_centroid()
-            frame.has_outlines = True
-
         self.stack.track_centroids(**kwargs)
 
     def _recolor_tracks(self, draw: bool = True):
@@ -2731,15 +2717,8 @@ class MainWidget(QMainWindow):
         if binary_mask.sum() < 5:  # check if the mask is more than 4 pixels (minimum for cellpose to generate an outline)
             return False, None
 
-        if frame.has_outlines:
-            outline = outlines_list(binary_mask)[0]
-        else:
-            outline = np.empty((0, 2), dtype=int)
-
         cell = Cell(
             new_mask_n,
-            outline,
-            color_ID=self.canvas.random_color_ID(),
             frame_number=frame.frame_number,
             parent=frame,
             red=False,
@@ -3006,7 +2985,6 @@ class MainWidget(QMainWindow):
             for cell, outline in zip(frame.cells, outlines):
                 cell.outline = outline
                 cell.get_centroid()
-            frame.has_outlines = True
 
     def save_tracking(self, event=None, file_path=None):
         """
@@ -3115,14 +3093,6 @@ class MainWidget(QMainWindow):
 
         if file_path is None:
             file_path = frame.name
-        if not frame.has_outlines:
-            print('Generating outlines...')
-            outlines = outlines_list(frame.masks)
-            for cell, outline in zip(frame.cells, outlines):
-                cell.outline = outline
-                cell.get_centroid()
-            frame.has_outlines = True
-
         try:  # fetch cell cycle data if available
             self._convert_red_green([frame])
             write_attrs = ['cell_cycles']
@@ -3185,15 +3155,6 @@ class MainWidget(QMainWindow):
         print(f'Saved CSV to {save_path}')
 
     def _get_export(self):
-        for frame in self.stack.frames:
-            if not frame.has_outlines:
-                print(f'Generating outlines for frame {frame.frame_number}...')
-                outlines = outlines_list(frame.masks)
-                for cell, outline in zip(frame.cells, outlines):
-                    cell.outline = outline
-                    cell.get_centroid()
-                frame.has_outlines = True
-
         # get the data to export
         if hasattr(self.stack, 'tracked_centroids'):
             self.stack.get_velocities()
@@ -3226,15 +3187,6 @@ class MainWidget(QMainWindow):
         csv_df : pd.DataFrame
             The DataFrame to export. If None, the export DataFrame is generated.
         """
-        for frame in self.stack.frames:
-            if not frame.has_outlines:
-                print(f'Generating outlines for frame {frame.frame_number}...')
-                outlines = outlines_list(frame.masks)
-                for cell, outline in zip(frame.cells, outlines):
-                    cell.outline = outline
-                    cell.get_centroid()
-                frame.has_outlines = True
-
         if csv_df is None:
             csv_df = self._get_export()
 
@@ -3980,9 +3932,6 @@ class MainWidget(QMainWindow):
         self.frame_slider.setRange(0, len(self.stack.frames) - 1)
         self._autorange_LUT_sliders()
         self.change_current_frame(0, reset=True)  # call frame update explicitly (in case the slider value was already at 0)
-
-        for frame in self.stack.frames:  # loaded segmentation files will always have outlines
-            frame.has_outlines = True
 
         # reset visual settings
         self.canvas.img_plot.autoRange()

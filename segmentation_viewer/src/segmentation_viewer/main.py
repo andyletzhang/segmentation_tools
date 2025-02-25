@@ -2063,7 +2063,7 @@ class MainWidget(QMainWindow):
         t['color'] = colors[t['particle']]
         for frame in self.stack.frames:
             tracked_frame = t[t.frame == frame.frame_number].sort_values('cell_number')
-            frame.set_cell_attrs('color_ID', self.canvas.cell_cmap(tracked_frame['color']))
+            frame.set_cell_attrs('color_ID', tracked_frame['color'])
 
         if draw:
             self.canvas.draw_masks_parallel()

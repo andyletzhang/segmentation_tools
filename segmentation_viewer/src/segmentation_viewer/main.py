@@ -109,7 +109,7 @@ class MainWidget(QMainWindow):
         self.mitosis_mode = 0
         self.bounds_processor = BoundsProcessor(self, n_cores=1)
         self.undo_stack = QUndoStack(self)
-        self.undo_stack.setUndoLimit(10)
+        self.globals_dict['history']=self.undo_stack
 
         # Status bar
         self.status_cell = QLabel('Selected Cell: None', self)
@@ -1165,7 +1165,7 @@ class MainWidget(QMainWindow):
         frame.cells = np.array(
             [Cell(n, outline=outline, frame_number=frame.frame_number, parent=frame) for n, outline in enumerate(outlines_list(frame.masks))]
         )
-        
+
         if hasattr(frame, 'stored_mask_overlay'):
             del frame.stored_mask_overlay
             self.canvas.draw_masks_bg(frame)
@@ -2068,7 +2068,7 @@ class MainWidget(QMainWindow):
         if draw:
             self.canvas.draw_masks_parallel()
 
-    def particle_from_cell(self, cell_number, frame_number=None):
+    def particle_from_cell(self, cell_number: int, frame_number: int=None):
         """
         Get the particle number for the specified cell in the specified frame.
 
@@ -2088,7 +2088,7 @@ class MainWidget(QMainWindow):
 
         return self.stack.particle_from_cell(cell_number, frame_number)
 
-    def cell_from_particle(self, particle, frame_number=None):
+    def cell_from_particle(self, particle: int, frame_number: int=None):
         """
         Get the cell number for the specified particle in the specified frame.
 
@@ -2716,9 +2716,11 @@ class MainWidget(QMainWindow):
 
         if binary_mask.sum() < 5:  # check if the mask is more than 4 pixels (minimum for cellpose to generate an outline)
             return False, None
-
+        
+        outline=outlines_list(binary_mask)[0]
         cell = Cell(
             new_mask_n,
+            outline=outline,
             frame_number=frame.frame_number,
             parent=frame,
             red=False,
@@ -2763,7 +2765,6 @@ class MainWidget(QMainWindow):
         cell, binary_mask = self.pixels_to_cell(enclosed_pixels, new_mask_n, frame)
         if cell is False:
             return False
-        cell.color_ID = self.canvas.random_color_ID()
         mask_command = AddCellCommand(
             self, cell=cell, mask=binary_mask, description=f'Add mask {new_mask_n} in frame {frame.frame_number}'
         )
@@ -2778,45 +2779,6 @@ class MainWidget(QMainWindow):
             self, cell=cell, description=f'Delete mask {cell_n} in frame {frame.frame_number}'
         )
         self.undo_stack.push(mask_command)
-
-    def add_cell(self, cell: Cell, mask: np.ndarray):
-        """
-        Add a cell object to the current frame.
-        """
-        frame = self.stack.frames[cell.frame]
-
-        # add cell data
-        if cell.n > frame.n_cells:
-            cell.n = frame.n_cells
-        frame.add_cell(cell, mask)
-
-        # add mask overlay
-        self.canvas.add_cell_highlight(cell.n, alpha=self.canvas.masks_alpha, frame=frame, color=cell.color_ID, layer='mask')
-
-        # update display
-        if frame == self.frame:
-            self._update_tracking_overlay()
-            self._update_display()
-            self._update_ROIs_label()
-
-    def delete_cell(self, cell: Cell, mask: np.ndarray | None = None, update_display: bool = True):
-        """
-        Delete a cell object from the current frame.
-        """
-        frame = self.stack.frames[cell.frame]
-
-        # remove mask overlay
-        if hasattr(frame, 'stored_mask_overlay'):
-            self.canvas.add_cell_highlight(cell.n, frame=frame, color='none', layer='mask')
-
-        # remove cell data
-        frame.remove_cell(cell, mask)
-
-        # update display
-        if update_display and frame == self.frame:
-            self._update_tracking_overlay()
-            self._update_display()
-            self._update_ROIs_label()
 
     def _split_cell(self):
         self.drawing_cell_split = False
@@ -4184,7 +4146,78 @@ class MainWidget(QMainWindow):
         self.canvas.close()
         event.accept()
 
+class BaseCellMaskCommand(QUndoCommand):
+    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = '', show: bool = True, parent=None):
+        super().__init__(description, parent)
+        self.main_window = main_window
+        self.cell = cell
+        self.mask = mask
+    
+    def redo(self):
+        self._redo_operation()
+    
+    def undo(self):
+        self._undo_operation()
 
+    def _redo_operation(self):
+        raise NotImplementedError
+    
+    def _undo_operation(self):
+        raise NotImplementedError
+    
+    def add_cell(self):
+        frame = self.main_window.stack.frames[self.cell.frame]
+
+        # add cell data
+        if self.cell.n > frame.n_cells:
+            self.cell.n = frame.n_cells
+        frame.add_cell(self.cell, self.mask)
+
+        # update display
+        if frame.frame_number == self.main_window.frame_number:
+            self.main_window._update_tracking_overlay()
+            self.main_window._update_display()
+            self.main_window._update_ROIs_label()
+    
+    def delete_cell(self):
+        """
+        Delete a cell object from the current frame.
+        """
+        frame = self.main_window.stack.frames[self.cell.frame]
+
+        # remove cell data
+        frame.remove_cell(self.cell, self.mask)
+
+        # update display
+        if frame.frame_number == self.main_window.frame_number:
+            self.main_window._update_tracking_overlay()
+            self.main_window._update_display()
+            self.main_window._update_ROIs_label()
+
+class AddCellMaskCommand(BaseCellMaskCommand):
+    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = '', show: bool = True, parent=None):
+        description = description or f'Add cell {cell.n} to frame {cell.frame}'
+        super().__init__(main_window, cell, mask, description, show, parent)
+    
+    def _redo_operation(self):
+        self.add_cell()
+    
+    def _undo_operation(self):
+        self.delete_cell()
+
+class DeleteCellMaskCommand(BaseCellMaskCommand):
+    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray | None = None, description: str = '', show: bool = True, parent=None):
+        if mask is None:
+            mask = cell.mask
+        description = description or f'Delete cell {cell.n} from frame {cell.frame}'
+        super().__init__(main_window, cell, mask, description, show, parent)
+    
+    def _redo_operation(self):
+        self.delete_cell()
+    
+    def _undo_operation(self):
+        self.add_cell()
+    
 class BaseCellCommand(QUndoCommand):
     """
     Base class for cell add/delete operations.
@@ -4196,13 +4229,21 @@ class BaseCellCommand(QUndoCommand):
         self.cell = cell
         self.mask = mask
         self.show = show
-        self.tracking_command = None
-        if hasattr(self.main_window.stack, 'tracked_centroids'):
-            tracking_data = self.main_window.stack.tracked_centroids
-            row = tracking_data[(tracking_data.frame == self.cell.frame) & (tracking_data.cell_number == self.cell.n)]
-            self.tracking_command = self._create_tracking_command(row)
+        self.cell_command = self._get_cell_command()
+        self.color_command = self._get_color_command()
+        self.tracking_command = self._get_tracking_command()
+        self.commands = self._ordered_commands()
 
-    def _create_tracking_command(self, row):
+    def _ordered_commands(self):
+        raise NotImplementedError
+    
+    def _get_cell_command(self):
+        raise NotImplementedError
+        
+    def _get_color_command(self):
+        raise NotImplementedError
+
+    def _get_tracking_command(self):
         """Create appropriate tracking command (to be implemented by subclasses)"""
         raise NotImplementedError
 
@@ -4210,25 +4251,15 @@ class BaseCellCommand(QUndoCommand):
         if self.show:
             if self.main_window.frame_number != self.cell.frame:
                 self.main_window.change_current_frame(self.cell.frame)
-        self._redo_operation()
-        if self.tracking_command is not None:
-            self.tracking_command.redo()
+        for command in self.commands:
+            command.redo()
 
     def undo(self):
         if self.show:
             if self.main_window.frame_number != self.cell.frame:
                 self.main_window.change_current_frame(self.cell.frame)
-        self._undo_operation()
-        if self.tracking_command is not None:
-            self.tracking_command.undo()
-
-    def _redo_operation(self):
-        """Implemented by subclasses"""
-        raise NotImplementedError
-
-    def _undo_operation(self):
-        """Implemented by subclasses"""
-        raise NotImplementedError
+        for command in reversed(self.commands):
+            command.undo()
 
 
 class AddCellCommand(BaseCellCommand):
@@ -4236,25 +4267,45 @@ class AddCellCommand(BaseCellCommand):
     Undoable command for adding a cell.
     """
 
-    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = '', show: bool = True, parent=None):
+    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, color=None, description: str = '', show: bool = True, parent=None, row_args: dict = {}):
         description = description or f'Add cell {cell.n} to frame {cell.frame}'
+        if color is not None:
+            self.new_cell_color = color
+        elif hasattr(cell, 'color_ID'):
+            self.new_cell_color = cell.color_ID
+        else:
+            self.new_cell_color = main_window.canvas.random_color_ID()
+        self.row_args=row_args
         super().__init__(main_window, cell, mask, description, show, parent)
+    
+    def _ordered_commands(self):
+        commands = [self.cell_command, self.color_command]
+        if self.tracking_command is not None:
+            commands.append(self.tracking_command)
+        return commands
 
-    def _create_tracking_command(self, row):
+    def _get_cell_command(self):
+        return AddCellMaskCommand(self.main_window, self.cell, self.mask, description='Add cell mask')
+
+    def _get_color_command(self):
+        return ChangeCellColorCommand(self.main_window.canvas, self.cell, self.new_cell_color, description='New cell color')
+
+    def _get_tracking_command(self):
         return AddTrackingRowCommand(
             main_window=self.main_window,
             frame_number=self.cell.frame,
             cell_number=self.cell.n,
             cell=self.cell,
-            row=row if not row.empty else None,
+            row=None,
+            row_args=self.row_args,
             description='Create tracking data for new cell',
         )
 
     def _redo_operation(self):
-        self.main_window.add_cell(self.cell, self.mask)
+        self.add_cell()
 
     def _undo_operation(self):
-        self.main_window.delete_cell(self.cell, self.mask)
+        self.delete_cell()
 
 
 class DeleteCellCommand(BaseCellCommand):
@@ -4268,20 +4319,37 @@ class DeleteCellCommand(BaseCellCommand):
         description = description or f'Delete cell {cell.n} from frame {cell.frame}'
         super().__init__(main_window, cell, mask, description, show, parent)
 
-    def _create_tracking_command(self, row):
-        return DeleteTrackingRowCommand(
-            main_window=self.main_window,
-            frame_number=self.cell.frame,
-            cell_number=self.cell.n,
-            row=row if not row.empty else None,
-            description='Remove tracking data for deleted cell',
-        )
+    def _ordered_commands(self):
+        commands = [self.color_command, self.cell_command]
+        if self.tracking_command is not None:
+            commands.append(self.tracking_command)
+        return commands
+
+    def _get_cell_command(self):
+        return DeleteCellMaskCommand(self.main_window, self.cell, self.mask, description='Delete cell mask')
+
+    def _get_color_command(self):
+        return ChangeCellColorCommand(self.main_window.canvas, self.cell, 'none', description='Remove cell color')
+
+    def _get_tracking_command(self):
+        if hasattr(self.main_window.stack, 'tracked_centroids'):
+            tracking_data = self.main_window.stack.tracked_centroids
+            row = tracking_data[(tracking_data.frame == self.cell.frame) & (tracking_data.cell_number == self.cell.n)]
+            return DeleteTrackingRowCommand(
+                main_window=self.main_window,
+                frame_number=self.cell.frame,
+                cell_number=self.cell.n,
+                row=row,
+                description='Remove tracking data for deleted cell',
+            )
+        else:
+            return None
 
     def _redo_operation(self):
-        self.main_window.delete_cell(self.cell, self.mask)
+        self.delete_cell()
 
     def _undo_operation(self):
-        self.main_window.add_cell(self.cell, self.mask)
+        self.add_cell()
 
 
 class DeleteCellsCommand(QUndoCommand):
@@ -4311,6 +4379,26 @@ class DeleteCellsCommand(QUndoCommand):
             command.undo()
 
 
+class ChangeCellColorCommand(QUndoCommand):
+    """
+    Undoable command for changing a cell's color.
+    """
+
+    def __init__(self, canvas: PyQtGraphCanvas, cell: Cell, color_ID: int, description: str = ''):
+        super().__init__(description)
+        self.canvas = canvas
+        self.cell = cell
+        self.color_ID = color_ID
+        self.original_color_ID = getattr(cell, 'color_ID', 'none')
+
+    def redo(self):
+        self.cell.color_ID = self.color_ID
+        self.canvas.redraw_cell_mask(self.cell)
+
+    def undo(self):
+        self.cell.color_ID = self.original_color_ID
+        self.canvas.redraw_cell_mask(self.cell)
+
 class MergeCellsCommand(QUndoCommand):
     """
     Undoable command for merging two cells.
@@ -4326,6 +4414,7 @@ class MergeCellsCommand(QUndoCommand):
     ):
         super().__init__(description)
         self.main_window = main_window
+        frame=self.main_window.stack.frames[cells[0].frame]
         self.cell1, self.cell2 = cells
         if self.cell1.frame != self.cell2.frame:
             raise ValueError('Cells must be in the same frame to merge.')
@@ -4335,17 +4424,20 @@ class MergeCellsCommand(QUndoCommand):
             self.mask1, self.mask2 = masks
         self.merged_mask = self.mask1 | self.mask2
         self.merged_cell = self.cell1.copy()
+        if self.merged_cell.n == frame.n_cells - 1:
+            self.merged_cell.n -= 1
         self.merged_cell.outline = outlines_list(self.merged_mask)[0]
-        
+
+        row_args = {}
+        if hasattr(self.main_window.stack, 'tracked_centroids'):
+            particle1 = self.main_window.particle_from_cell(self.cell1.n, self.cell1.frame)
+            row_args['particle'] = particle1
+            
         self.commands = [
             DeleteCellCommand(self.main_window, self.cell1, self.mask1, description='Delete cell 1', show=False),
             DeleteCellCommand(self.main_window, self.cell2, self.mask2, description='Delete cell 2', show=False),
-            AddCellCommand(self.main_window, self.merged_cell, self.merged_mask, description='Add merged cell', show=show),
+            AddCellCommand(self.main_window, self.merged_cell, self.merged_mask, description='Add merged cell', show=show, row_args=row_args),
         ]
-
-        if hasattr(self.main_window.stack, 'tracked_centroids'):  # assign merged cell to particle 1
-            particle1 = self.commands[0].tracking_command.row.particle.item()
-            self.commands[2].tracking_command.row.loc[:, 'particle'] = particle1
 
         if self.cell1.n < self.cell2.n:  # reorder delete commands to preserve cell numbering
             self.commands = [self.commands[1], self.commands[0], self.commands[2]]
@@ -4403,6 +4495,8 @@ class MergeParticleMasksCommand(QUndoCommand):
         particle1 = self.main_window.stack.get_particle(self.particle1)
         particle2 = self.main_window.stack.get_particle(self.particle2)
 
+        merged_color=particle1[0].color_ID
+
         # frames where particle2 masks need to be merged into particle1 masks
         merge_frames = set(particle1_frames).intersection(particle2_frames)
 
@@ -4424,6 +4518,8 @@ class MergeParticleMasksCommand(QUndoCommand):
             # Create a command to reassign the cell from particle2 to particle1
             reassign_cmd = ReassignParticleCommand(self.main_window, cell2_idx, self.particle2, self.particle1)
             self.commands.append(reassign_cmd)
+            recolor_cmd = ChangeCellColorCommand(self.main_window.canvas, cell2, merged_color, description='Recolor merged cell')
+            self.commands.append(recolor_cmd)
 
     def redo(self):
         """Execute the merge operation by executing all sub-commands."""
@@ -4431,12 +4527,12 @@ class MergeParticleMasksCommand(QUndoCommand):
             self._create_commands()
             self.has_executed = True
 
-        for command in self.commands:
+        for command in self.main_window._progress_bar(self.commands):
             command.redo()
 
     def undo(self):
         """Undo the merge operation by undoing all sub-commands in reverse order."""
-        for command in reversed(self.commands):
+        for command in self.main_window._progress_bar(self.commands[::-1]):
             command.undo()
 
 
@@ -4629,13 +4725,15 @@ class BaseTrackingRowCommand(QUndoCommand):
         self.main_window = main_window
         self.frame_number = frame_number
         self.cell_number = cell_number
-        self.row = self._determine_row(row)
+        self.row = row
 
-    def _determine_row(self, row):
+    def _determine_row(self):
         """Determine the row to work with, implemented by subclasses"""
         raise NotImplementedError
 
     def redo(self):
+        if self.row is None: # first execution, determine row
+            self.row = self._determine_row()
         self._redo_operation()
 
     def undo(self):
@@ -4672,6 +4770,7 @@ class AddTrackingRowCommand(BaseTrackingRowCommand):
         cell_number: int,
         cell: Cell | None = None,
         row: pd.DataFrame | None = None,
+        row_args: dict = {},
         description: str = 'Add Tracking Row',
     ):
         if cell is None:
@@ -4680,10 +4779,14 @@ class AddTrackingRowCommand(BaseTrackingRowCommand):
             except IndexError:
                 raise ValueError(f'Cell {cell_number} not found in frame {frame_number}.')
         self.cell = cell
+        self.row_args = row_args
         super().__init__(main_window, frame_number, cell_number, row, description)
 
-    def _determine_row(self, row):
-        return self.new_tracking_row() if row is None else row
+    def _determine_row(self):
+        row = self.new_tracking_row()
+        for k, v in self.row_args.items():
+            row[k] = v
+        return row
 
     def _redo_operation(self):
         self.add_row()
@@ -4724,13 +4827,11 @@ class DeleteTrackingRowCommand(BaseTrackingRowCommand):
     ):
         super().__init__(main_window, frame_number, cell_number, row, description)
 
-    def _determine_row(self, row):
-        if row is None:
-            return self.main_window.stack.tracked_centroids.loc[
-                (self.main_window.stack.tracked_centroids.frame == self.frame_number)
-                & (self.main_window.stack.tracked_centroids.cell_number == self.cell_number)
-            ].copy()
-        return row
+    def _determine_row(self):
+        return self.main_window.stack.tracked_centroids.loc[
+            (self.main_window.stack.tracked_centroids.frame == self.frame_number)
+            & (self.main_window.stack.tracked_centroids.cell_number == self.cell_number)
+        ].copy()
 
     def _redo_operation(self):
         self.delete_row()

@@ -2807,6 +2807,8 @@ class MainWidget(QMainWindow):
         frame = self.stack.frames[cell.frame]
 
         # add cell data
+        if cell.n > frame.n_cells:
+            cell.n = frame.n_cells
         frame.add_cell(cell, mask)
 
         # add mask overlay

@@ -33,7 +33,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from scipy import ndimage
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
 from segmentation_tools.preprocessing import get_quantile
 from segmentation_tools.segmented_comprehension import Cell, SegmentedImage, SegmentedStack
@@ -2707,7 +2706,7 @@ class MainWidget(QMainWindow):
     def _close_cell_roi(self):
         """Close the cell ROI and add the new cell mask to the frame."""
         self.drawing_cell_roi = False
-        enclosed_pixels = self.cell_roi.get_enclosed_pixels()
+        enclosed_pixels = self.cell_roi.enclosed_pixels()
         # remove pixels outside the image bounds
         enclosed_pixels = enclosed_pixels[
             (enclosed_pixels[:, 0] >= 0)
@@ -2854,9 +2853,10 @@ class MainWidget(QMainWindow):
         min_size : int
             The minimum size of a cell mask in pixels. Cells smaller than this will be merged with their largest neighbor.
         """
+        from segmentation_tools.shape_operations import split_cell, coords_to_mask
 
         curve_coords = np.array([(p.x(), p.y()) for p in self.cell_split.points]).astype(int)
-        next_label = np.max(self.frame.masks) + 1
+        next_label = np.max(self.frame.masks)
 
         # Create a binary mask of the curve
         curve_mask = np.zeros_like(self.frame.masks, dtype=bool)
@@ -2871,125 +2871,34 @@ class MainWidget(QMainWindow):
         intersected_labels = np.unique(self.frame.masks[curve_mask])
         intersected_labels = intersected_labels[intersected_labels != 0]
 
-        def find_largest_neighbor_label(component_mask, labels_array, max_iter=50):
-            """Find the label of the largest neighboring component."""
-
-            def find_neighbors(component_mask, labels_array):
-                """Find the labels of neighboring components."""
-                dilated = ndimage.binary_dilation(component_mask)
-                neighbor_region = dilated & ~component_mask
-                neighbor_labels = labels_array[neighbor_region]
-                neighbor_labels = neighbor_labels[neighbor_labels != 0]
-                return neighbor_labels, dilated
-
-            neighbor_labels = []
-            dilated = component_mask
-            counter = 0
-            while len(neighbor_labels) == 0:
-                neighbor_labels, dilated = find_neighbors(dilated, labels_array)
-                counter += 1
-                if counter > max_iter:
-                    raise ValueError('No neighbors found')
-
-            # Count occurrences of each neighbor label
-            unique_labels, counts = np.unique(neighbor_labels, return_counts=True)
-            return unique_labels[np.argmax(counts)]
-
-        split = False
-        new_masks = self.frame.masks.copy()
-        for orig_label in intersected_labels:
-            # Get the current region
-            region_mask = self.frame.masks == orig_label
-
-            # Create temporary binary mask with the curve
-            temp_mask = region_mask.copy()
-            curve_pixels = curve_mask & region_mask
-            temp_mask[curve_pixels] = False
-
-            # Label connected components
-            labeled_parts, num_features = ndimage.label(temp_mask)
-
-            if num_features < 2:  # Didn't split the label, move on to next candidate
+        commands=[]
+        split_IDs=[]
+        n_new=0
+        split_command=QUndoCommand()
+        for label in intersected_labels:
+            cell = self.frame.cells[label - 1]
+            outline = cell.outline
+            new_masks = split_cell(outline, curve_coords, min_area_threshold=min_size)
+            if len(new_masks)==0: # no split
                 continue
+            split_IDs.append(label)
+            n_new+=len(new_masks)
+            inheritor_cell=cell.copy()
+            inheritor_mask=coords_to_mask(new_masks[0], shape=self.frame.masks.shape)
+            inheritor_cell.outline=outlines_list(inheritor_mask)[0]
+            commands.append(DeleteCellCommand(self, cell, description=f'Delete unsplit mask {label} in frame {self.frame_number}', parent=split_command))
+            commands.append(AddCellCommand(self, inheritor_cell, inheritor_mask, description=f'Inheritor cell {label} in frame {self.frame_number}', parent=split_command))
+            for i, new_mask in enumerate(new_masks[1:]):
+                label_id = next_label + i
+                new_mask = coords_to_mask(new_mask, shape=self.frame.masks.shape)
+                new_outline = outlines_list(new_mask)[0]
+                color_ID = self.canvas.random_color_ID()
+                new_cell = Cell(label_id, new_outline, parent=self.frame, frame_number=self.frame_number, color_ID=color_ID)
+                commands.append(AddCellCommand(self, new_cell, new_mask, description=f'New split mask {label_id} in frame {self.frame_number}', parent=split_command))
 
-            # Get sizes of all components
-            component_sizes = np.array([np.sum(labeled_parts == i) for i in range(1, num_features + 1)])
-
-            num_labels = component_sizes >= min_size
-
-            if np.sum(num_labels) < 2:  # only one component is above the minimum size
-                continue
-
-            split = True
-            # Find largest component to keep original label
-            largest_idx = np.argmax(component_sizes) + 1
-
-            # Clear original region
-            new_masks[region_mask] = 0
-            self.frame.masks[region_mask] = 0  # clear the original mask, to be replaced after split computation
-
-            # largest component gets original label
-            new_masks[labeled_parts == largest_idx] = orig_label
-
-            # Process other components
-            other_indices = [i + 1 for i in range(num_features) if i + 1 != largest_idx]
-
-            new_labels = []
-            for comp_idx in other_indices:  # assign new labels to components above minimum size
-                if component_sizes[comp_idx - 1] >= min_size:
-                    new_labels.append(next_label)
-                    new_masks[labeled_parts == comp_idx] = next_label
-                    next_label += 1
-                else:  # merge small components with their largest neighbors
-                    component = labeled_parts == comp_idx
-                    try:
-                        neighbor_label = find_largest_neighbor_label(component, self.frame.masks)
-                    except ValueError:
-                        neighbor_label = None
-
-                    if neighbor_label is not None:
-                        new_masks[component] = neighbor_label
-
-            print(f'Split cell {orig_label - 1}, new labels: {", ".join(str(n - 1) for n in new_labels)}')
-
-            # Handle curve pixels by assigning them to the most connected component
-            curve_points = np.where(curve_pixels)
-            for y, x in zip(*curve_points):
-                neighborhood_slice = (
-                    slice(max(0, y - 1), min(self.frame.masks.shape[0], y + 2)),
-                    slice(max(0, x - 1), min(self.frame.masks.shape[1], x + 2)),
-                )
-                neighbor_values = self.frame.masks[neighborhood_slice]
-
-                # Count neighbors for all possible labels in neighborhood
-                unique_neighbors = np.unique(neighbor_values)
-                unique_neighbors = unique_neighbors[unique_neighbors != 0]
-
-                if len(unique_neighbors) > 0:
-                    neighbor_counts = [np.sum(neighbor_values == n) for n in unique_neighbors]
-                    new_masks[y, x] = unique_neighbors[np.argmax(neighbor_counts)]
-                else:
-                    new_masks[y, x] = orig_label
-
-            old_cell = self.frame.cells[orig_label - 1]
-            old_mask = new_masks == orig_label
-            if hasattr(old_cell, '_centroid'):
-                del old_cell._centroid
-            outline = self.frame.add_outline(old_mask)
-            self.frame.masks[old_mask] = orig_label  # restore the original label to the largest mask
-            if self.frame.has_outlines:
-                old_cell.outline = outline
-
-            for new_label in new_labels:
-                enclosed_pixels = np.array(np.where(new_masks == new_label)).T
-                if len(enclosed_pixels) > 0:
-                    cell, binary_mask = self.pixels_to_cell(enclosed_pixels)
-                    self.add_cell(cell, binary_mask)
-
-        if split:
-            del self.frame.stored_mask_overlay
-
-        return split
+        if len(commands) > 0:
+            split_command.setText(f'Split masks {split_IDs} into {n_new} masks in frame {self.frame_number}')
+            self.undo_stack.push(split_command)
 
     def merge_cell_masks(self, cell_n1: int, cell_n2: int, frame_number: int | None = None):
         """
@@ -4330,8 +4239,8 @@ class BaseCellCommand(QUndoCommand):
     Base class for cell add/delete operations.
     """
 
-    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = '', show: bool = True):
-        super().__init__(description)
+    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = '', show: bool = True, parent=None):
+        super().__init__(description, parent)
         self.main_window = main_window
         self.cell = cell
         self.mask = mask
@@ -4376,9 +4285,9 @@ class AddCellCommand(BaseCellCommand):
     Undoable command for adding a cell.
     """
 
-    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = '', show: bool = True):
+    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = '', show: bool = True, parent=None):
         description = description or f'Add cell {cell.n} to frame {cell.frame}'
-        super().__init__(main_window, cell, mask, description, show)
+        super().__init__(main_window, cell, mask, description, show, parent)
 
     def _create_tracking_command(self, row):
         return AddTrackingRowCommand(
@@ -4402,11 +4311,11 @@ class DeleteCellCommand(BaseCellCommand):
     Undoable command for deleting a cell.
     """
 
-    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray | None = None, description: str = '', show: bool = True):
+    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray | None = None, description: str = '', show: bool = True, parent=None):
         if mask is None:
             mask = cell.mask
         description = description or f'Delete cell {cell.n} from frame {cell.frame}'
-        super().__init__(main_window, cell, mask, description, show)
+        super().__init__(main_window, cell, mask, description, show, parent)
 
     def _create_tracking_command(self, row):
         return DeleteTrackingRowCommand(

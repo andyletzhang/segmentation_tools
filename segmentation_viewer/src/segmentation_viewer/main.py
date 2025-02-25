@@ -3053,45 +3053,12 @@ class MainWidget(QMainWindow):
         particle_n2 : int
             The particle number to merge.
         """
-        t = self.stack.tracked_centroids
-        # renumber tracked_centroids so particle_n2 is the largest number
-        remapped_particles = np.arange(t['particle'].max() + 2)
-        remapped_particles = np.delete(remapped_particles, particle_n2)
-        t['particle'] = remapped_particles[t['particle']]
-        particle_n1 = remapped_particles[particle_n1]
-        particle_n2 = remapped_particles[particle_n2]
+        command = MergeParticleMasksCommand(
+            self, particle_n1, particle_n2, description=f'Merge particle {particle_n2} into particle {particle_n1}'
+        )
+        self.undo_stack.push(command)
 
-        # get cells for each particle
-        particle1 = self.stack.get_particle(particle_n1)
-        particle2 = self.stack.get_particle(particle_n2)
-
-        particle1_frames = [cell.frame for cell in particle1]
-        particle2_frames = [cell.frame for cell in particle2]
-
-        particle1_color = particle1[0].color_ID
-
-        merge_frames = set(particle1_frames).intersection(
-            particle2_frames
-        )  # frames where particle2 masks need to be merged into particle1 masks
-        relabel_frames = set(particle2_frames) - merge_frames  # frames where particle2 cell needs to be relabeled as particle1
-
-        for frame_number in merge_frames:
-            cell1 = particle1[particle1_frames.index(frame_number)]
-            cell2 = particle2[particle2_frames.index(frame_number)]
-            self.merge_cell_masks(cell1.n, cell2.n, frame_number=frame_number)
-
-        for frame_number in relabel_frames:
-            frame = self.stack.frames[frame_number]
-            # relabel particle, redraw color
-            cell2 = particle2[particle2_frames.index(frame_number)]
-            t.loc[t['particle'] == particle_n2, 'particle'] = particle_n1
-            cell2.color_ID = particle1_color
-            if hasattr(frame, 'stored_mask_overlay'):
-                self.canvas.add_cell_highlight(
-                    cell2.n, alpha=self.canvas.masks_alpha, color=particle1_color, layer='mask', frame=frame
-                )
-        if len(relabel_frames) > 0:
-            print(f'Relabeled cell {cell2.n} as particle {particle_n1} in frames {relabel_frames}')
+        print(f'Merged particle {particle_n2} into particle {particle_n1}')
 
     def _check_cell_numbers(self):
         """for troubleshooting: check if the cell numbers in the frame and the masks align."""
@@ -4535,13 +4502,124 @@ class MergeCellsCommand(QUndoCommand):
 
 class MergeParticleMasksCommand(QUndoCommand):
     """
-    Undoable command for merging two particle masks.
+    QUndoCommand for merging two particles' masks across all frames.
+
+    This combines both the cell masks and particle trajectories:
+    - For frames where both particles exist, their masks are merged
+    - All frames with either particle1 or particle2 will be assigned to particle1
+    """
+
+    def __init__(self, main_window, particle1, particle2, description=None):
+        """
+        Initialize the merge particle masks command.
+
+        Args:
+            main_window: The main window containing the dataframe and cell data
+            particle1: ID of the first particle (target particle)
+            particle2: ID of the second particle (will be merged into particle1)
+            description: Optional command description
+        """
+        super().__init__(description or f'Merge particle {particle2} masks into {particle1}')
+
+        self.main_window = main_window
+        self.particle1 = particle1
+        self.particle2 = particle2
+
+        # Will hold all the sub-commands created during execution
+        self.commands = []
+
+        # Store whether we've executed once already
+        self.has_executed = False
+
+    def _create_commands(self):
+        """
+        Create all the necessary sub-commands for merging the particle masks.
+        This is done the first time redo() is called.
+        """
+        df = self.main_window.stack.tracked_centroids
+
+        particle1_frames = list(df[df['particle'] == self.particle1]['frame'].values)
+        particle2_frames = list(df[df['particle'] == self.particle2]['frame'].values)
+
+        particle1 = self.main_window.stack.get_particle(self.particle1)
+        particle2 = self.main_window.stack.get_particle(self.particle2)
+
+        # frames where particle2 masks need to be merged into particle1 masks
+        merge_frames = set(particle1_frames).intersection(particle2_frames)
+
+        # frames where particle2 cell needs to be relabeled as particle1
+        relabel_frames = set(particle2_frames) - merge_frames
+
+        for frame in merge_frames:
+            cell1 = particle1[particle1_frames.index(frame)]
+            cell2 = particle2[particle2_frames.index(frame)]
+            mask1 = cell1.mask
+            mask2 = cell2.mask
+
+            merge_cmd = MergeCellsCommand(self.main_window, [cell1, cell2], [mask1, mask2], show=False)
+            self.commands.append(merge_cmd)
+
+        for frame in relabel_frames:
+            cell2_idx = df[(df['particle'] == self.particle2) & (df['frame'] == frame)].index[0]
+
+            # Create a command to reassign the cell from particle2 to particle1
+            reassign_cmd = ReassignParticleCommand(self.main_window, cell2_idx, self.particle2, self.particle1)
+            self.commands.append(reassign_cmd)
+
+    def redo(self):
+        """Execute the merge operation by executing all sub-commands."""
+        if not self.has_executed:
+            self._create_commands()
+            self.has_executed = True
+
+        for command in self.commands:
+            command.redo()
+
+    def undo(self):
+        """Undo the merge operation by undoing all sub-commands in reverse order."""
+        for command in reversed(self.commands):
+            command.undo()
+
+
+class ReassignParticleCommand(QUndoCommand):
+    """
+    QUndoCommand for reassigning a cell from one particle to another.
+    Used as a helper command by MergeParticleMasksCommand.
     """
 
     def __init__(
-        self, main_window: MainWidget, particles: list[int, int], masks: list[np.ndarray, np.ndarray], description: str = ''
+        self, main_window: MainWidget, cell_id: int, old_particle_id: int, new_particle_id: int, description: str | None = None
     ):
-        pass
+        """
+        Initialize the reassign particle command.
+
+        Args:
+            df: The DataFrame containing particle tracking data
+            cell_id: The cell ID to reassign
+            old_particle_id: The original particle ID
+            new_particle_id: The new particle ID to assign
+            description: Optional command description
+        """
+        super().__init__(
+            description or f'Reassign particle {old_particle_id} to {new_particle_id} in frame {main_window.stack.tracked_centroids.at[cell_id, "frame"]}'
+        )
+
+        self.main_window = main_window
+        self.cell_id = cell_id
+        self.old_particle_id = old_particle_id
+        self.new_particle_id = new_particle_id
+
+    def redo(self):
+        """Reassign the cell to the new particle ID."""
+        # Make sure the cell exists in the dataframe
+        if self.cell_id in self.main_window.stack.tracked_centroids.index:
+            self.main_window.stack.tracked_centroids.at[self.cell_id, 'particle'] = self.new_particle_id
+
+    def undo(self):
+        """Restore the cell to its original particle ID."""
+        # Make sure the cell exists in the dataframe
+        if self.cell_id in self.main_window.stack.tracked_centroids.index:
+            self.main_window.stack.tracked_centroids.at[self.cell_id, 'particle'] = self.old_particle_id
 
 
 class MergeParticleTracksCommand(QUndoCommand):

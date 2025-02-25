@@ -4391,6 +4391,7 @@ class AddCellCommand(BaseCellCommand):
             main_window=self.main_window,
             frame_number=self.cell.frame,
             cell_number=self.cell.n,
+            cell=self.cell,
             row=row if not row.empty else None,
             description='Create tracking data for new cell',
         )
@@ -4815,9 +4816,16 @@ class AddTrackingRowCommand(BaseTrackingRowCommand):
         main_window: MainWidget,
         frame_number: int,
         cell_number: int,
+        cell: Cell | None = None,
         row: pd.DataFrame | None = None,
         description: str = 'Add Tracking Row',
     ):
+        if cell is None:
+            try:
+                cell = main_window.stack.frames[frame_number].cells[cell_number]
+            except IndexError:
+                raise ValueError(f'Cell {cell_number} not found in frame {frame_number}.')
+        self.cell = cell
         super().__init__(main_window, frame_number, cell_number, row, description)
 
     def _determine_row(self, row):
@@ -4831,18 +4839,16 @@ class AddTrackingRowCommand(BaseTrackingRowCommand):
 
     def new_tracking_row(self):
         t = self.main_window.stack.tracked_centroids
-        cell = self.main_window.stack.frames[self.frame_number].cells[self.cell_number]
-
         new_particle_ID = t['particle'].max() + 1
         data = {
-            'cell_number': cell.n,
-            'y': cell.centroid[0],
-            'x': cell.centroid[1],
+            'cell_number': self.cell.n,
+            'y': self.cell.centroid[0],
+            'x': self.cell.centroid[1],
             'frame': self.frame_number,
             'particle': new_particle_ID,
         }
-        if hasattr(cell, 'color_ID'):
-            data['color_ID'] = cell.color_ID
+        if hasattr(self.cell, 'color_ID'):
+            data['color_ID'] = self.cell.color_ID
         placeholder_particle = {idx: None for idx in t.columns}
         placeholder_particle.update({k: v for k, v in data.items() if k in t.columns})
         row = pd.DataFrame([placeholder_particle], index=[t.index.max() + 1])

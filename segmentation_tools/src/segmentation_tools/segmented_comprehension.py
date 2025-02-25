@@ -117,6 +117,10 @@ class Cell:
 
         return self._centroid
 
+    @property
+    def mask(self):
+        return self.parent.masks == self.n + 1
+
     def sort_vertices(self):
         """
         determines which vertices are connected by ordering polar angles to each vertex w.r.t. the centroid.

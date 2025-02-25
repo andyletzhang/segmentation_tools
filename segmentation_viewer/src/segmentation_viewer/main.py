@@ -1316,19 +1316,14 @@ class MainWidget(QMainWindow):
             particle_n = self.selected_particle_n
             current_frame_n = self.frame_number
 
-            to_delete = []
-            masks = []
-            for cell in self.stack.get_particle(particle_n):
-                if cell.frame <= current_frame_n:
-                    masks.append(cell.parent.masks == cell.n + 1)
-                    to_delete.append(cell)
+            to_delete = [cell for cell in self.stack.get_particle(particle_n) if cell.frame <= current_frame_n]
 
             if len(to_delete) == 0:
                 return
 
             self.left_toolbar.also_save_tracking.setChecked(True)
             command = DeleteCellsCommand(
-                self, cells=to_delete, masks=masks, description=f'Delete particle {particle_n} tail from frame {current_frame_n}'
+                self, cells=to_delete, description=f'Delete particle {particle_n} tail from frame {current_frame_n}'
             )
             self.undo_stack.push(command)
 
@@ -1350,19 +1345,14 @@ class MainWidget(QMainWindow):
             particle_n = self.selected_particle_n
             current_frame_n = self.frame_number
 
-            to_delete = []
-            masks = []
-            for cell in self.stack.get_particle(particle_n):
-                if cell.frame >= current_frame_n:
-                    masks.append(cell.parent.masks == cell.n + 1)
-                    to_delete.append(cell)
+            to_delete = [cell for cell in self.stack.get_particle(particle_n) if cell.frame >= current_frame_n]
 
             if len(to_delete) == 0:
                 return
 
             self.left_toolbar.also_save_tracking.setChecked(True)
             command = DeleteCellsCommand(
-                self, cells=to_delete, masks=masks, description=f'Delete particle {particle_n} tail from frame {current_frame_n}'
+                self, cells=to_delete, description=f'Delete particle {particle_n} tail from frame {current_frame_n}'
             )
             self.undo_stack.push(command)
 
@@ -1393,12 +1383,8 @@ class MainWidget(QMainWindow):
 
             cell_numbers, frame_numbers = np.array(t[t.particle == particle_n][['cell_number', 'frame']]).T
             to_delete = self.stack.get_particle(particle_n)
-            masks = []
 
-            for cell in self.stack.get_particle(particle_n):
-                masks.append(cell.parent.masks == cell.n + 1)
-
-            command = DeleteCellsCommand(self, cells=to_delete, masks=masks, description=f'Delete particle {particle_n}')
+            command = DeleteCellsCommand(self, cells=to_delete,description=f'Delete particle {particle_n}')
             self.undo_stack.push(command)
             self._update_tracking_overlay()
 
@@ -2807,9 +2793,8 @@ class MainWidget(QMainWindow):
         if frame is None:
             frame = self.frame
         cell = frame.cells[cell_n]
-        mask = frame.masks == cell_n + 1
         mask_command = DeleteCellCommand(
-            self, cell=cell, mask=mask, description=f'Delete mask {cell_n} in frame {frame.frame_number}'
+            self, cell=cell, description=f'Delete mask {cell_n} in frame {frame.frame_number}'
         )
         self.undo_stack.push(mask_command)
         print(f'Deleted cell {cell_n} from frame {frame.frame_number}')
@@ -4426,8 +4411,9 @@ class AddCellCommand(BaseCellCommand):
     Undoable command for adding a cell.
     """
 
-    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = 'Add Cell'):
-        super().__init__(main_window, cell, mask, description)
+    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = '', show: bool = True):
+        description = description or f'Add cell {cell.n} to frame {cell.frame}'
+        super().__init__(main_window, cell, mask, description, show)
 
     def _create_tracking_command(self, row):
         return AddTrackingRowCommand(
@@ -4450,8 +4436,11 @@ class DeleteCellCommand(BaseCellCommand):
     Undoable command for deleting a cell.
     """
 
-    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = 'Delete Cell'):
-        super().__init__(main_window, cell, mask, description)
+    def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray | None = None, description: str = '', show: bool = True):
+        if mask is None:
+            mask = cell.mask
+        description = description or f'Delete cell {cell.n} from frame {cell.frame}'
+        super().__init__(main_window, cell, mask, description, show)
 
     def _create_tracking_command(self, row):
         return DeleteTrackingRowCommand(
@@ -4469,36 +4458,71 @@ class DeleteCellCommand(BaseCellCommand):
         self.main_window.add_cell(self.cell, self.mask)
 
 
+class DeleteCellsCommand(QUndoCommand):
+    """
+    Undoable command for adding or deleting a group of cells.
+    """
+
+    def __init__(self, main_window: MainWidget, cells: list[Cell], masks: list[np.ndarray] | None = None, description: str = ''):
+        super().__init__(description)
+        self.main_window = main_window
+        self.cells = cells
+        if masks is None:
+            self.masks = [cell.mask for cell in cells]
+        else:
+            self.masks = masks
+        self.cell_commands = []
+        for cell, mask in zip(self.cells, self.masks):  # initialize cell commands
+            command = DeleteCellCommand(self.main_window, cell, mask, description='Delete cell', show=False)
+            self.cell_commands.append(command)
+
+    def redo(self):
+        for command in self.cell_commands:
+            command.redo()
+
+    def undo(self):
+        for command in reversed(self.cell_commands):
+            command.undo()
+
+
 class MergeCellsCommand(QUndoCommand):
     """
     Undoable command for merging two cells.
     """
 
     def __init__(
-        self, main_window: MainWidget, cells: list[Cell, Cell], masks: list[np.ndarray, np.ndarray], description: str = ''
+        self,
+        main_window: MainWidget,
+        cells: list[Cell, Cell],
+        masks: list[np.ndarray, np.ndarray] | None = None,
+        description: str = '',
+        show: bool = True,
     ):
         super().__init__(description)
         self.main_window = main_window
         self.cell1, self.cell2 = cells
         if self.cell1.frame != self.cell2.frame:
             raise ValueError('Cells must be in the same frame to merge.')
-        self.mask1, self.mask2 = masks
+        if masks is None:
+            self.mask1, self.mask2 = self.cell1.mask, self.cell2.mask
+        else:
+            self.mask1, self.mask2 = masks
         self.merged_mask = self.mask1 | self.mask2
         self.merged_cell = self.cell1.copy()
         self.merged_cell.outline = outlines_list(self.merged_mask)[0]
-
+        
         self.commands = [
-            DeleteCellCommand(self.main_window, self.cell1, self.mask1, description='Delete cell 1'),
-            DeleteCellCommand(self.main_window, self.cell2, self.mask2, description='Delete cell 2'),
-            AddCellCommand(self.main_window, self.merged_cell, self.merged_mask, description='Add merged cell'),
+            DeleteCellCommand(self.main_window, self.cell1, self.mask1, description='Delete cell 1', show=False),
+            DeleteCellCommand(self.main_window, self.cell2, self.mask2, description='Delete cell 2', show=False),
+            AddCellCommand(self.main_window, self.merged_cell, self.merged_mask, description='Add merged cell', show=show),
         ]
-
-        if self.cell1.n < self.cell2.n:  # reorder delete commands to preserve cell numbering
-            self.commands = [self.commands[1], self.commands[0], self.commands[2]]
 
         if hasattr(self.main_window.stack, 'tracked_centroids'):  # assign merged cell to particle 1
             particle1 = self.commands[0].tracking_command.row.particle.item()
             self.commands[2].tracking_command.row.loc[:, 'particle'] = particle1
+
+        if self.cell1.n < self.cell2.n:  # reorder delete commands to preserve cell numbering
+            self.commands = [self.commands[1], self.commands[0], self.commands[2]]
 
     def redo(self):
         for command in self.commands:
@@ -4595,8 +4619,6 @@ class MergeParticleTracksCommand(QUndoCommand):
             self.original_values = self.df.loc[self.affected_indices, 'particle'].copy()
 
         # Perform the merge operations
-        print('IDs:', self.particle1, self.particle2, '->', self.new_particle1_id, self.new_particle2_id)
-
         # 1. If particle1 persists beyond merge_frame, assign it a new ID
         if self.new_particle1_id is not None:
             continuation_mask = (self.df['particle'] == self.particle1) & (self.df['frame'] >= self.merge_frame)
@@ -4617,44 +4639,46 @@ class MergeParticleTracksCommand(QUndoCommand):
             # Restore only the particle IDs of affected rows
             self.df.loc[self.affected_indices, 'particle'] = self.original_values
 
+
 class SplitParticleTracksCommand(QUndoCommand):
     """
     QUndoCommand for splitting a particle track at a specified frame.
-    
+
     Assigns a new particle ID to all frames >= split_frame.
     """
-    
+
     def __init__(self, df, particle_id, split_frame, description=None):
         """
         Initialize the split command.
-        
+
         Args:
             df: The pandas DataFrame containing particle data
             particle_id: ID of the particle to split
             split_frame: Frame number where the split occurs
             description: Optional command description
         """
-        super().__init__(description or f"Split particle {particle_id} at frame {split_frame}")
-        
+        super().__init__(description or f'Split particle {particle_id} at frame {split_frame}')
+
         self.df = df
         self.particle_id = particle_id
         self.split_frame = split_frame
         self.new_particle_id = self.df['particle'].max() + 1
-    
+
     def redo(self):
         """Perform the split operation."""
         # Split the particle by assigning the new ID to all frames >= split_frame
         split_mask = (self.df['particle'] == self.particle_id) & (self.df['frame'] >= self.split_frame)
         self.df.loc[split_mask, 'particle'] = self.new_particle_id
-    
+
     def undo(self):
         """
         Undo the split by merging the tracks back.
         This reassigns the original ID to all frames that got the new ID.
         """
         # Find all rows with the new particle ID and restore them to the original ID
-        merge_mask = (self.df['particle'] == self.new_particle_id)
+        merge_mask = self.df['particle'] == self.new_particle_id
         self.df.loc[merge_mask, 'particle'] = self.particle_id
+
 
 class BaseTrackingRowCommand(QUndoCommand):
     """
@@ -4771,30 +4795,6 @@ class DeleteTrackingRowCommand(BaseTrackingRowCommand):
 
     def _undo_operation(self):
         self.add_row()
-
-
-class DeleteCellsCommand(QUndoCommand):
-    """
-    Undoable command for adding or deleting a group of cells.
-    """
-
-    def __init__(self, main_window: MainWidget, cells: list[Cell], masks: list[np.ndarray], description: str = ''):
-        super().__init__(description)
-        self.main_window = main_window
-        self.cells = cells
-        self.masks = masks
-        self.cell_commands = []
-        for cell, mask in zip(self.cells, self.masks):  # initialize cell commands
-            command = DeleteCellCommand(self.main_window, cell, mask, description='Delete cell', show=False)
-            self.cell_commands.append(command)
-
-    def redo(self):
-        for command in self.cell_commands:
-            command.redo()
-
-    def undo(self):
-        for command in reversed(self.cell_commands):
-            command.undo()
 
 
 def main():

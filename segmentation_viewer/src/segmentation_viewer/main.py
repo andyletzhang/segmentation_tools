@@ -2156,6 +2156,10 @@ class MainWidget(QMainWindow):
         if hasattr(self.stack, 'tracked_centroids'):
             if first_particle == second_particle:  # same particle, no need to merge
                 return
+
+            if self.stack.tracked_centroids[self.stack.tracked_centroids.particle == first_particle]['frame'].min() >= self.frame_number:
+                return # first particle doesn't have a head, nothing to merge
+
             command = MergeParticleTracksCommand(self.stack.tracked_centroids, first_particle, second_particle, self.frame_number)
             self.undo_stack.push(command)
 

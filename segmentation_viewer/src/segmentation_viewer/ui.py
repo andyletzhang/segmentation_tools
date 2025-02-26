@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .qt import CustomComboBox, labeled_LUT_slider
+from .qt import CustomComboBox, labeled_LUT_slider, CollapsibleWidget, bordered
 
 spacer = (0, 10)  # default spacer size (width, height)
 
@@ -521,18 +521,26 @@ class LeftToolbar(QScrollArea):
         operate_on_layout.addWidget(self.volumes_on_frame)
         operate_on_layout.addWidget(self.volumes_on_stack)
         self.volumes_on_frame.setChecked(True)
+
         self.get_heights_layout = QHBoxLayout()
         self.get_heights_button = QPushButton('Measure Heights', self)
         self.volume_button = QPushButton('Measure Volumes', self)
         self.get_heights_layout.addWidget(self.get_heights_button)
         self.get_heights_layout.addWidget(self.volume_button)
-        peak_prominence_label = QLabel('Peak Prominence (0 to 1):', self)
-        self.peak_prominence = QLineEdit(self, text='0.01', placeholderText='0.01')
+        peak_prominence_label = QLabel('Height peak prominence:', self)
+        self.peak_prominence = QLineEdit(self, placeholderText='0.01')
         self.peak_prominence.setValidator(QDoubleValidator(bottom=0))  # non-negative floats only
         self.peak_prominence.setFixedWidth(60)
         self.peak_prominence_layout = QHBoxLayout()
         self.peak_prominence_layout.addWidget(peak_prominence_label)
         self.peak_prominence_layout.addWidget(self.peak_prominence)
+        self.coverslip_prominence_layout = QHBoxLayout()
+        coverslip_prominence_label = QLabel('Coverslip peak prominence:', self)
+        self.coverslip_prominence = QLineEdit(self, placeholderText='0.01')
+        self.coverslip_prominence.setValidator(QDoubleValidator(bottom=0))
+        self.coverslip_prominence.setFixedWidth(60)
+        self.coverslip_prominence_layout.addWidget(coverslip_prominence_label)
+        self.coverslip_prominence_layout.addWidget(self.coverslip_prominence)
         self.get_coverslip_height_layout = QHBoxLayout()
         coverslip_height_label = QLabel('Coverslip Height (μm):', self)
         self.coverslip_height = QLineEdit(self, placeholderText='Auto')
@@ -544,12 +552,21 @@ class LeftToolbar(QScrollArea):
         self.get_coverslip_height_layout.addWidget(self.get_coverslip_height_button)
         self.get_spherical_volumes = QPushButton('Compute Spherical Volumes', self)
 
+        volumes_widget = CollapsibleWidget(header_text='Volumes', parent=self.tabbed_widget)
+        volumes_border = bordered(volumes_widget)
+        
+        volumes_widget.addLayout(self.peak_prominence_layout)
+        volumes_widget.addLayout(self.coverslip_prominence_layout)
+        volumes_widget.addWidget(self.get_spherical_volumes)
+        volumes_widget.core_layout.addLayout(self.get_heights_layout)
+        volumes_widget.core_layout.addLayout(self.get_coverslip_height_layout)
+
+        volumes_widget.hide_content()
+
+
         volumes_layout.addWidget(operate_on_label)
         volumes_layout.addLayout(operate_on_layout)
-        volumes_layout.addLayout(self.get_heights_layout)
-        volumes_layout.addLayout(self.peak_prominence_layout)
-        volumes_layout.addLayout(self.get_coverslip_height_layout)
-        volumes_layout.addWidget(self.get_spherical_volumes)
+        volumes_layout.addWidget(volumes_border)
 
         self.volume_button.clicked.connect(self.main_window._measure_volumes_action.trigger)
         self.get_heights_button.clicked.connect(self.main_window._measure_heights_action.trigger)
@@ -559,7 +576,6 @@ class LeftToolbar(QScrollArea):
         return self.volumes_tab
 
     def get_tracking_tab(self):
-        from .qt import CollapsibleWidget, bordered
 
         tracking_tab = QWidget()
         tracking_tab_layout = QVBoxLayout(tracking_tab)

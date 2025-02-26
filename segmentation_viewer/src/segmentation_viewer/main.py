@@ -1722,7 +1722,14 @@ class MainWidget(QMainWindow):
                         coverslip_height = None
                     else:
                         coverslip_height = float(coverslip_height)
-                    self.measure_heights(frame, peak_prominence, coverslip_height)
+
+                    coverslip_prominence = self.left_toolbar.coverslip_prominence.text()
+                    if coverslip_prominence == '':
+                        coverslip_prominence = 0.01
+                    else:
+                        coverslip_prominence = float(coverslip_prominence)
+
+                    self.measure_heights(frame, peak_prominence, coverslip_prominence, coverslip_height)
                 else:
                     raise ValueError(f'No heights or z-stack available to measure volumes for {frame.name}.')
 
@@ -1746,8 +1753,14 @@ class MainWidget(QMainWindow):
                 raise ValueError('Z-stack lengths are not consistent.')
         else:
             frames = [self.frame]
+        
+        peak_prominence = self.left_toolbar.coverslip_prominence.text()
+        if peak_prominence == '':
+            peak_prominence = 0.01
+        else:
+            peak_prominence = float(peak_prominence)
 
-        coverslip_height = self.calibrate_coverslip_height(frames)
+        coverslip_height = self.calibrate_coverslip_height(frames, prominence=peak_prominence)
         for frame in frames:
             frame.coverslip_height = coverslip_height
         self.left_toolbar.coverslip_height.setText(f'{coverslip_height:.2f}')
@@ -1814,7 +1827,7 @@ class MainWidget(QMainWindow):
         self._export_heights_action.setEnabled(True)
         self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
 
-    def measure_heights(self, frames, peak_prominence=0.01, coverslip_height=None, membrane_channel=2):
+    def measure_heights(self, frames, peak_prominence=0.01, coverslip_prominence=0.01, coverslip_height=None, membrane_channel=2):
         """
         Compute the heightmap of the monolayer for the specified frames.
 
@@ -1838,7 +1851,7 @@ class MainWidget(QMainWindow):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
             else:
                 if not coverslip_height:
-                    coverslip_height = self.calibrate_coverslip_height(frame)
+                    coverslip_height = self.calibrate_coverslip_height(frame, prominence=coverslip_prominence)
                 frame.coverslip_height = coverslip_height
                 if self.is_grayscale:
                     membrane = frame.zstack

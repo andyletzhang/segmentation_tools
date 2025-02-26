@@ -1092,7 +1092,7 @@ class MainWidget(QMainWindow):
             if hasattr(frame, 'stored_mask_overlay'):
                 del frame.stored_mask_overlay
 
-    def _progress_bar(self, iterable, desc=None, length=None):
+    def _progress_bar(self, iterable, desc: str = None, length: int | None = None, leave: bool = True):
         if length is None:
             length = len(iterable)
 
@@ -1100,7 +1100,7 @@ class MainWidget(QMainWindow):
             return iterable
         else:
             # Initialize tqdm progress bar
-            tqdm_bar = tqdm(iterable, desc=desc, total=length)
+            tqdm_bar = tqdm(iterable, desc=desc, total=length, leave=leave)
 
             # Initialize QProgressBar
             qprogress_bar = QProgressBar()
@@ -1300,6 +1300,9 @@ class MainWidget(QMainWindow):
 
         else:
             particle_n = self.selected_particle_n
+            if particle_n is None:
+                return
+            self._mock_delete(self.selected_cell_n)
             current_frame_n = self.frame_number
 
             to_delete = [cell for cell in self.stack.get_particle(particle_n) if cell.frame <= current_frame_n]
@@ -1329,6 +1332,10 @@ class MainWidget(QMainWindow):
 
         else:
             particle_n = self.selected_particle_n
+            if particle_n is None:
+                return
+            self._mock_delete(self.selected_cell_n)
+
             current_frame_n = self.frame_number
 
             to_delete = [cell for cell in self.stack.get_particle(particle_n) if cell.frame >= current_frame_n]
@@ -1364,8 +1371,14 @@ class MainWidget(QMainWindow):
         else:
             if particle_n is None:
                 particle_n = self.selected_particle_n
+            if particle_n is None:
+                return
+
+            self._mock_delete(self.cell_from_particle(particle_n))
+
             t = self.stack.tracked_centroids
             self.left_toolbar.also_save_tracking.setChecked(True)
+
 
             cell_numbers, frame_numbers = np.array(t[t.particle == particle_n][['cell_number', 'frame']]).T
             to_delete = self.stack.get_particle(particle_n)
@@ -1373,6 +1386,21 @@ class MainWidget(QMainWindow):
             command = DeleteCellsCommand(self, cells=to_delete, description=f'Delete particle {particle_n}')
             self.undo_stack.push(command)
             self._update_tracking_overlay()
+
+    def _mock_delete(self, cell_n):
+        """
+        Mock delete a cell by hiding it from the display.
+        """
+        cell=self.frame.cells[cell_n]
+        # faux deselect the cell
+        self.canvas.add_cell_highlight(cell_n, color='none', layer='selection')
+
+        # remove cell mask
+        self.canvas.redraw_cell_mask(cell, color='none')
+
+        # remove cell outline
+        self.frame.outlines[cell.mask] = False
+        self._update_outlines()
 
     def clear_tracking(self):
         """
@@ -2136,7 +2164,14 @@ class MainWidget(QMainWindow):
                 >= self.frame_number
             ):
                 return  # first particle doesn't have a head, nothing to merge
+            
+            # Apply visual changes to the current frame
+            cell2 = self.frame.cells[self.cell_from_particle(second_particle)]
+            merge_color = self.stack.get_particle(first_particle)[0].color_ID
+            self.canvas.clear_overlay('selection')
+            self._mock_select_recolor(cell2, merge_color)
 
+            # Create and execute the merge command
             command = MergeParticleTracksCommand(self, first_particle, second_particle, self.frame_number)
             self.undo_stack.push(command)
 
@@ -2927,11 +2962,21 @@ class MainWidget(QMainWindow):
         particle_n2 : int
             The particle number to merge.
         """
+        # Apply visual change to current frame immediately
+        cell2 = self.frame.cells[self.particle_from_cell(particle_n2)]
+        self._mock_select_recolor(cell2, color=self.stack.get_particle(particle_n1)[0].color_ID)
+        # Execute the merge
         command = MergeParticleMasksCommand(
             self, particle_n1, particle_n2, description=f'Merge particle {particle_n2} into particle {particle_n1}'
         )
         self.undo_stack.push(command)
         self.select_cell(particle=particle_n1)
+
+    def _mock_select_recolor(self, cell, color):
+        self.canvas.redraw_cell_mask(cell, color=color)
+        self.canvas.add_cell_highlight(
+            cell.n, alpha=self.canvas.selected_cell_alpha, color=self.canvas.selected_cell_color
+        )
 
     def _check_cell_numbers(self):
         """for troubleshooting: check if the cell numbers in the frame and the masks align."""
@@ -4285,7 +4330,6 @@ class BaseCellCommand(QUndoCommand):
         raise NotImplementedError
 
     def redo(self):
-        self.main_window.select_cell(None)
         if self.show:
             if self.main_window.frame_number != self.cell.frame:
                 self.main_window.change_current_frame(self.cell.frame)
@@ -4294,9 +4338,9 @@ class BaseCellCommand(QUndoCommand):
 
         if self.refresh and self.main_window.frame_number == self.cell.frame:
             self.main_window._refresh_segmentation()
+            self.main_window.select_cell(None)
 
     def undo(self):
-        self.main_window.select_cell(None)
         if self.show:
             if self.main_window.frame_number != self.cell.frame:
                 self.main_window.change_current_frame(self.cell.frame)
@@ -4305,6 +4349,7 @@ class BaseCellCommand(QUndoCommand):
 
         if self.refresh and self.main_window.frame_number == self.cell.frame:
             self.main_window._refresh_segmentation()
+            self.main_window.select_cell(None)
 
 
 class AddCellCommand(BaseCellCommand):
@@ -4425,12 +4470,12 @@ class DeleteCellsCommand(QUndoCommand):
 
     def redo(self):
         self.main_window.select_cell(None)
-        for command in self.main_window._progress_bar(self.cell_commands):
+        for command in self.main_window._progress_bar(self.cell_commands, leave=False):
             command.redo()
 
     def undo(self):
         self.main_window.select_cell(None)
-        for command in self.main_window._progress_bar(self.cell_commands[::-1]):
+        for command in self.main_window._progress_bar(self.cell_commands[::-1], leave=False):
             command.undo()
 
 
@@ -4501,12 +4546,20 @@ class MergeCellsCommand(QUndoCommand):
         if self.cell1.n < self.cell2.n:  # reorder delete commands to preserve cell numbering
             self.commands = [self.commands[1], self.commands[0], self.commands[2]]
 
+        self.has_executed = False
+
     def redo(self):
-        self.main_window.select_cell(None)
+        selection=self.main_window.selected_cell_n
+        if selection == self.main_window.frame.n_cells - 1:
+            selection -= 1
+        if self.has_executed:
+            self.main_window.select_cell(None)
         for command in self.commands:
             command.redo()
         if self.main_window.frame_number == self.frame_number:
             self.main_window._refresh_segmentation()
+            self.main_window.select_cell(cell=selection)
+        self.has_executed = True
 
     def undo(self):
         self.main_window.select_cell(None)
@@ -4586,19 +4639,20 @@ class MergeParticleMasksCommand(QUndoCommand):
 
     def redo(self):
         """Execute the merge operation by executing all sub-commands."""
-        if not self.has_executed:
+        if self.has_executed:
+            self.main_window.select_cell(None)
+        else:
             self._create_commands()
             self.has_executed = True
-        self.main_window.select_cell(None)
-
-        for command in self.main_window._progress_bar(self.commands):
+        
+        for command in self.main_window._progress_bar(self.commands, leave=False):
             command.redo()
 
     def undo(self):
         """Undo the merge operation by undoing all sub-commands in reverse order."""
-        self.main_window.select_cell(None)
-        for command in self.main_window._progress_bar(self.commands[::-1]):
+        for command in self.main_window._progress_bar(self.commands[::-1], leave=False):
             command.undo()
+        self.main_window.select_cell(None)
 
 
 class ReassignParticleCommand(QUndoCommand):
@@ -4820,19 +4874,20 @@ class MergeParticleTracksCommand(QUndoCommand):
 
     def redo(self):
         """Execute the merge operation by executing all sub-commands."""
-        self.main_window.select_cell(None)
-        if not self.has_executed:
+        if self.has_executed:
+            self.main_window.select_cell(None)
+        else:
             self._create_commands()
             self.has_executed = True
 
-        for command in self.main_window._progress_bar(self.commands):
+        for command in self.main_window._progress_bar(self.commands, leave=False):
             command.redo()
         self.main_window._update_tracking_overlay()
 
     def undo(self):
         """Undo the merge operation by undoing all sub-commands in reverse order."""
         self.main_window.select_cell(None)
-        for command in self.main_window._progress_bar(self.commands[::-1]):
+        for command in self.main_window._progress_bar(self.commands[::-1], leave=False):
             command.undo()
         self.main_window._update_tracking_overlay()
 
@@ -4911,19 +4966,20 @@ class SplitParticleTracksCommand(QUndoCommand):
 
     def redo(self):
         """Execute the split operation by executing all sub-commands."""
-        if not self.has_executed:
+        if self.has_executed:
+            self.main_window.select_cell(None)
+        else:
             self._create_commands()
             self.has_executed = True
 
-        self.main_window.select_cell(None)
-        for command in self.main_window._progress_bar(self.commands):
+        for command in self.main_window._progress_bar(self.commands, leave=False):
             command.redo()
         self.main_window._update_tracking_overlay()
 
     def undo(self):
         """Undo the split operation by undoing all sub-commands in reverse order."""
         self.main_window.select_cell(None)
-        for command in self.main_window._progress_bar(self.commands[::-1]):
+        for command in self.main_window._progress_bar(self.commands[::-1], leave=False):
             command.undo()
         self.main_window._update_tracking_overlay()
 

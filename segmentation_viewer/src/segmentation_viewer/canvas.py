@@ -131,7 +131,7 @@ class PyQtGraphCanvas(QWidget):
     def overlay_outlines(self):
         self.img_outline_overlay.setVisible(self.main_window.outlines_visible)
 
-    def draw_outlines(self, color=None, alpha=None):
+    def render_imgplot_outlines(self, color=None, alpha=None):
         """Overlay the outlines of the masks on the image plot."""
         if alpha is None:
             alpha = self.outlines_alpha
@@ -542,7 +542,7 @@ class PyQtGraphCanvas(QWidget):
         execution_times['self.overlay_masks()'] = time.time() - start_time
 
         start_time = time.time()
-        self.draw_outlines()
+        self.render_imgplot_outlines()
         execution_times['self.draw_outlines()'] = time.time() - start_time
 
         # Print all execution times sorted by duration

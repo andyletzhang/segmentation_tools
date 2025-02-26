@@ -5,7 +5,10 @@ def create_action(name, func, parent=None, shortcut=None):
     action = QAction(name, parent)
     action.triggered.connect(func)
     if shortcut is not None:
-        action.setShortcut(shortcut)
+        if isinstance(shortcut, str):
+            action.setShortcut(shortcut)
+        elif isinstance(shortcut, tuple):
+            action.setShortcuts(shortcut)
     return action
 
 

@@ -2283,8 +2283,6 @@ class MainWidget(QMainWindow):
 
             if self.is_zstack:
                 bounds = self.frame.bounds[self.zstack_number]
-                if self.is_grayscale:
-                    bounds = [bounds]
             else:
                 bounds = self.frame.bounds
             
@@ -2317,18 +2315,19 @@ class MainWidget(QMainWindow):
         """Get the bounds of the frame for normalization."""
         if hasattr(frame, 'zstack'):
             img = frame.zstack
-            is_grayscale = img.ndim == 3
         else:
             img = frame.img.reshape(1, *frame.img.shape)
-            is_grayscale = img.ndim == 2
 
-        if is_grayscale:
+        if img.ndim == 3:
             img = img.reshape(*img.shape, 1)
 
         bounds = []
         for z_slice in img:
             bounds.append(get_quantile(z_slice, q=(1, 99), mask_zeros=True))
-        return np.squeeze(bounds)
+
+        if len(bounds) == 1:
+            bounds = bounds[0]
+        return bounds
 
     def _precompute_bounds(self, frames=None):
         if not self.file_loaded:

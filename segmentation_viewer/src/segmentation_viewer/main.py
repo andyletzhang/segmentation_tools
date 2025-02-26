@@ -2827,8 +2827,10 @@ class MainWidget(QMainWindow):
             inheritor_cell=cell.copy()
             inheritor_mask=coords_to_mask(new_masks[0], shape=self.frame.masks.shape)
             inheritor_cell.outline=outlines_list(inheritor_mask)[0]
+            if hasattr(self.stack, 'tracked_centroids'):
+                inheritor_particle=self.particle_from_cell(cell.n)
             commands.append(DeleteCellCommand(self, cell, description=f'Delete unsplit mask {label} in frame {self.frame_number}', parent=split_command))
-            commands.append(AddCellCommand(self, inheritor_cell, inheritor_mask, description=f'Inheritor cell {label} in frame {self.frame_number}', parent=split_command))
+            commands.append(AddCellCommand(self, inheritor_cell, inheritor_mask, description=f'Inheritor cell {label} in frame {self.frame_number}', row_args={'particle':inheritor_particle}, parent=split_command))
             for i, new_mask in enumerate(new_masks[1:]):
                 label_id = next_label + i
                 new_mask = coords_to_mask(new_mask, shape=self.frame.masks.shape)
@@ -4161,7 +4163,7 @@ class BaseCellMaskCommand(QUndoCommand):
     
     def add_cell(self):
         frame = self.main_window.stack.frames[self.cell.frame]
-
+        
         # add cell data
         if self.cell.n > frame.n_cells:
             self.cell.n = frame.n_cells

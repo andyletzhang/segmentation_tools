@@ -1,5 +1,5 @@
-from PyQt6.QtCore import QPointF, Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QColor, QIntValidator, QDoubleValidator, QFont, QMouseEvent, QUndoStack
+from PyQt6.QtCore import QPointF, Qt, pyqtSignal, QTimer, QObject, QThread, pyqtSlot
+from PyQt6.QtGui import QColor, QIntValidator, QDoubleValidator, QFont, QMouseEvent, QUndoStack, QUndoCommand
 from PyQt6.QtWidgets import (
     QColorDialog,
     QComboBox,
@@ -20,7 +20,6 @@ from PyQt6.QtWidgets import (
     QMainWindow,
 )
 from superqt import QRangeSlider, QDoubleRangeSlider
-
 from segmentation_viewer.io import RangeStringValidator, range_string_to_list
 
 
@@ -651,36 +650,37 @@ class UndoHistoryWindow(QMainWindow):
 class QueuedUndoStack(QUndoStack):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.operation_queue = []  # Will contain 'undo' or 'redo' strings
+        self.push_queue = UndoStackManager(self)
+        self.undo_queue = []  # Will contain 'undo' or 'redo' strings
         self.processing = False
         
     def queuedUndo(self):
         # If the last queued operation is a redo, cancel it out
-        if self.operation_queue and self.operation_queue[-1] == 'redo':
-            self.operation_queue.pop()
+        if self.undo_queue and self.undo_queue[-1] == 'redo':
+            self.undo_queue.pop()
         else:
             # Otherwise, queue an undo
-            self.operation_queue.append('undo')
+            self.undo_queue.append('undo')
         
         self.processQueue()
         
     def queuedRedo(self):
         # If the last queued operation is an undo, cancel it out
-        if self.operation_queue and self.operation_queue[-1] == 'undo':
-            self.operation_queue.pop()
+        if self.undo_queue and self.undo_queue[-1] == 'undo':
+            self.undo_queue.pop()
         else:
             # Otherwise, queue a redo
-            self.operation_queue.append('redo')
+            self.undo_queue.append('redo')
         
         self.processQueue()
     
     def processQueue(self):
         # Don't start processing if we're already processing or if the queue is empty
-        if self.processing or not self.operation_queue:
+        if self.processing or not self.undo_queue:
             return
             
         self.processing = True
-        operation = self.operation_queue.pop(0)  # Get and remove the first operation
+        operation = self.undo_queue.pop(0)  # Get and remove the first operation
         
         if operation == 'undo':
             super().undo()
@@ -689,7 +689,7 @@ class QueuedUndoStack(QUndoStack):
         
         self.processing = False
         
-        if self.operation_queue:
+        if self.undo_queue:
             QTimer.singleShot(0, self.processQueue)
 
     # Override the original methods to use queued versions
@@ -698,3 +698,46 @@ class QueuedUndoStack(QUndoStack):
         
     def redo(self):
         self.queuedRedo()
+
+class UndoStackManager(QObject):
+    """Manages asynchronous command execution for QUndoStack"""
+    command_completed = pyqtSignal(QUndoCommand)
+    
+    def __init__(self, undo_stack: QUndoStack):
+        super().__init__()
+        self.undo_stack = undo_stack
+        self.pending_commands = []
+        self.is_executing = False
+        
+        # Connect completion signal to process next command
+        self.command_completed.connect(self.on_command_completed)
+    
+    def push(self, command: QUndoCommand):
+        """Add command to queue and start processing if not already running"""
+        self.pending_commands.append(command)
+        print(f"Command added to queue: {command.text()}")
+        print(f"Queue length: {len(self.pending_commands)}")
+        
+        if not self.is_executing:
+            self._process_next_command()
+    
+    def _process_next_command(self):
+        """Process the next command in the queue"""
+        if not self.pending_commands:
+            self.is_executing = False
+            return
+        
+        self.is_executing = True
+        command = self.pending_commands.pop(0)
+        
+        self.undo_stack.push(command)
+        self._process_next_command()
+    
+    @pyqtSlot(QUndoCommand)
+    def on_command_completed(self, command):
+        """Handle completed async command"""
+        # Push the completed command to the undo stack
+        self.undo_stack.push(command)
+        
+        # Process the next command in queue
+        self._process_next_command()

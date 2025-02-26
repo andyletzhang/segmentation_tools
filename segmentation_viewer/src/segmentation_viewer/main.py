@@ -2696,7 +2696,7 @@ class MainWidget(QMainWindow):
             & (enclosed_pixels[:, 1] >= 0)
             & (enclosed_pixels[:, 1] < self.frame.masks.shape[1])
         ]
-        self._add_cell(enclosed_pixels)
+        self.add_cell(enclosed_pixels)
         self.cell_roi.clearPoints()
         self._update_display()
 
@@ -2752,12 +2752,14 @@ class MainWidget(QMainWindow):
             self.left_toolbar.RGB_mode()
 
     # --------------Segmentation functions----------------
-    def _add_cell(self, enclosed_pixels: np.ndarray, new_mask_n: int | None = None, frame: int | None = None):
+    def add_cell(self, enclosed_pixels: np.ndarray, new_mask_n: int | None = None, frame: int | None = None):
         if frame is None:
             frame = self.frame
         if new_mask_n is None:
             new_mask_n = frame.n_cells
 
+        selected_particle_n = self.selected_particle_n
+        selected_cell_n = self.selected_cell_n
         cell, binary_mask = self.pixels_to_cell(enclosed_pixels, new_mask_n, frame)
         if cell is False:
             return False
@@ -2765,6 +2767,8 @@ class MainWidget(QMainWindow):
             self, cell=cell, mask=binary_mask, description=f'Add mask {new_mask_n} in frame {frame.frame_number}'
         )
         self.undo_stack.push(mask_command)
+
+        self.select_cell(particle=selected_particle_n, cell=selected_cell_n)
         return new_mask_n
 
     def delete_cell(self, cell_n: int, frame: SegmentedImage | None = None):
@@ -4163,7 +4167,7 @@ class BaseCellMaskCommand(QUndoCommand):
     
     def add_cell(self):
         frame = self.main_window.stack.frames[self.cell.frame]
-        
+
         # add cell data
         if self.cell.n > frame.n_cells:
             self.cell.n = frame.n_cells

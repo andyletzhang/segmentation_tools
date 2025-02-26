@@ -585,11 +585,8 @@ class LeftToolbar(QScrollArea):
         io_menu.addWidget(self.save_tracking_button)
         io_menu.addWidget(self.load_tracking_button)
 
-        highlight_tracking_layout = QHBoxLayout()
         self.highlight_track_ends_button = QCheckBox('Highlight Track Ends', self)
         self.highlight_mitoses_button = QCheckBox('Highlight Mitoses', self)
-        highlight_tracking_layout.addWidget(self.highlight_track_ends_button)
-        highlight_tracking_layout.addWidget(self.highlight_mitoses_button)
 
         split_particle_button = QPushButton('Split Particle', self)
         delete_particle_label = QLabel('Delete Particle:', self)
@@ -642,6 +639,7 @@ class LeftToolbar(QScrollArea):
         track_centroids_widget.header_layout.addWidget(self.tracking_label)
         track_centroids_widget.header_layout.addSpacerItem(QSpacerItem(5, 0))
         track_centroids_widget.core_layout.addWidget(self.track_centroids_button)
+        track_centroids_widget.core_layout.addWidget(self.highlight_track_ends_button)
         track_centroids_widget.core_layout.addLayout(io_menu)
         track_centroids_widget.core_layout.addWidget(clear_tracking_button)
         track_centroids_widget.addLayout(self.tracking_range_layout)
@@ -653,12 +651,12 @@ class LeftToolbar(QScrollArea):
         mitoses_widget.header_layout.addWidget(self.mitoses_label)
         mitoses_widget.header_layout.addSpacerItem(QSpacerItem(5, 0))
         mitoses_widget.core_layout.addWidget(get_mitoses_button)
+        mitoses_widget.core_layout.addWidget(self.highlight_mitoses_button)
         mitoses_widget.core_layout.addLayout(edit_mitoses_layout)
         mitoses_widget.addLayout(self.mitoses_config_menu)
         mitoses_widget.addWidget(apply_new_weights_button)
         mitoses_widget.hide_content()
 
-        tracking_tab_layout.addLayout(highlight_tracking_layout)
         tracking_tab_layout.addWidget(tracking_border)
         tracking_tab_layout.addWidget(mitoses_border)
 

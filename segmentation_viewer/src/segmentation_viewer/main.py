@@ -1556,17 +1556,21 @@ class MainWidget(QMainWindow):
 
     def _update_tracking_overlay(self):
         sender = self.sender()
-        if hasattr(self.stack, 'tracked_centroids'):
-            self.left_toolbar.update_tracking_label(self.stack.tracked_centroids['particle'].nunique())
-        if hasattr(self.stack, 'mitoses'):
-            self.left_toolbar.update_mitoses_label(len(self.stack.mitoses))
         # enforce checkbox exclusivity
         if sender == self.left_toolbar.highlight_track_ends_button and sender.isChecked():
             self.left_toolbar.highlight_mitoses_button.setChecked(False)
         elif sender == self.left_toolbar.highlight_mitoses_button and sender.isChecked():
             self.left_toolbar.highlight_track_ends_button.setChecked(False)
 
-        if not self.file_loaded or self.left_toolbar.tabbed_widget.currentIndex() != 2:
+        if not self.file_loaded:
+            return
+
+        if hasattr(self.stack, 'tracked_centroids'):
+            self.left_toolbar.update_tracking_label(self.stack.tracked_centroids['particle'].nunique())
+        if hasattr(self.stack, 'mitoses'):
+            self.left_toolbar.update_mitoses_label(len(self.stack.mitoses))
+
+        if self.left_toolbar.tabbed_widget.currentIndex() != 2:
             self.canvas.clear_overlay('tracking')
             return
         else:

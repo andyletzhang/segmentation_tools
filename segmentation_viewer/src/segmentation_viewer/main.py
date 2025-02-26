@@ -1760,10 +1760,10 @@ class MainWidget(QMainWindow):
         else:
             peak_prominence = float(peak_prominence)
 
-        coverslip_height = self.calibrate_coverslip_height(frames, prominence=peak_prominence)
         for frame in frames:
-            frame.coverslip_height = coverslip_height
-        self.left_toolbar.coverslip_height.setText(f'{coverslip_height:.2f}')
+            frame.coverslip_height=self.calibrate_coverslip_height(frames, prominence=peak_prominence)
+
+        self.left_toolbar.coverslip_height.setText(f'{frame.coverslip_height:.2f}')
 
     def calibrate_coverslip_height(self, frames, membrane_channel=2, prominence=None):
         """

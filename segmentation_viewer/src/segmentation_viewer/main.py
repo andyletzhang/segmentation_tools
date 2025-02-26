@@ -4371,11 +4371,11 @@ class DeleteCellsCommand(QUndoCommand):
             self.cell_commands.append(command)
 
     def redo(self):
-        for command in self.cell_commands:
+        for command in self.main_window._progress_bar(self.cell_commands):
             command.redo()
 
     def undo(self):
-        for command in reversed(self.cell_commands):
+        for command in self.main_window._progress_bar(self.cell_commands[::-1]):
             command.undo()
 
 
@@ -4513,14 +4513,11 @@ class MergeParticleMasksCommand(QUndoCommand):
             self.commands.append(merge_cmd)
 
         for frame in relabel_frames:
-            cell2_idx = df[(df['particle'] == self.particle2) & (df['frame'] == frame)].index[0]
             cell2 = particle2[particle2_frames.index(frame)]
-            
+
             # Create a command to reassign the cell from particle2 to particle1
-            reassign_cmd = ReassignParticleCommand(self.main_window, cell2_idx, self.particle2, self.particle1)
+            reassign_cmd = ReassignParticleCommand(self.main_window, cell2, self.particle2, self.particle1, color=merged_color)
             self.commands.append(reassign_cmd)
-            recolor_cmd = ChangeCellColorCommand(self.main_window.canvas, cell2, merged_color, description='Recolor merged cell')
-            self.commands.append(recolor_cmd)
 
     def redo(self):
         """Execute the merge operation by executing all sub-commands."""
@@ -4540,42 +4537,73 @@ class MergeParticleMasksCommand(QUndoCommand):
 class ReassignParticleCommand(QUndoCommand):
     """
     QUndoCommand for reassigning a cell from one particle to another.
-    Used as a helper command by MergeParticleMasksCommand.
+    Also handles updating the cell color to match the new particle.
     """
 
     def __init__(
-        self, main_window: MainWidget, cell_id: int, old_particle_id: int, new_particle_id: int, description: str | None = None
+        self, main_window: MainWidget, cell: Cell, old_particle_id: int, new_particle_id: int, color: int|None = None, description: str | None = None
     ):
         """
         Initialize the reassign particle command.
 
         Args:
-            df: The DataFrame containing particle tracking data
+            main_window: The main window containing the dataframe and cell data
             cell_id: The cell ID to reassign
             old_particle_id: The original particle ID
             new_particle_id: The new particle ID to assign
             description: Optional command description
         """
         super().__init__(
-            description or f'Reassign particle {old_particle_id} to {new_particle_id} in frame {main_window.stack.tracked_centroids.at[cell_id, "frame"]}'
+            description or f'Reassign particle {old_particle_id} to {new_particle_id} in frame {cell.frame}'
         )
 
         self.main_window = main_window
-        self.cell_id = cell_id
+        self.cell = cell
+        self.cell_id = self.main_window.stack.get_tracking_row(self.cell).index.values[0]
         self.old_particle_id = old_particle_id
         self.new_particle_id = new_particle_id
+        self.new_color_ID = color
+        
+        # Color command will be created during first execution
+        self.color_command = self._get_color_command()
+    
+    def _get_color_command(self):
+        # Get the cell object
+        if self.new_color_ID is None:  # Get the color from the new particle
+            new_particle = self.main_window.stack.get_particle(self.new_particle_id)
+            if new_particle and len(new_particle) > 0:
+                self.new_color_ID = new_particle[0].color_ID
+            else: # If the particle being added to doesn't exist, generate a new color
+                self.new_color_ID = self.main_window.canvas.random_color_ID()
+
+        # Create and execute the color command
+        color_command = ChangeCellColorCommand(
+            self.main_window.canvas,
+            self.cell,
+            self.new_color_ID,
+            description=f'Update color for cell in frame {self.main_window.stack.tracked_centroids.at[self.cell_id, "frame"]}'
+        )
+        return color_command
 
     def redo(self):
-        """Reassign the cell to the new particle ID."""
+        """Reassign the cell to the new particle ID and update its color."""
         # Make sure the cell exists in the dataframe
         if self.cell_id in self.main_window.stack.tracked_centroids.index:
+            # Reassign the particle ID
             self.main_window.stack.tracked_centroids.at[self.cell_id, 'particle'] = self.new_particle_id
+            
+            # Handle color change if this is the first execution
+            if self.color_command is None:
+                self.color_command = self._get_color_command()
+            self.color_command.redo()
 
     def undo(self):
-        """Restore the cell to its original particle ID."""
-        # Make sure the cell exists in the dataframe
-        if self.cell_id in self.main_window.stack.tracked_centroids.index:
-            self.main_window.stack.tracked_centroids.at[self.cell_id, 'particle'] = self.old_particle_id
+        """Restore the cell to its original particle ID and color."""
+        # First undo the color change if a color command exists
+        self.color_command.undo()
+
+        # Restore the original particle ID
+        self.main_window.stack.tracked_centroids.at[self.cell_id, 'particle'] = self.old_particle_id
 
 
 class MergeParticleTracksCommand(QUndoCommand):

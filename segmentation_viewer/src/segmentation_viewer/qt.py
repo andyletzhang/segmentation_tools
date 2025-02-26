@@ -1,5 +1,5 @@
-from PyQt6.QtCore import QPointF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QIntValidator, QDoubleValidator, QFont, QMouseEvent
+from PyQt6.QtCore import QPointF, Qt, pyqtSignal, QTimer
+from PyQt6.QtGui import QColor, QIntValidator, QDoubleValidator, QFont, QMouseEvent, QUndoStack
 from PyQt6.QtWidgets import (
     QColorDialog,
     QComboBox,
@@ -647,3 +647,54 @@ class UndoHistoryWindow(QMainWindow):
 
         self.setCentralWidget(central_widget)
         self.show()
+
+class QueuedUndoStack(QUndoStack):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.operation_queue = []  # Will contain 'undo' or 'redo' strings
+        self.processing = False
+        
+    def queuedUndo(self):
+        # If the last queued operation is a redo, cancel it out
+        if self.operation_queue and self.operation_queue[-1] == 'redo':
+            self.operation_queue.pop()
+        else:
+            # Otherwise, queue an undo
+            self.operation_queue.append('undo')
+        
+        self.processQueue()
+        
+    def queuedRedo(self):
+        # If the last queued operation is an undo, cancel it out
+        if self.operation_queue and self.operation_queue[-1] == 'undo':
+            self.operation_queue.pop()
+        else:
+            # Otherwise, queue a redo
+            self.operation_queue.append('redo')
+        
+        self.processQueue()
+    
+    def processQueue(self):
+        # Don't start processing if we're already processing or if the queue is empty
+        if self.processing or not self.operation_queue:
+            return
+            
+        self.processing = True
+        operation = self.operation_queue.pop(0)  # Get and remove the first operation
+        
+        if operation == 'undo':
+            super().undo()
+        else:  # operation == 'redo'
+            super().redo()
+        
+        self.processing = False
+        
+        if self.operation_queue:
+            QTimer.singleShot(0, self.processQueue)
+
+    # Override the original methods to use queued versions
+    def undo(self):
+        self.queuedUndo()
+        
+    def redo(self):
+        self.queuedRedo()

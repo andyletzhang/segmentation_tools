@@ -11,7 +11,7 @@ import pandas as pd
 import pyqtgraph as pg
 from natsort import natsorted
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFontMetrics, QIcon, QIntValidator, QUndoCommand, QUndoStack
+from PyQt6.QtGui import QFontMetrics, QIcon, QIntValidator, QUndoCommand
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -43,7 +43,7 @@ from tqdm import tqdm
 from .canvas import CellMaskPolygons, CellSplitLines, PyQtGraphCanvas
 from .command_line import CommandLineWindow
 from .io import ExportWizard
-from .qt import CustomComboBox, FrameStackDialog, SubstackDialog, UndoHistoryWindow, labeled_LUT_slider
+from .qt import CustomComboBox, FrameStackDialog, SubstackDialog, UndoHistoryWindow, labeled_LUT_slider, QueuedUndoStack
 from .scripting import ScriptWindow
 from .ui import LeftToolbar, calculate_range_params, clear_layout
 from .utils import create_html_table, load_stylesheet
@@ -108,7 +108,7 @@ class MainWidget(QMainWindow):
         self.circle_mask = None
         self.mitosis_mode = 0
         self.bounds_processor = BoundsProcessor(self, n_cores=1)
-        self.undo_stack = QUndoStack(self)
+        self.undo_stack = QueuedUndoStack(self)
         self.globals_dict['history']=self.undo_stack
 
         # Status bar
@@ -238,8 +238,8 @@ class MainWidget(QMainWindow):
             'Exit': (self.close, 'Ctrl+Q'),
         }
         edit_actions = {
-            'Undo': (self.undo, 'Ctrl+Z'),
-            'Redo': (self.redo, 'Ctrl+Shift+Z'),
+            'Undo': (self.undo_stack.undo, 'Ctrl+Z'),
+            'Redo': (self.undo_stack.redo, 'Ctrl+Shift+Z'),
             'Undo History': (self._show_undo_history, None),
             'Clear Masks': (self.clear_masks, None),
             'Generate Outlines': (self._generate_outlines, None),
@@ -308,12 +308,6 @@ class MainWidget(QMainWindow):
             action = create_action(key, function, self, shortcut)
             setattr(self, f'{function.__name__}_action', action)
             self.addAction(action)
-
-    def undo(self):
-        self.undo_stack.undo()
-
-    def redo(self):
-        self.undo_stack.redo()
 
     def _load_config(self):
         from platformdirs import user_config_dir
@@ -1370,7 +1364,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
-            self._delete_cell(self.selected_cell_n)
+            self.delete_cell(self.selected_cell_n)
             return
 
         else:
@@ -2148,6 +2142,8 @@ class MainWidget(QMainWindow):
             command = MergeParticleTracksCommand(self, first_particle, second_particle, self.frame_number)
             self.undo_stack.push(command)
 
+            self.select_cell(particle=first_particle)
+
     def _set_LUTs(self, refresh=True):
         """Set the LUTs for the image display based on the current slider values."""
         self.canvas.img.setLevels(self.left_toolbar.LUT_slider_values, refresh=refresh)
@@ -2338,18 +2334,18 @@ class MainWidget(QMainWindow):
         particle : int
             The particle number to select.
         cell : int
-            The cell number to select. If both particle and cell are specified, cell takes precedence.
+            The cell number to select. If both particle and cell are specified, particle takes precedence.
         """
 
         if self.FUCCI_mode:  # classifying FUCCI, no cell selection
             return
 
-        if cell is not None:  # select by cell number
-            self.selected_cell_n = cell
-            self.selected_particle_n = self.particle_from_cell(cell)
-        elif particle is not None:  # select by particle number
+        if particle is not None:  # select by particle number
             self.selected_particle_n = particle
             self.selected_cell_n = self.cell_from_particle(particle)
+        elif cell is not None:  # select by cell number
+            self.selected_cell_n = cell
+            self.selected_particle_n = self.particle_from_cell(cell)
         else:  # clear selection
             self.selected_cell_n = None
             self.selected_particle_n = None
@@ -2567,7 +2563,7 @@ class MainWidget(QMainWindow):
 
                     elif event.modifiers() == Qt.KeyboardModifier.ControlModifier:
                         # delete cell from current frame
-                        self._delete_cell(current_cell_n)
+                        self.delete_cell(current_cell_n)
                         if current_particle_n is None:
                             self.select_cell(None)  # deselect the cell
                         else:
@@ -2771,7 +2767,7 @@ class MainWidget(QMainWindow):
         self.undo_stack.push(mask_command)
         return new_mask_n
 
-    def _delete_cell(self, cell_n: int, frame: SegmentedImage | None = None):
+    def delete_cell(self, cell_n: int, frame: SegmentedImage | None = None):
         if frame is None:
             frame = self.frame
         cell = frame.cells[cell_n]
@@ -2818,6 +2814,8 @@ class MainWidget(QMainWindow):
         split_IDs=[]
         n_new=0
         split_command=QUndoCommand()
+        selected_particle_n=self.selected_particle_n
+        selected_cell_n=self.selected_cell_n
         for label in intersected_labels:
             cell = self.frame.cells[label - 1]
             outline = cell.outline
@@ -2842,6 +2840,7 @@ class MainWidget(QMainWindow):
         if len(commands) > 0:
             split_command.setText(f'Split masks {split_IDs} into {n_new} masks in frame {self.frame_number}')
             self.undo_stack.push(split_command)
+            self.select_cell(particle=selected_particle_n, cell=selected_cell_n)
 
     def merge_cell_masks(self, cell_n1: int, cell_n2: int, frame_number: int | None = None):
         """
@@ -2863,11 +2862,6 @@ class MainWidget(QMainWindow):
         if cell_n1 == cell_n2:
             return
 
-        if cell_n1 + 1 == self.stack.frames[frame_number].n_cells:
-            selected_cell = cell_n1 - 1
-        else:
-            selected_cell = cell_n1
-
         if frame_number is None:
             frame_number = self.frame_number
         # purge cell 2
@@ -2879,13 +2873,13 @@ class MainWidget(QMainWindow):
             self, [cell1, cell2], description=f'Merge cells {cell_n1} and {cell_n2} in frame {frame_number}'
         )
         self.undo_stack.push(command)
+        self.select_cell(cell=cell_n1)
 
         if hasattr(self.stack, 'tracked_centroids'):
             self.left_toolbar.also_save_tracking.setChecked(True)
 
         if frame_number == self.frame_number:
             self._update_tracking_overlay()
-            self.select_cell(cell=selected_cell)
             self._update_ROIs_label()
             self._update_display()
 
@@ -2907,6 +2901,7 @@ class MainWidget(QMainWindow):
             self, particle_n1, particle_n2, description=f'Merge particle {particle_n2} into particle {particle_n1}'
         )
         self.undo_stack.push(command)
+        self.select_cell(particle=particle_n1)
 
     def _check_cell_numbers(self):
         """for troubleshooting: check if the cell numbers in the frame and the masks align."""
@@ -3424,7 +3419,7 @@ class MainWidget(QMainWindow):
             self.outlines_visible = not self.outlines_visible
         elif event.key() == Qt.Key.Key_Delete:
             if self.selected_cell_n is not None:
-                self._delete_cell(self.selected_cell_n)
+                self.delete_cell(self.selected_cell_n)
                 self.select_cell(None)
 
         # cancel drawing
@@ -4144,6 +4139,7 @@ class MainWidget(QMainWindow):
         self.canvas.close()
         event.accept()
 
+
 class BaseCellMaskCommand(QUndoCommand):
     def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = '', show: bool = True, parent=None):
         super().__init__(description, parent)
@@ -4170,12 +4166,6 @@ class BaseCellMaskCommand(QUndoCommand):
         if self.cell.n > frame.n_cells:
             self.cell.n = frame.n_cells
         frame.add_cell(self.cell, self.mask)
-
-        # update display
-        if frame.frame_number == self.main_window.frame_number:
-            self.main_window._update_tracking_overlay()
-            self.main_window._update_display()
-            self.main_window._update_ROIs_label()
     
     def delete_cell(self):
         """
@@ -4185,12 +4175,6 @@ class BaseCellMaskCommand(QUndoCommand):
 
         # remove cell data
         frame.remove_cell(self.cell, self.mask)
-
-        # update display
-        if frame.frame_number == self.main_window.frame_number:
-            self.main_window._update_tracking_overlay()
-            self.main_window._update_display()
-            self.main_window._update_ROIs_label()
 
 class AddCellMaskCommand(BaseCellMaskCommand):
     def __init__(self, main_window: MainWidget, cell: Cell, mask: np.ndarray, description: str = '', show: bool = True, parent=None):
@@ -4246,6 +4230,7 @@ class BaseCellCommand(QUndoCommand):
         raise NotImplementedError
 
     def redo(self):
+        self.main_window.select_cell(None)
         if self.show:
             if self.main_window.frame_number != self.cell.frame:
                 self.main_window.change_current_frame(self.cell.frame)
@@ -4253,6 +4238,7 @@ class BaseCellCommand(QUndoCommand):
             command.redo()
 
     def undo(self):
+        self.main_window.select_cell(None)
         if self.show:
             if self.main_window.frame_number != self.cell.frame:
                 self.main_window.change_current_frame(self.cell.frame)
@@ -4369,10 +4355,12 @@ class DeleteCellsCommand(QUndoCommand):
             self.cell_commands.append(command)
 
     def redo(self):
+        self.main_window.select_cell(None)
         for command in self.main_window._progress_bar(self.cell_commands):
             command.redo()
 
     def undo(self):
+        self.main_window.select_cell(None)
         for command in self.main_window._progress_bar(self.cell_commands[::-1]):
             command.undo()
 
@@ -4441,10 +4429,12 @@ class MergeCellsCommand(QUndoCommand):
             self.commands = [self.commands[1], self.commands[0], self.commands[2]]
 
     def redo(self):
+        self.main_window.select_cell(None)
         for command in self.commands:
             command.redo()
 
     def undo(self):
+        self.main_window.select_cell(None)
         for command in reversed(self.commands):
             command.undo()
 
@@ -4522,12 +4512,14 @@ class MergeParticleMasksCommand(QUndoCommand):
         if not self.has_executed:
             self._create_commands()
             self.has_executed = True
+        self.main_window.select_cell(None)
 
         for command in self.main_window._progress_bar(self.commands):
             command.redo()
 
     def undo(self):
         """Undo the merge operation by undoing all sub-commands in reverse order."""
+        self.main_window.select_cell(None)
         for command in self.main_window._progress_bar(self.commands[::-1]):
             command.undo()
 
@@ -4624,7 +4616,7 @@ class MergeParticleTracksCommand(QUndoCommand):
             merge_frame: Frame number where the merge occurs
             description: Optional command description
         """
-        super().__init__(description or f'Merge particles {particle2} into {particle1} at frame {merge_frame}')
+        super().__init__(description or f'Merge particle {particle2} into particle {particle1} at frame {merge_frame}')
 
         self.main_window = main_window
         self.particle1 = particle1
@@ -4660,6 +4652,7 @@ class MergeParticleTracksCommand(QUndoCommand):
         # Create a new ID for particle1 continuation if needed
         if len(particle1_after) > 0:
             self.new_particle1_id = next_ID
+            self.new_particle1_color = self.main_window.canvas.random_color_ID()
             next_ID += 1
             
             # Get all cells from particle1 after merge_frame
@@ -4681,7 +4674,8 @@ class MergeParticleTracksCommand(QUndoCommand):
                         self.main_window, 
                         cell, 
                         self.particle1, 
-                        self.new_particle1_id
+                        self.new_particle1_id,
+                        color=self.new_particle1_color
                     )
                     self.commands.append(reassign_cmd)
         
@@ -4692,6 +4686,7 @@ class MergeParticleTracksCommand(QUndoCommand):
         # Create a new ID for particle2 before merge if needed
         if len(particle2_before) > 0:
             self.new_particle2_id = next_ID
+            self.new_particle2_color = self.main_window.canvas.random_color_ID()
             
             # Get all cells from particle2
             particle2_original = self.main_window.stack.get_particle(self.particle2)
@@ -4712,7 +4707,8 @@ class MergeParticleTracksCommand(QUndoCommand):
                         self.main_window, 
                         cell, 
                         self.particle2, 
-                        self.new_particle2_id
+                        self.new_particle2_id,
+                        color=self.new_particle2_color
                     )
                     self.commands.append(reassign_cmd)
         
@@ -4751,6 +4747,7 @@ class MergeParticleTracksCommand(QUndoCommand):
 
     def redo(self):
         """Execute the merge operation by executing all sub-commands."""
+        self.main_window.select_cell(None)
         if not self.has_executed:
             self._create_commands()
             self.has_executed = True
@@ -4760,6 +4757,7 @@ class MergeParticleTracksCommand(QUndoCommand):
 
     def undo(self):
         """Undo the merge operation by undoing all sub-commands in reverse order."""
+        self.main_window.select_cell(None)
         for command in self.main_window._progress_bar(self.commands[::-1]):
             command.undo()
 
@@ -4842,11 +4840,13 @@ class SplitParticleTracksCommand(QUndoCommand):
             self._create_commands()
             self.has_executed = True
 
+        self.main_window.select_cell(None)
         for command in self.main_window._progress_bar(self.commands):
             command.redo()
 
     def undo(self):
         """Undo the split operation by undoing all sub-commands in reverse order."""
+        self.main_window.select_cell(None)
         for command in self.main_window._progress_bar(self.commands[::-1]):
             command.undo()
 

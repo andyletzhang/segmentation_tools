@@ -2272,6 +2272,9 @@ class MainWidget(QMainWindow):
                 bounds = self.frame.bounds[self.zstack_number]
             else:
                 bounds = self.frame.bounds
+            
+            if self.is_grayscale:
+                bounds = [bounds]
 
         elif self.left_toolbar.normalize_type == 'stack':  # normalize the stack
             if not hasattr(self.stack, 'bounds'):

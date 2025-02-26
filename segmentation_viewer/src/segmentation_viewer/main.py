@@ -2118,7 +2118,7 @@ class MainWidget(QMainWindow):
             The new particle number assigned to the second half of the split particle.
             If no split was made, returns None.
         """
-        command = SplitParticleTracksCommand(self.stack.tracked_centroids, self.selected_particle_n, self.frame_number)
+        command = SplitParticleTracksCommand(self, self.selected_particle_n, self.frame_number)
         self.undo_stack.push(command)
 
         self.left_toolbar.also_save_tracking.setChecked(True)
@@ -2145,7 +2145,7 @@ class MainWidget(QMainWindow):
             if self.stack.tracked_centroids[self.stack.tracked_centroids.particle == first_particle]['frame'].min() >= self.frame_number:
                 return # first particle doesn't have a head, nothing to merge
 
-            command = MergeParticleTracksCommand(self.stack.tracked_centroids, first_particle, second_particle, self.frame_number)
+            command = MergeParticleTracksCommand(self, first_particle, second_particle, self.frame_number)
             self.undo_stack.push(command)
 
     def _set_LUTs(self, refresh=True):
@@ -2874,11 +2874,9 @@ class MainWidget(QMainWindow):
 
         cell1 = self.frame.cells[cell_n1]
         cell2 = self.frame.cells[cell_n2]
-        mask1 = self.frame.masks == cell_n1 + 1
-        mask2 = self.frame.masks == cell_n2 + 1
 
         command = MergeCellsCommand(
-            self, [cell1, cell2], [mask1, mask2], description=f'Merge cells {cell_n1} and {cell_n2} in frame {frame_number}'
+            self, [cell1, cell2], description=f'Merge cells {cell_n1} and {cell_n2} in frame {frame_number}'
         )
         self.undo_stack.push(command)
 
@@ -4609,19 +4607,18 @@ class ReassignParticleCommand(QUndoCommand):
 class MergeParticleTracksCommand(QUndoCommand):
     """
     QUndoCommand for merging two particle tracks at a specified frame.
-    Memory-optimized version that only stores affected rows.
-
+    
     - All frames of particle2 from merge_frame onward will be assigned to particle1
     - If particle1 continues beyond merge_frame, it gets a new ID
     - If particle2 exists before merge_frame, it gets a new ID
     """
 
-    def __init__(self, df, particle1, particle2, merge_frame, description=None):
+    def __init__(self, main_window, particle1, particle2, merge_frame, description=None):
         """
         Initialize the merge command.
 
         Args:
-            df: The pandas DataFrame containing particle data
+            main_window: The main window containing the dataframe and cell data
             particle1: ID of the first particle
             particle2: ID of the second particle
             merge_frame: Frame number where the merge occurs
@@ -4629,77 +4626,142 @@ class MergeParticleTracksCommand(QUndoCommand):
         """
         super().__init__(description or f'Merge particles {particle2} into {particle1} at frame {merge_frame}')
 
-        self.df = df
+        self.main_window = main_window
         self.particle1 = particle1
         self.particle2 = particle2
         self.merge_frame = merge_frame
-
-        # store the affected rows and their original values
-        self.affected_indices = None
-        self.original_values = None
+        
+        # Will hold all the sub-commands created during execution
+        self.commands = []
+        
+        # Store whether we've executed once already
+        self.has_executed = False
+        
+        # Track new particle IDs that might be created
         self.new_particle1_id = None
         self.new_particle2_id = None
 
+    def _create_commands(self):
+        """
+        Create all the necessary sub-commands for merging the particle tracks.
+        This is done the first time redo() is called.
+        """
+        df = self.main_window.stack.tracked_centroids
+        
+        # Identify affected particles
+        particle1_mask = df['particle'] == self.particle1
+        particle2_mask = df['particle'] == self.particle2
+        
+        # Check if particle1 persists beyond merge_frame
+        particle1_after_mask = particle1_mask & (df['frame'] >= self.merge_frame)
+        particle1_after = df[particle1_after_mask]
+        next_ID = df['particle'].max() + 1
+        
+        # Create a new ID for particle1 continuation if needed
+        if len(particle1_after) > 0:
+            self.new_particle1_id = next_ID
+            next_ID += 1
+            
+            # Get all cells from particle1 after merge_frame
+            particle1_original = self.main_window.stack.get_particle(self.particle1)
+            
+            # Create commands to reassign particle1 cells after merge_frame
+            for idx in particle1_after.index:
+                frame = df.at[idx, 'frame']
+                cell = None
+                
+                # Find the corresponding cell from the particle
+                for c in particle1_original:
+                    if c.frame == frame:
+                        cell = c
+                        break
+                
+                if cell:
+                    reassign_cmd = ReassignParticleCommand(
+                        self.main_window, 
+                        cell, 
+                        self.particle1, 
+                        self.new_particle1_id
+                    )
+                    self.commands.append(reassign_cmd)
+        
+        # Check if particle2 exists before merge_frame
+        particle2_before_mask = particle2_mask & (df['frame'] < self.merge_frame)
+        particle2_before = df[particle2_before_mask]
+        
+        # Create a new ID for particle2 before merge if needed
+        if len(particle2_before) > 0:
+            self.new_particle2_id = next_ID
+            
+            # Get all cells from particle2
+            particle2_original = self.main_window.stack.get_particle(self.particle2)
+            
+            # Create commands to reassign particle2 cells before merge_frame
+            for idx in particle2_before.index:
+                frame = df.at[idx, 'frame']
+                cell = None
+                
+                # Find the corresponding cell from the particle
+                for c in particle2_original:
+                    if c.frame == frame:
+                        cell = c
+                        break
+                
+                if cell:
+                    reassign_cmd = ReassignParticleCommand(
+                        self.main_window, 
+                        cell, 
+                        self.particle2, 
+                        self.new_particle2_id
+                    )
+                    self.commands.append(reassign_cmd)
+        
+        # Create commands to merge particle2 into particle1 for frame >= merge_frame
+        merge_mask = particle2_mask & (df['frame'] >= self.merge_frame)
+        
+        # Get the cells from particle2
+        particle2_original = self.main_window.stack.get_particle(self.particle2)
+        
+        # Get the color from particle1 for merged cells
+        particle1_color = None
+        particle1_obj = self.main_window.stack.get_particle(self.particle1)
+        if particle1_obj and len(particle1_obj) > 0:
+            particle1_color = particle1_obj[0].color_ID
+        
+        # Create commands for each cell to be merged
+        for idx in df[merge_mask].index:
+            frame = df.at[idx, 'frame']
+            cell = None
+            
+            # Find the corresponding cell from the particle
+            for c in particle2_original:
+                if c.frame == frame:
+                    cell = c
+                    break
+            
+            if cell:
+                reassign_cmd = ReassignParticleCommand(
+                    self.main_window, 
+                    cell, 
+                    self.particle2, 
+                    self.particle1,
+                    color=particle1_color  # Use particle1's color for consistency
+                )
+                self.commands.append(reassign_cmd)
+
     def redo(self):
-        """Perform the merge operation."""
-        # First execution: identify and store the original state of affected rows
-        if self.affected_indices is None:
-            # Create masks for all affected rows
-            particle1_mask = self.df['particle'] == self.particle1
-            particle2_mask = self.df['particle'] == self.particle2
+        """Execute the merge operation by executing all sub-commands."""
+        if not self.has_executed:
+            self._create_commands()
+            self.has_executed = True
 
-            # Check if particle1 persists beyond merge_frame
-            particle1_after_mask = particle1_mask & (self.df['frame'] >= self.merge_frame)
-            particle1_after = self.df[particle1_after_mask]
-            next_ID = self.df['particle'].max() + 1
-            if len(particle1_after) > 0:
-                self.new_particle1_id = next_ID
-                next_ID += 1
-            else:
-                self.new_particle1_id = None
-
-            # Check if particle2 exists before merge_frame
-            particle2_before_mask = particle2_mask & (self.df['frame'] < self.merge_frame)
-            particle2_before = self.df[particle2_before_mask]
-            if len(particle2_before) > 0:
-                self.new_particle2_id = next_ID
-            else:
-                self.new_particle2_id = None
-
-            # Rows where particle2 will be merged into particle1
-            merge_mask = particle2_mask & (self.df['frame'] >= self.merge_frame)
-
-            # Combine all affected masks
-            affected_mask = merge_mask
-            if self.new_particle1_id is not None:
-                affected_mask = affected_mask | particle1_after_mask
-            if self.new_particle2_id is not None:
-                affected_mask = affected_mask | particle2_before_mask
-
-            # Store the indices and original values
-            self.affected_indices = self.df[affected_mask].index
-            self.original_values = self.df.loc[self.affected_indices, 'particle'].copy()
-
-        # Perform the merge operations
-        # 1. If particle1 persists beyond merge_frame, assign it a new ID
-        if self.new_particle1_id is not None:
-            continuation_mask = (self.df['particle'] == self.particle1) & (self.df['frame'] >= self.merge_frame)
-            self.df.loc[continuation_mask, 'particle'] = self.new_particle1_id
-
-        # 2. Merge particle2 into particle1 for frame >= merge_frame
-        merge_mask = (self.df['particle'] == self.particle2) & (self.df['frame'] >= self.merge_frame)
-        self.df.loc[merge_mask, 'particle'] = self.particle1
-
-        # 3. If particle2 exists before merge_frame, assign it a new ID
-        if self.new_particle2_id is not None:
-            before_mask = (self.df['particle'] == self.particle2) & (self.df['frame'] < self.merge_frame)
-            self.df.loc[before_mask, 'particle'] = self.new_particle2_id
+        for command in self.main_window._progress_bar(self.commands):
+            command.redo()
 
     def undo(self):
-        """Restore only the modified rows to their original state."""
-        if self.affected_indices is not None and self.original_values is not None:
-            # Restore only the particle IDs of affected rows
-            self.df.loc[self.affected_indices, 'particle'] = self.original_values
+        """Undo the merge operation by undoing all sub-commands in reverse order."""
+        for command in self.main_window._progress_bar(self.commands[::-1]):
+            command.undo()
 
 
 class SplitParticleTracksCommand(QUndoCommand):
@@ -4709,37 +4771,84 @@ class SplitParticleTracksCommand(QUndoCommand):
     Assigns a new particle ID to all frames >= split_frame.
     """
 
-    def __init__(self, df, particle_id, split_frame, description=None):
+    def __init__(self, main_window, particle_id, split_frame, description=None):
         """
         Initialize the split command.
 
         Args:
-            df: The pandas DataFrame containing particle data
+            main_window: The main window containing the dataframe and cell data
             particle_id: ID of the particle to split
             split_frame: Frame number where the split occurs
             description: Optional command description
         """
         super().__init__(description or f'Split particle {particle_id} at frame {split_frame}')
 
-        self.df = df
+        self.main_window = main_window
         self.particle_id = particle_id
         self.split_frame = split_frame
-        self.new_particle_id = self.df['particle'].max() + 1
+        
+        # Will hold all the sub-commands created during execution
+        self.commands = []
+        
+        # Store whether we've executed once already
+        self.has_executed = False
+        
+        # The new particle ID to be created
+        self.new_particle_id = None
+
+    def _create_commands(self):
+        """
+        Create all the necessary sub-commands for splitting the particle track.
+        This is done the first time redo() is called.
+        """
+        df = self.main_window.stack.tracked_centroids
+        
+        # Calculate new particle ID
+        self.new_particle_id = df['particle'].max() + 1
+        
+        # Find all cells to split
+        split_mask = (df['particle'] == self.particle_id) & (df['frame'] >= self.split_frame)
+        
+        # Get all cells from the original particle
+        original_particle = self.main_window.stack.get_particle(self.particle_id)
+        
+        # Generate a new color for the split particle
+        new_color = self.main_window.canvas.random_color_ID()
+        
+        # Create commands for each cell to be reassigned
+        for idx in df[split_mask].index:
+            frame = df.at[idx, 'frame']
+            cell = None
+            
+            # Find the corresponding cell from the particle
+            for c in original_particle:
+                if c.frame == frame:
+                    cell = c
+                    break
+            
+            if cell:
+                reassign_cmd = ReassignParticleCommand(
+                    self.main_window, 
+                    cell, 
+                    self.particle_id, 
+                    self.new_particle_id,
+                    color=new_color  # Use a new color for the split particle
+                )
+                self.commands.append(reassign_cmd)
 
     def redo(self):
-        """Perform the split operation."""
-        # Split the particle by assigning the new ID to all frames >= split_frame
-        split_mask = (self.df['particle'] == self.particle_id) & (self.df['frame'] >= self.split_frame)
-        self.df.loc[split_mask, 'particle'] = self.new_particle_id
+        """Execute the split operation by executing all sub-commands."""
+        if not self.has_executed:
+            self._create_commands()
+            self.has_executed = True
+
+        for command in self.main_window._progress_bar(self.commands):
+            command.redo()
 
     def undo(self):
-        """
-        Undo the split by merging the tracks back.
-        This reassigns the original ID to all frames that got the new ID.
-        """
-        # Find all rows with the new particle ID and restore them to the original ID
-        merge_mask = self.df['particle'] == self.new_particle_id
-        self.df.loc[merge_mask, 'particle'] = self.particle_id
+        """Undo the split operation by undoing all sub-commands in reverse order."""
+        for command in self.main_window._progress_bar(self.commands[::-1]):
+            command.undo()
 
 
 class BaseTrackingRowCommand(QUndoCommand):

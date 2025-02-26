@@ -1720,7 +1720,7 @@ class MainWidget(QMainWindow):
             frame.coverslip_height = coverslip_height
         self.left_toolbar.coverslip_height.setText(f'{coverslip_height:.2f}')
 
-    def calibrate_coverslip_height(self, frames, membrane_channel=2):
+    def calibrate_coverslip_height(self, frames, membrane_channel=2, prominence=None):
         """
         Identify the bottom of the sample from the specified frames.
 
@@ -1753,7 +1753,7 @@ class MainWidget(QMainWindow):
             self.left_toolbar.z_size = 1.0
         scale = self.frame.z_scale
 
-        coverslip_height = get_coverslip_z(z_profile, scale=scale, precision=0.01)
+        coverslip_height = get_coverslip_z(z_profile, scale=scale, precision=0.01, prominence=prominence)
         return coverslip_height
 
     def _measure_heights(self):

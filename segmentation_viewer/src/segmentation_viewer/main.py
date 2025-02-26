@@ -2963,7 +2963,7 @@ class MainWidget(QMainWindow):
             The particle number to merge.
         """
         # Apply visual change to current frame immediately
-        cell2 = self.frame.cells[self.particle_from_cell(particle_n2)]
+        cell2 = self.frame.cells[self.cell_from_particle(particle_n2)]
         self._mock_select_recolor(cell2, color=self.stack.get_particle(particle_n1)[0].color_ID)
         # Execute the merge
         command = MergeParticleMasksCommand(

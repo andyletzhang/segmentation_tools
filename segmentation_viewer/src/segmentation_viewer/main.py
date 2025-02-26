@@ -106,6 +106,7 @@ class MainWidget(QMainWindow):
         self.bounds_processor = BoundsProcessor(self, n_cores=1)
         self.undo_stack = QueuedUndoStack(self)
         self.globals_dict['history'] = self.undo_stack
+        self.model_type = 'cyto3'
 
         # Status bar
         self.status_cell = QLabel('Selected Cell: None', self)
@@ -962,9 +963,8 @@ class MainWidget(QMainWindow):
         if not hasattr(self, 'size_model'):
             from cellpose import models
 
-            model_type = 'cyto3'
-            self.cellpose_model = models.CellposeModel(gpu=True, model_type=model_type)
-            self.size_model_path = models.size_model_path(model_type)
+            self.cellpose_model = models.CellposeModel(gpu=True, model_type=self.model_type)
+            self.size_model_path = models.size_model_path(self.model_type)
             self.size_model = models.SizeModel(self.cellpose_model, pretrained_size=self.size_model_path)
 
         if channels[1] == 4:  # FUCCI channel

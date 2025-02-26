@@ -880,6 +880,36 @@ class TimeStack(SegmentedStack):
                 for attribute, value in zip(attributes, values[n]):
                     setattr(cell, attribute, value)
 
+    def get_tracking_row(self, frame_or_cell: int | Cell, cell_number: int | None = None, particle_number: int | None = None):
+        """
+        Retrieve the tracking data for a given cell at a given frame.
+
+        Args:
+            frame_or_cell (int | Cell): Frame number or a Cell object.
+            cell_number (int): Cell number.
+            particle_number (int, optional): Particle number.
+
+        Returns:
+            DataFrame: Tracking data for the cell at the given frame.
+        """
+        if not hasattr(self, 'tracked_centroids'):
+            raise ValueError('No tracking data available.')
+            
+        if isinstance(frame_or_cell, Cell):
+            cell=frame_or_cell
+            frame_number = cell.frame
+            cell_number = cell.n
+        elif isinstance(frame_or_cell, int):
+            frame_number = frame_or_cell
+        
+        if cell_number is None and particle_number is None:
+            raise ValueError('Either cell_number or particle_number must be provided.')
+        t = self.tracked_centroids
+        if particle_number is not None:
+            return t[(t['frame'] == frame_number) & (t['particle'] == particle_number)]
+        else:
+            return t[(t['frame'] == frame_number) & (t['cell_number'] == cell_number)]
+
     def get_velocities(self, from_csv=False, to_csv=False, **tracking_kwargs):
         """
         Calculate velocities from tracked centroids and optionally save/load from CSV.

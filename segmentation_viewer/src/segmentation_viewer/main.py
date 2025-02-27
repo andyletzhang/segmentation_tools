@@ -1760,8 +1760,8 @@ class MainWidget(QMainWindow):
         else:
             peak_prominence = float(peak_prominence)
 
-        for frame in frames:
-            frame.coverslip_height=self.calibrate_coverslip_height(frames, prominence=peak_prominence)
+        for frame in self._progress_bar(frames):
+            frame.coverslip_height = self.calibrate_coverslip_height(frame, prominence=peak_prominence)
 
         self.left_toolbar.coverslip_height.setText(f'{frame.coverslip_height:.2f}')
 

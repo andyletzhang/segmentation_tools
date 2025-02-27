@@ -2939,6 +2939,7 @@ class MainWidget(QMainWindow):
                         new_mask,
                         description=f'New split mask {label_id} in frame {self.frame_number}',
                         parent=split_command,
+                        refresh=True, # refresh the display at the end of the split
                     )
                 )
 
@@ -4275,9 +4276,11 @@ class BaseCellMaskCommand(QUndoCommand):
     def add_cell(self):
         frame = self.main_window.stack.frames[self.cell.frame]
 
-        # add cell data
+        # ensure cell number is within bounds
         if self.cell.n > frame.n_cells:
             self.cell.n = frame.n_cells
+
+        # add cell data
         frame.add_cell(self.cell, self.mask)
 
     def delete_cell(self):

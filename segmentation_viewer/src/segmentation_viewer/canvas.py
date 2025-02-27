@@ -167,8 +167,13 @@ class PyQtGraphCanvas(QWidget):
         else:
             return random_colors[:, :3]
 
-    def random_color_ID(self, n=0):
-        random_IDs = np.random.randint(0, self.cell_n_colors, size=max(1, n))
+    def random_color_ID(self, n: int=0, ignore: int | list[int] | None = None):
+        cell_colors = np.arange(self.cell_n_colors)
+        if ignore is not None:
+            cell_colors = np.setdiff1d(cell_colors, ignore)
+
+        random_IDs = np.random.randint(0, len(cell_colors), size=max(1, n))
+        random_IDs = cell_colors[random_IDs]
 
         if n == 0:
             return random_IDs[0]

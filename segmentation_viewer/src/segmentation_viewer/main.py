@@ -2871,80 +2871,14 @@ class MainWidget(QMainWindow):
         min_size : int
             The minimum size of a cell mask in pixels. Cells smaller than this will be merged with their largest neighbor.
         """
-        from segmentation_tools.shape_operations import coords_to_mask, split_cell
-
         curve_coords = np.array([(p.x(), p.y()) for p in self.cell_split.points]).astype(int)
-        next_label = np.max(self.frame.masks)
 
-        # Create a binary mask of the curve
-        curve_mask = np.zeros_like(self.frame.masks, dtype=bool)
-        for i in range(len(curve_coords) - 1):
-            rr, cc = draw.line(curve_coords[i][0], curve_coords[i][1], curve_coords[i + 1][0], curve_coords[i + 1][1])
-            # remove out-of-bounds coordinates
-            inbound_coords = (cc >= 0) & (cc < curve_mask.shape[0]) & (rr >= 0) & (rr < curve_mask.shape[1])
-            rr, cc = rr[inbound_coords], cc[inbound_coords]
-            curve_mask[cc, rr] = True
-
-        # Find unique labels that intersect with the curve
-        intersected_labels = np.unique(self.frame.masks[curve_mask])
-        intersected_labels = intersected_labels[intersected_labels != 0]
-
-        commands = []
-        split_IDs = []
-        n_new = 0
-        split_command = QUndoCommand()
         selected_particle_n = self.selected_particle_n
         selected_cell_n = self.selected_cell_n
-        for label in intersected_labels:
-            cell = self.frame.cells[label - 1]
-            outline = cell.outline
-            new_masks = split_cell(outline, curve_coords, min_area_threshold=min_size)
-            if len(new_masks) == 0:  # no split
-                continue
-            split_IDs.append(label)
-            n_new += len(new_masks)
-            inheritor_cell = cell.copy()
-            inheritor_mask = coords_to_mask(new_masks[0], shape=self.frame.masks.shape)
-            inheritor_cell.outline = outlines_list(inheritor_mask)[0]
-            if hasattr(self.stack, 'tracked_centroids'):
-                inheritor_particle = self.particle_from_cell(cell.n)
-                row_args = {'particle': inheritor_particle}
-            else:
-                row_args = {}
-            commands.append(
-                DeleteCellCommand(
-                    self, cell, description=f'Delete unsplit mask {label} in frame {self.frame_number}', parent=split_command
-                )
-            )
-            commands.append(
-                AddCellCommand(
-                    self,
-                    inheritor_cell,
-                    inheritor_mask,
-                    description=f'Inheritor cell {label} in frame {self.frame_number}',
-                    row_args=row_args,
-                    parent=split_command,
-                )
-            )
-            for i, new_mask in enumerate(new_masks[1:]):
-                label_id = next_label + i
-                new_mask = coords_to_mask(new_mask, shape=self.frame.masks.shape)
-                new_outline = outlines_list(new_mask)[0]
-                color_ID = self.canvas.random_color_ID()
-                new_cell = Cell(label_id, new_outline, parent=self.frame, frame_number=self.frame_number, color_ID=color_ID)
-                commands.append(
-                    AddCellCommand(
-                        self,
-                        new_cell,
-                        new_mask,
-                        description=f'New split mask {label_id} in frame {self.frame_number}',
-                        parent=split_command,
-                        refresh=True, # refresh the display at the end of the split
-                    )
-                )
 
-        if len(commands) > 0:
-            split_command.setText(f'Split masks {split_IDs} into {n_new} masks in frame {self.frame_number}')
+        split_command=SplitCellCommand(self, curve_coords, min_size=min_size)
+
+        if len(split_command.commands) > 0:
             self.undo_stack.push(split_command)
             self.select_cell(particle=selected_particle_n, cell=selected_cell_n)
 
@@ -4607,6 +4541,105 @@ class MergeCellsCommand(QUndoCommand):
         if self.main_window.frame_number == self.frame_number:
             self.main_window._refresh_segmentation()
 
+class SplitCellCommand(QUndoCommand):
+    def __init__(self, main_window: MainWidget, curve:np.array, min_size: int=0, description: str = '', refresh: bool = True):
+        self.main_window = main_window
+        self.frame_number = self.main_window.frame_number
+        self.curve_coords = curve
+        self.min_size = min_size
+        self.refresh = refresh
+        self.commands = self._create_commands()
+        if description:
+            self.description = description
+        super().__init__(self.description)
+    
+    def _create_commands(self):
+        from segmentation_tools.shape_operations import coords_to_mask, split_cell
+        next_label = np.max(self.main_window.frame.masks)
+
+        # Create a binary mask of the curve
+        curve_mask = np.zeros_like(self.main_window.frame.masks, dtype=bool)
+        for i in range(len(self.curve_coords) - 1):
+            rr, cc = draw.line(self.curve_coords[i][0], self.curve_coords[i][1], self.curve_coords[i + 1][0], self.curve_coords[i + 1][1])
+            # remove out-of-bounds coordinates
+            inbound_coords = (cc >= 0) & (cc < curve_mask.shape[0]) & (rr >= 0) & (rr < curve_mask.shape[1])
+            rr, cc = rr[inbound_coords], cc[inbound_coords]
+            curve_mask[cc, rr] = True
+
+        # Find unique labels that intersect with the curve
+        intersected_labels = np.unique(self.main_window.frame.masks[curve_mask])
+        intersected_labels = intersected_labels[intersected_labels != 0]
+
+        commands = []
+        split_IDs = []
+        n_new = 0
+        split_command = QUndoCommand()
+        for label in intersected_labels:
+            cell = self.main_window.frame.cells[label - 1]
+            outline = cell.outline
+            new_masks = split_cell(outline, self.curve_coords, min_area_threshold=self.min_size)
+            if len(new_masks) == 0:  # no split
+                continue
+            split_IDs.append(label)
+            n_new += len(new_masks)
+            inheritor_cell = cell.copy()
+            inheritor_mask = coords_to_mask(new_masks[0], shape=self.main_window.frame.masks.shape)
+            inheritor_cell.outline = outlines_list(inheritor_mask)[0]
+            if hasattr(self.main_window.stack, 'tracked_centroids'):
+                inheritor_particle = self.main_window.particle_from_cell(cell.n)
+                row_args = {'particle': inheritor_particle}
+            else:
+                row_args = {}
+            commands.append(
+                DeleteCellCommand(
+                    self.main_window,
+                    cell,
+                    description=f'Delete unsplit mask {label} in frame {self.main_window.frame_number}',
+                    parent=split_command,
+                    show=False
+                )
+            )
+            commands.append(
+                AddCellCommand(
+                    self.main_window,
+                    inheritor_cell,
+                    inheritor_mask,
+                    description=f'Inheritor cell {label} in frame {self.main_window.frame_number}',
+                    row_args=row_args,
+                    parent=split_command,
+                    show=False
+                )
+            )
+            for i, new_mask in enumerate(new_masks[1:]):
+                label_id = next_label + i
+                new_mask = coords_to_mask(new_mask, shape=self.main_window.frame.masks.shape)
+                new_outline = outlines_list(new_mask)[0]
+                color_ID = self.main_window.canvas.random_color_ID()
+                new_cell = Cell(label_id, new_outline, parent=self.main_window.frame, frame_number=self.main_window.frame_number, color_ID=color_ID)
+                commands.append(
+                    AddCellCommand(
+                        self.main_window,
+                        new_cell,
+                        new_mask,
+                        description=f'New split mask {label_id} in frame {self.main_window.frame_number}',
+                        parent=split_command,
+                        show=True
+                    )
+                )
+        self.description = f'Split masks {split_IDs} into {n_new} masks in frame {self.main_window.frame_number}'
+        return commands
+
+    def redo(self):
+        for command in self.commands:
+            command.redo()
+        if self.refresh and self.main_window.frame_number == self.frame_number:
+            self.main_window._refresh_segmentation()
+
+    def undo(self):
+        for command in reversed(self.commands):
+            command.undo()
+        if self.refresh and self.main_window.frame_number == self.frame_number:
+            self.main_window._refresh_segmentation()
 
 class MergeParticleMasksCommand(QUndoCommand):
     """

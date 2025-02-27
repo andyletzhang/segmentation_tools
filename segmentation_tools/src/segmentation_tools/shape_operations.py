@@ -6,7 +6,7 @@ from skimage.draw import polygon
 def get_enclosed_pixels(outline: np.ndarray) -> np.ndarray:
     """Return all pixels enclosed by the outline."""
     line = unary_union(LineString(outline))
-    all_polygons = list(polygonize(line))
+    all_polygons = geoms_to_polygons(polygonize(line))
 
     enclosed_pixels = np.concatenate([enclosed_pixels_polygon(p) for p in all_polygons])
     return enclosed_pixels
@@ -27,7 +27,7 @@ def split_cell(outline: np.ndarray, curve: np.ndarray, min_area_threshold: int=0
     curve_line = LineString(curve)
    
     # Generate polygons
-    polygons = list(split(cell_polygon, curve_line).geoms)
+    polygons = geoms_to_polygons(split(cell_polygon, curve_line).geoms)
    
     if len(polygons) <= 1:  # just the original polygon
         return []
@@ -42,6 +42,15 @@ def split_cell(outline: np.ndarray, curve: np.ndarray, min_area_threshold: int=0
 
     # Sort polygons by size and return
     return sorted([enclosed_pixels_polygon(poly) for poly in polygons], key=len, reverse=True)
+
+def geoms_to_polygons(geoms) -> list[Polygon]:
+    polygons=[]
+    for geom in geoms:
+        if isinstance(geom, Polygon):
+            polygons.append(geom)
+        else:
+            polygons.extend(geom.geoms)
+    return polygons
 
 def merge_small_polygons(polygons: list[Polygon], min_area_threshold: int) -> list[Polygon]:
     """Merge small polygons with their largest neighbor"""
@@ -93,7 +102,7 @@ def coords_to_mask(coords: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
     mask[coords[:, 0], coords[:, 1]] = 1
     return mask
 
-def get_mask_boundary(self, mask):
+def get_mask_boundary(mask):
     from skimage.segmentation import find_boundaries
 
     boundaries = find_boundaries(mask, mode='inner')

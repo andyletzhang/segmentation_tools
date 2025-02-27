@@ -1314,6 +1314,7 @@ class MainWidget(QMainWindow):
             command = DeleteCellsCommand(
                 self, cells=to_delete, description=f'Delete particle {particle_n} tail from frame {current_frame_n}'
             )
+
             self.undo_stack.push(command)
 
             # reselect the particle
@@ -2159,7 +2160,10 @@ class MainWidget(QMainWindow):
             If no split was made, returns None.
         """
         current_cell_n = self.cell_from_particle(self.selected_particle_n)
-        command = SplitParticleTracksCommand(self, self.selected_particle_n, self.frame_number)
+        self.canvas.clear_overlay('selection')
+        new_color=self.canvas.random_color_ID()
+        self._mock_select_recolor(self.frame.cells[current_cell_n], color=new_color)
+        command = SplitParticleTracksCommand(self, self.selected_particle_n, self.frame_number, color=new_color)
         self.undo_stack.push(command)
 
         self.select_cell(cell=current_cell_n)
@@ -4587,7 +4591,7 @@ class MergeCellsCommand(QUndoCommand):
             command.redo()
         if self.main_window.frame_number == self.frame_number:
             self.main_window._refresh_segmentation()
-            self.main_window.select_cell(cell=selection)
+            self.main_window.select_cell(cell=selection) # reselect merged cell
         self.has_executed = True
 
     def undo(self):
@@ -4928,7 +4932,7 @@ class SplitParticleTracksCommand(QUndoCommand):
     Assigns a new particle ID to all frames >= split_frame.
     """
 
-    def __init__(self, main_window, particle_id, split_frame, description=None):
+    def __init__(self, main_window, particle_id, split_frame, color: int=None, description: str=None):
         """
         Initialize the split command.
 
@@ -4953,6 +4957,11 @@ class SplitParticleTracksCommand(QUndoCommand):
         # The new particle ID to be created
         self.new_particle_id = None
 
+        if color is None:
+            self.new_color = self.main_window.canvas.random_color_ID()
+        else:
+            self.new_color = color
+
     def _create_commands(self):
         """
         Create all the necessary sub-commands for splitting the particle track.
@@ -4968,9 +4977,6 @@ class SplitParticleTracksCommand(QUndoCommand):
 
         # Get all cells from the original particle
         original_particle = self.main_window.stack.get_particle(self.particle_id)
-
-        # Generate a new color for the split particle
-        new_color = self.main_window.canvas.random_color_ID()
 
         # Create commands for each cell to be reassigned
         for idx in df[split_mask].index:
@@ -4989,7 +4995,7 @@ class SplitParticleTracksCommand(QUndoCommand):
                     cell,
                     self.particle_id,
                     self.new_particle_id,
-                    color=new_color,  # Use a new color for the split particle
+                    color=self.new_color,  # Use a new color for the split particle
                 )
                 self.commands.append(reassign_cmd)
 

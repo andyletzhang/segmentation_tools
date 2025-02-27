@@ -2902,6 +2902,9 @@ class MainWidget(QMainWindow):
             inheritor_cell.outline = outlines_list(inheritor_mask)[0]
             if hasattr(self.stack, 'tracked_centroids'):
                 inheritor_particle = self.particle_from_cell(cell.n)
+                row_args = {'particle': inheritor_particle}
+            else:
+                row_args = {}
             commands.append(
                 DeleteCellCommand(
                     self, cell, description=f'Delete unsplit mask {label} in frame {self.frame_number}', parent=split_command
@@ -2913,7 +2916,7 @@ class MainWidget(QMainWindow):
                     inheritor_cell,
                     inheritor_mask,
                     description=f'Inheritor cell {label} in frame {self.frame_number}',
-                    row_args={'particle': inheritor_particle},
+                    row_args=row_args,
                     parent=split_command,
                 )
             )

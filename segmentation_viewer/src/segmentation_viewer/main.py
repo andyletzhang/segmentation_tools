@@ -4549,6 +4549,7 @@ class SplitCellCommand(QUndoCommand):
         self.min_size = min_size
         self.refresh = refresh
         self.commands = self._create_commands()
+        self.has_executed = False
         if description:
             self.description = description
         super().__init__(self.description)
@@ -4630,12 +4631,18 @@ class SplitCellCommand(QUndoCommand):
         return commands
 
     def redo(self):
+        if self.has_executed:
+            self.main_window.select_cell(None)
+        else:
+            self.has_executed = True
+
         for command in self.commands:
             command.redo()
         if self.refresh and self.main_window.frame_number == self.frame_number:
             self.main_window._refresh_segmentation()
 
     def undo(self):
+        self.main_window.select_cell(None)
         for command in reversed(self.commands):
             command.undo()
         if self.refresh and self.main_window.frame_number == self.frame_number:

@@ -2023,20 +2023,27 @@ class MainWidget(QMainWindow):
     def _update_cell_label(self, cell_n):
         """Update the status bar with the selected cell number."""
         if cell_n is None:
-            self.status_cell.setText('Selected Cell: None')
-            self.selected_cell_prompt.setText('')
+            status_text='None'
+            prompt_text=''
         else:
-            self.status_cell.setText(f'Selected Cell: {cell_n}')
-            self.selected_cell_prompt.setText(str(cell_n))
+            status_text=str(cell_n)
+            prompt_text=str(cell_n)
+
+        self.selected_cell_prompt.blockSignals(True)
+        self.status_cell.setText(f'Selected Cell: {status_text}')
+        self.selected_cell_prompt.setText(prompt_text)
+        self.selected_cell_prompt.blockSignals(False)
 
     def _update_tracking_ID_label(self, tracking_ID):
         """Update the status bar with the current tracking ID."""
         if tracking_ID is None:
-            self.status_tracking_ID.setText('Tracking ID: None')
-            self.selected_particle_prompt.setText('')
+            prompt_text=''
         else:
-            self.status_tracking_ID.setText(f'Tracking ID: {tracking_ID}')
-            self.selected_particle_prompt.setText(str(tracking_ID))
+            prompt_text=str(tracking_ID)
+
+        self.selected_particle_prompt.blockSignals(True)
+        self.selected_particle_prompt.setText(prompt_text)
+        self.selected_particle_prompt.blockSignals(False)
 
     def _track_centroids(self):
         if not self.file_loaded:

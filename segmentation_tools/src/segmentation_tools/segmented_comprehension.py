@@ -11,6 +11,8 @@ import copy
 from . import preprocessing
 from .utils import masks_to_outlines, outlines_list
 
+from typing import Union, Optional
+
 """
     Stacks are collections of time lapse images on a single stage.
     Images are individual seg.npy files, presumed to be segmented membranes generated with cellpose.
@@ -545,7 +547,7 @@ class SegmentedStack:
         frame = self.frames[cell.frame]
         frame.add_cell(cell, mask=mask)
 
-    def remove_cell(self, cell, mask: np.ndarray | None = None):
+    def remove_cell(self, cell, mask: Optional[np.ndarray] = None):
         frame = self.frames[cell.frame]
         frame.remove_cell(cell, mask=mask)
 
@@ -674,7 +676,7 @@ class TimeStack(SegmentedStack):
             placeholder_particle.update({k: v for k, v in data.items() if k in t.columns})
             self.tracked_centroids = pd.concat([t, pd.DataFrame(placeholder_particle, index=[t.index.max() + 1])])
 
-    def remove_cell(self, cell, mask: np.ndarray | None = None):
+    def remove_cell(self, cell, mask: Optional[np.ndarray] = None):
         super().remove_cell(cell, mask=mask)
         frame_number = cell.frame
         if hasattr(self, 'tracked_centroids'):
@@ -880,7 +882,7 @@ class TimeStack(SegmentedStack):
                 for attribute, value in zip(attributes, values[n]):
                     setattr(cell, attribute, value)
 
-    def get_tracking_row(self, frame_or_cell: int | Cell, cell_number: int | None = None, particle_number: int | None = None):
+    def get_tracking_row(self, frame_or_cell: Union[int, Cell], cell_number: Optional[int] = None, particle_number: Optional[int] = None):
         """
         Retrieve the tracking data for a given cell at a given frame.
 
@@ -1220,7 +1222,7 @@ class SegmentedImage:
         elif isinstance(data, dict):  # already passed a dictionary
             pass
         else:
-            raise ValueError('data must be a path to a seg.npy file or a dictionary of data from a seg.npy file.')
+            raise ValueError(f'data must be a path to a seg.npy file or a dictionary of data from a seg.npy file, not {type(data)}.')
 
         if 'masks' not in data.keys():
             raise ValueError('Failed to instantiate SegmentedImage: segmented data must contain masks.')
@@ -1460,7 +1462,7 @@ class SegmentedImage:
 
         return idx
 
-    def remove_cell(self, cell: Cell, mask: np.ndarray | None = None):
+    def remove_cell(self, cell: Cell, mask: Optional[np.ndarray] = None):
         """removes a cell from the image by object."""
         if mask is None:
             mask = self.masks == cell.n + 1

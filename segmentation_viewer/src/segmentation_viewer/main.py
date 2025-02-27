@@ -2420,7 +2420,6 @@ class MainWidget(QMainWindow):
         cell : int
             The cell number to select. If both particle and cell are specified, particle takes precedence.
         """
-
         if self.FUCCI_mode:  # classifying FUCCI, no cell selection
             return
 
@@ -2634,49 +2633,52 @@ class MainWidget(QMainWindow):
                     self._mitosis_selected(self.particle_from_cell(current_cell_n))
 
                 # cell selection actions
-                if current_cell_n >= 0:
+                if current_cell_n >= 0: # clicked on a cell
+
+                    # delete cell from all frames
                     if (event.modifiers() & Qt.KeyboardModifier.ControlModifier) and (
                         event.modifiers() & Qt.KeyboardModifier.ShiftModifier
                     ):
-                        # delete cell from all frames
                         particle = self.particle_from_cell(current_cell_n, self.frame_number)
                         if particle is not None:
                             self.delete_particle(particle_n=particle)
 
+                    # delete cell from current frame
                     elif event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-                        # delete cell from current frame
                         self.delete_cell(current_cell_n)
-                        if current_particle_n is None:
-                            self.select_cell(None)  # deselect the cell
-                        else:
-                            self.select_cell(particle=current_particle_n)
 
+                        if current_particle_n is None: # no tracking data
+                            self.select_cell(None)  # just deselect the cell
+                        else: # tracking data available
+                            self.select_cell(particle=current_particle_n) # reselect the particle
+                    
+                    # merge cells in all frames
                     elif (event.modifiers() & Qt.KeyboardModifier.AltModifier) and (
                         event.modifiers() & Qt.KeyboardModifier.ShiftModifier
                     ):
-                        # merge cells in all frames
                         particle = self.particle_from_cell(current_cell_n, self.frame_number)
                         if particle is not None:
                             self.merge_particle_masks(self.selected_particle_n, particle)
-                        self.select_cell(particle=self.selected_particle_n)  # reselect the merged particle
 
+                    # merge cells in current frame
                     elif event.modifiers() == Qt.KeyboardModifier.AltModifier and self.selected_cell_n is not None:
                         self.merge_cell_masks(self.selected_cell_n, current_cell_n)
                         self.select_cell(cell=self.selected_cell_n)  # reselect the merged cell
 
-                    elif event.modifiers() == Qt.KeyboardModifier.ShiftModifier:  # merge particles
+                    # merge particles at current frame
+                    elif event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
                         if self.selected_particle_n is not None:
                             second_particle = self.particle_from_cell(current_cell_n)
                             if second_particle is not None:  # if a particle is found
                                 self.merge_particle_tracks(self.selected_particle_n, second_particle)
                         self.select_cell(cell=current_cell_n)
 
+                    # deselect current cell
                     elif current_cell_n == self.selected_cell_n:
-                        # clicking the same cell again deselects it
                         self.select_cell(None)
 
+                    # select the cell
                     else:
-                        # select the cell
                         self.select_cell(cell=current_cell_n)
 
                 else:  # clicked on background, deselect
@@ -3005,11 +3007,12 @@ class MainWidget(QMainWindow):
         self.undo_stack.push(command)
         self.select_cell(particle=particle_n1)
 
-    def _mock_select_recolor(self, cell, color):
-        self.canvas.redraw_cell_mask(cell, color=color)
+    def _mock_select_recolor(self, cell, color=None):
         self.canvas.add_cell_highlight(
             cell.n, alpha=self.canvas.selected_cell_alpha, color=self.canvas.selected_cell_color
         )
+        if color is not None:
+            self.canvas.redraw_cell_mask(cell, color=color)
 
     def _check_cell_numbers(self):
         """for troubleshooting: check if the cell numbers in the frame and the masks align."""

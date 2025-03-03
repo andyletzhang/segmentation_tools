@@ -221,7 +221,7 @@ class MainWidget(QMainWindow):
                 'Export Heights...': (self._export_heights, None),
                 'Export ImageJ ROIs...': (self._export_ROIs, None),
             },
-            'Import': {'Import Heights...': (self._import_heights, None), 'Import Images...': (self.import_images, None)},
+            'Import': {'Import Images...': (self.import_images, None), 'Import Heights...': (self._import_heights, None)},
             'Save Screenshot': {
                 'Window': (self._save_screenshot, None),
                 'Image Plot': (self._save_img_plot, None),
@@ -1283,8 +1283,8 @@ class MainWidget(QMainWindow):
             )
             self._get_red_green(frame)
 
-        self.red_threshold = self.frame.red_fluor_threshold
-        self.green_threshold = self.frame.green_fluor_threshold
+        self.left_toolbar.red_threshold = self.frame.red_fluor_threshold
+        self.left_toolbar.green_threshold = self.frame.green_fluor_threshold
         self.FUCCI_dropdown = 3
         self._FUCCI_overlay()
 

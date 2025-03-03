@@ -2160,8 +2160,9 @@ class MainWidget(QMainWindow):
             If no split was made, returns None.
         """
         current_cell_n = self.cell_from_particle(self.selected_particle_n)
+        current_cell_color = self.frame.cells[current_cell_n].color_ID
         self.canvas.clear_overlay('selection')
-        new_color=self.canvas.random_color_ID()
+        new_color = self.canvas.random_color_ID(ignore=current_cell_color)
         self._mock_select_recolor(self.frame.cells[current_cell_n], color=new_color)
         command = SplitParticleTracksCommand(self, self.selected_particle_n, self.frame_number, color=new_color)
         self.undo_stack.push(command)
@@ -4778,7 +4779,11 @@ class ReassignParticleCommand(QUndoCommand):
             if new_particle and len(new_particle) > 0:
                 self.new_color_ID = new_particle[0].color_ID
             else:  # If the particle being added to doesn't exist, generate a new color
-                self.new_color_ID = self.main_window.canvas.random_color_ID()
+                try:
+                    old_color_ID = self.main_window.stack.get_particle(self.old_particle_id)[0].color_ID
+                except IndexError:
+                    old_color_ID = None
+                self.new_color_ID = self.main_window.canvas.random_color_ID(ignore=old_color_ID)
 
         # Create and execute the color command
         color_command = ChangeCellColorCommand(
@@ -4837,8 +4842,7 @@ class MergeParticleTracksCommand(QUndoCommand):
         self.particle2 = particle2
         self.merge_frame = merge_frame
 
-        # Will hold all the sub-commands created during execution
-        self.commands = []
+        self.commands = self._create_commands()
 
         # Store whether we've executed once already
         self.has_executed = False
@@ -4852,111 +4856,69 @@ class MergeParticleTracksCommand(QUndoCommand):
         Create all the necessary sub-commands for merging the particle tracks.
         This is done the first time redo() is called.
         """
-        df = self.main_window.stack.tracked_centroids
 
-        # Identify affected particles
-        particle1_mask = df['particle'] == self.particle1
-        particle2_mask = df['particle'] == self.particle2
+        particle1 = np.array(self.main_window.stack.get_particle(self.particle1))
+        particle2 = np.array(self.main_window.stack.get_particle(self.particle2))
+
+        frames1 = np.array([cell.frame for cell in particle1])
+        frames2 = np.array([cell.frame for cell in particle2])
+
+        original_color1 = particle1[0].color_ID
+        original_color2 = particle2[0].color_ID
 
         # Check if particle1 persists beyond merge_frame
-        particle1_after_mask = particle1_mask & (df['frame'] >= self.merge_frame)
-        particle1_after = df[particle1_after_mask]
-        next_ID = df['particle'].max() + 1
+        particle1_after = particle1[frames1>=self.merge_frame]
+        particle2_before = particle2[frames2<self.merge_frame]
+        particle2_after = particle2[frames2>=self.merge_frame]
 
+        if len(particle2_after) == 0:
+            return []
+
+        next_ID = self.main_window.stack.tracked_centroids['particle'].max() + 1
+
+        commands=[]
         # Create a new ID for particle1 continuation if needed
         if len(particle1_after) > 0:
             self.new_particle1_id = next_ID
-            self.new_particle1_color = self.main_window.canvas.random_color_ID()
+            self.new_particle1_color = self.main_window.canvas.random_color_ID(ignore=[original_color1, original_color2])
             next_ID += 1
 
-            # Get all cells from particle1 after merge_frame
-            particle1_original = self.main_window.stack.get_particle(self.particle1)
-
             # Create commands to reassign particle1 cells after merge_frame
-            for idx in particle1_after.index:
-                frame = df.at[idx, 'frame']
-                cell = None
-
-                # Find the corresponding cell from the particle
-                for c in particle1_original:
-                    if c.frame == frame:
-                        cell = c
-                        break
-
-                if cell:
-                    reassign_cmd = ReassignParticleCommand(
-                        self.main_window, cell, self.particle1, self.new_particle1_id, color=self.new_particle1_color
-                    )
-                    self.commands.append(reassign_cmd)
-
-        # Check if particle2 exists before merge_frame
-        particle2_before_mask = particle2_mask & (df['frame'] < self.merge_frame)
-        particle2_before = df[particle2_before_mask]
+            for cell1 in particle1_after:
+                reassign_cmd = ReassignParticleCommand(
+                    self.main_window, cell1, self.particle1, self.new_particle1_id, color=self.new_particle1_color
+                )
+                commands.append(reassign_cmd)
 
         # Create a new ID for particle2 before merge if needed
         if len(particle2_before) > 0:
             self.new_particle2_id = next_ID
-            self.new_particle2_color = self.main_window.canvas.random_color_ID()
-
-            # Get all cells from particle2
-            particle2_original = self.main_window.stack.get_particle(self.particle2)
-
+            self.new_particle2_color = self.main_window.canvas.random_color_ID(ignore=[original_color1, original_color2])
             # Create commands to reassign particle2 cells before merge_frame
-            for idx in particle2_before.index:
-                frame = df.at[idx, 'frame']
-                cell = None
-
-                # Find the corresponding cell from the particle
-                for c in particle2_original:
-                    if c.frame == frame:
-                        cell = c
-                        break
-
-                if cell:
-                    reassign_cmd = ReassignParticleCommand(
-                        self.main_window, cell, self.particle2, self.new_particle2_id, color=self.new_particle2_color
-                    )
-                    self.commands.append(reassign_cmd)
-
-        # Create commands to merge particle2 into particle1 for frame >= merge_frame
-        merge_mask = particle2_mask & (df['frame'] >= self.merge_frame)
-
-        # Get the cells from particle2
-        particle2_original = self.main_window.stack.get_particle(self.particle2)
-
-        # Get the color from particle1 for merged cells
-        particle1_color = None
-        particle1_obj = self.main_window.stack.get_particle(self.particle1)
-        if particle1_obj and len(particle1_obj) > 0:
-            particle1_color = particle1_obj[0].color_ID
-
-        # Create commands for each cell to be merged
-        for idx in df[merge_mask].index:
-            frame = df.at[idx, 'frame']
-            cell = None
-
-            # Find the corresponding cell from the particle
-            for c in particle2_original:
-                if c.frame == frame:
-                    cell = c
-                    break
-
-            if cell:
+            for cell2 in particle2_before:
                 reassign_cmd = ReassignParticleCommand(
-                    self.main_window,
-                    cell,
-                    self.particle2,
-                    self.particle1,
-                    color=particle1_color,  # Use particle1's color for consistency
+                    self.main_window, cell2, self.particle2, self.new_particle2_id, color=self.new_particle2_color
                 )
-                self.commands.append(reassign_cmd)
+                commands.append(reassign_cmd)
+
+        # Create commands for merging particle2 cells after merge_frame
+        for cell2 in particle2_after:
+            reassign_cmd = ReassignParticleCommand(
+                self.main_window,
+                cell2,
+                self.particle2,
+                self.particle1,
+                color=original_color1,  # Use particle1's color for consistency
+            )
+            commands.append(reassign_cmd)
+
+        return commands
 
     def redo(self):
         """Execute the merge operation by executing all sub-commands."""
         if self.has_executed:
             self.main_window.select_cell(None)
         else:
-            self._create_commands()
             self.has_executed = True
 
         for command in self.main_window._progress_bar(self.commands, leave=False):
@@ -5004,7 +4966,8 @@ class SplitParticleTracksCommand(QUndoCommand):
         self.new_particle_id = None
 
         if color is None:
-            self.new_color = self.main_window.canvas.random_color_ID()
+            current_color = self.main_window.stack.get_particle(self.particle_id)[0].color_ID
+            self.new_color = self.main_window.canvas.random_color_ID(ignore=current_color)
         else:
             self.new_color = color
 

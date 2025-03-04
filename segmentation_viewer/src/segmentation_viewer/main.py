@@ -934,7 +934,7 @@ class MainWidget(QMainWindow):
         diameter = float(diameter)
         padding = 5
         img_shape = self.canvas.img_data.shape[:2]
-        self.circle_mask = QGraphicsEllipseItem(padding, img_shape[1] + padding, diameter, diameter)
+        self.circle_mask = QGraphicsEllipseItem(padding, img_shape[0] + padding, diameter, diameter)
         self.circle_mask.setBrush(pg.mkBrush(color='#4A90E2'))
         self.canvas.img_plot.addItem(self.circle_mask)
 

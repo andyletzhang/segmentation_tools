@@ -4366,15 +4366,18 @@ class AddCellCommand(BaseCellCommand):
         return ChangeCellColorCommand(self.main_window.canvas, self.cell, self.new_cell_color, description='New cell color')
 
     def _get_tracking_command(self):
-        return AddTrackingRowCommand(
-            main_window=self.main_window,
-            frame_number=self.cell.frame,
-            cell_number=self.cell.n,
-            cell=self.cell,
-            row=None,
-            row_args=self.row_args,
-            description='Create tracking data for new cell',
-        )
+        if hasattr(self.main_window.stack, 'tracked_centroids'):
+            return AddTrackingRowCommand(
+                main_window=self.main_window,
+                frame_number=self.cell.frame,
+                cell_number=self.cell.n,
+                cell=self.cell,
+                row=None,
+                row_args=self.row_args,
+                description='Create tracking data for new cell',
+            )
+        else:
+            return None
 
 
 class DeleteCellCommand(BaseCellCommand):

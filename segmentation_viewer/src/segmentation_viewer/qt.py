@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QPointF, Qt, pyqtSignal, QTimer, QObject, QThread, pyqtSlot
+from PyQt6.QtCore import QPointF, Qt, pyqtSignal, QTimer, QObject
 from PyQt6.QtGui import QColor, QIntValidator, QDoubleValidator, QFont, QMouseEvent, QUndoStack, QUndoCommand
 from PyQt6.QtWidgets import (
     QColorDialog,
@@ -699,24 +699,23 @@ class QueuedUndoStack(QUndoStack):
     def redo(self):
         self.queuedRedo()
 
+    def _push(self, command):
+        super().push(command)
+
+    def push(self, command):
+        self.push_queue.push(command)
+
 class UndoStackManager(QObject):
-    """Manages asynchronous command execution for QUndoStack"""
-    command_completed = pyqtSignal(QUndoCommand)
-    
+    """Manages queued command execution for QUndoStack"""    
     def __init__(self, undo_stack: QUndoStack):
         super().__init__()
         self.undo_stack = undo_stack
         self.pending_commands = []
         self.is_executing = False
-        
-        # Connect completion signal to process next command
-        self.command_completed.connect(self.on_command_completed)
     
     def push(self, command: QUndoCommand):
         """Add command to queue and start processing if not already running"""
         self.pending_commands.append(command)
-        print(f"Command added to queue: {command.text()}")
-        print(f"Queue length: {len(self.pending_commands)}")
         
         if not self.is_executing:
             self._process_next_command()
@@ -730,14 +729,5 @@ class UndoStackManager(QObject):
         self.is_executing = True
         command = self.pending_commands.pop(0)
         
-        self.undo_stack.push(command)
-        self._process_next_command()
-    
-    @pyqtSlot(QUndoCommand)
-    def on_command_completed(self, command):
-        """Handle completed async command"""
-        # Push the completed command to the undo stack
-        self.undo_stack.push(command)
-        
-        # Process the next command in queue
+        self.undo_stack._push(command)
         self._process_next_command()

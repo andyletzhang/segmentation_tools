@@ -2159,12 +2159,22 @@ class MainWidget(QMainWindow):
             The new particle number assigned to the second half of the split particle.
             If no split was made, returns None.
         """
-        current_cell_n = self.cell_from_particle(self.selected_particle_n)
-        current_cell_color = self.frame.cells[current_cell_n].color_ID
+        current_particle_n = self.selected_particle_n
+
+        # if the selected particle has no head, nothing to split
+        first_frame_cell = self.stack.get_particle(current_particle_n)[0]
+        if self.frame_number == first_frame_cell.frame:
+            return
+
+        # Apply visual changes to the current frame
+        current_cell_n = self.cell_from_particle(current_particle_n)
+        current_cell_color = first_frame_cell.color_ID
         self.canvas.clear_overlay('selection')
         new_color = self.canvas.random_color_ID(ignore=current_cell_color)
         self._mock_select_recolor(self.frame.cells[current_cell_n], color=new_color)
-        command = SplitParticleTracksCommand(self, self.selected_particle_n, self.frame_number, color=new_color)
+
+        # Create and execute the split command
+        command = SplitParticleTracksCommand(self, current_particle_n, self.frame_number, color=new_color)
         self.undo_stack.push(command)
 
         self.select_cell(cell=current_cell_n)
@@ -2933,6 +2943,9 @@ class MainWidget(QMainWindow):
         particle_n2 : int
             The particle number to merge.
         """
+        # same particle, no need to merge
+        if particle_n1 == particle_n2:
+            return
         # Apply visual change to current frame immediately
         cell2 = self.frame.cells[self.cell_from_particle(particle_n2)]
         self._mock_select_recolor(cell2, color=self.stack.get_particle(particle_n1)[0].color_ID)

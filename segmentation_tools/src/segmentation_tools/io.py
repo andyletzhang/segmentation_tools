@@ -4,7 +4,7 @@ from tifffile import TiffFile
 from nd2 import ND2File
 
 # Function to convert XML elements into a dictionary
-def xml_to_dict(element):
+def xml_to_dict(element: ET.Element) -> dict:
     data_dict = {element.tag.split('}')[-1]: {} if element.attrib or list(element) else element.text}
     
     # Process children recursively
@@ -18,11 +18,11 @@ def xml_to_dict(element):
     
     return data_dict
 
-def read_ome_metadata(tif_file):
+def read_ome_metadata(tif_file: TiffFile) -> dict:
     root = ET.fromstring(tif_file.ome_metadata)
     return xml_to_dict(root)['OME']
 
-def read_tif_shape(tif_file):
+def read_tif_shape(tif_file: TiffFile) -> tuple:
     if tif_file.is_imagej:
         shape=[]
         for key in ['frames','slices','channels']:
@@ -30,7 +30,7 @@ def read_tif_shape(tif_file):
                 shape.append(tif_file.imagej_metadata[key])
             else:
                 shape.append(1)
-        img_shape=list(tif_file.pages[0].shape)
+        img_shape=list(tif_file.pages[0].shape)[:2]
         shape=shape+img_shape
 
         dimension_order='XYCZT' # default ImageJ dimension order
@@ -49,9 +49,9 @@ def read_tif_shape(tif_file):
 
     return (1,)+tuple(shape), dimension_order+'P'
 
-def read_tif(tif_file):
+def read_tif(tif_file: TiffFile) -> np.ndarray:
     shape, order=read_tif_shape(tif_file)
-    pages_shape=(shape[:-2]) # shape without the XY dimensions
+    pages_shape=(shape[:3]) # shape without the XY dimensions
     axes_map = {axis: i for i, axis in enumerate(reversed(order))}
     if len(tif_file.pages)==1 and np.prod(pages_shape)>1:
         # BigTIFF-adjacent (?) case with only one page.
@@ -63,13 +63,13 @@ def read_tif(tif_file):
             placeholder[i,j,k]=lambda i=i, j=j, k=k:np.array([a.compute() for a in tif_pages[i,j,k]])
         return placeholder
     else:
-        tif_pages=np.array(tif_file.pages).reshape(pages_shape).transpose(axes_map['T'], axes_map['P'], axes_map['Z'], axes_map['C'])
+        tif_pages=np.array(tif_file.pages).reshape(pages_shape).transpose(axes_map['T'], axes_map['P'], axes_map['Z'])
         placeholder=np.empty(tif_pages.shape[:3], dtype=object)
         for i,j,k in np.ndindex(placeholder.shape):
-            placeholder[i,j,k]=lambda i=i, j=j, k=k:np.array([a.asarray() for a in tif_pages[i,j,k]]) # lazy load
+            placeholder[i,j,k]=lambda i=i, j=j, k=k:tif_pages[i,j,k].asarray().transpose(2,0,1) # lazy load
         return placeholder
 
-def read_nd2_shape(nd2_file):
+def read_nd2_shape(nd2_file: ND2File) -> tuple:
     # Read metadata to get the shape (T, Z, C)
     shape = [1,1,1,1]
     for n, axis in enumerate(['T','P','Z','C']):
@@ -80,7 +80,7 @@ def read_nd2_shape(nd2_file):
     shape.extend(img_shape)  # Append (Y, X) to the shape
     return tuple(shape)
 
-def read_nd2(nd2_file):
+def read_nd2(nd2_file: ND2File) -> np.ndarray:
     # Open ND2 file with ND2Reader
     shape = read_nd2_shape(nd2_file)
     placeholder_shape = (shape[0], shape[1], shape[2])  # Only (P, T, Z)
@@ -97,7 +97,7 @@ from segmentation_tools.segmented_comprehension import SegmentedImage
 def load_seg_npy(file_path, load_img=False, mend=False, max_gap_size=300):
     data=np.load(file_path, allow_pickle=True).item()
     
-    if not 'img' in data.keys() and 'filename' in data.keys():
+    if 'img' not in data.keys() and 'filename' in data.keys():
         # this seg.npy was made with the cellpose GUI
         data=convert_GUI_seg(data)
 

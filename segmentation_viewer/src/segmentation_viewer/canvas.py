@@ -55,9 +55,8 @@ class PyQtGraphCanvas(QWidget):
         self.seg = pg.ImageItem(self.seg_data)
         self.img_outline_overlay = pg.ImageItem()
         self.seg_stat_overlay = pg.ImageItem()
-        stat_overlay_lut = get_matplotlib_LUT('viridis')
-        self.seg_stat_overlay.setLookupTable(stat_overlay_lut)
-        self.cb = pg.ColorBarItem(interactive=False, orientation='horizontal', colorMap='viridis', width=15)
+        self.cb = pg.ColorBarItem(interactive=False, orientation='horizontal', width=15)
+        self.update_stat_overlay_lut('viridis')
         self.cb.setFixedWidth(100)
         self.cb.setImageItem(self.seg_stat_overlay)
         self.cb.setVisible(False)
@@ -430,6 +429,12 @@ class PyQtGraphCanvas(QWidget):
 
         return
 
+    def update_stat_overlay_lut(self, colormap):
+        lut = get_matplotlib_LUT(colormap)
+        self.seg_stat_overlay.setLookupTable(lut)
+        self.cb.setColorMap(pg.ColorMap(pos=None, color=lut))
+        self.seg_stat_overlay.current_cmap = colormap
+
     def get_plot_coords(self, pos=None, pixels=True):
         """Get the pixel coordinates of the mouse cursor."""
         if pos is None:
@@ -774,7 +779,7 @@ class RGB_ImageItem:
     def set_grayscale(self, grayscale):
         self.show_grayscale = grayscale
         self.update_LUTs()
-
+        
 
 class CellMaskPolygons:
     """

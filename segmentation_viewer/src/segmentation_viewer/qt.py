@@ -1,25 +1,40 @@
-from PyQt6.QtCore import QPointF, Qt, pyqtSignal, QTimer, QObject
-from PyQt6.QtGui import QColor, QIntValidator, QDoubleValidator, QFont, QMouseEvent, QUndoStack, QUndoCommand
+import numpy as np
+from matplotlib import cm
+from PyQt6.QtCore import QObject, QPointF, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import (
+    QColor,
+    QDoubleValidator,
+    QFont,
+    QIcon,
+    QImage,
+    QIntValidator,
+    QMouseEvent,
+    QPixmap,
+    QUndoCommand,
+    QUndoStack,
+)
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QColorDialog,
     QComboBox,
     QDialog,
+    QFormLayout,
     QGridLayout,
     QHBoxLayout,
-    QFormLayout,
     QLabel,
     QLineEdit,
+    QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
+    QSpacerItem,
     QToolButton,
+    QUndoView,
     QVBoxLayout,
     QWidget,
-    QSpacerItem,
-    QSizePolicy,
-    QUndoView,
-    QMainWindow,
 )
-from superqt import QRangeSlider, QDoubleRangeSlider
+from superqt import QDoubleRangeSlider, QRangeSlider
+
 from segmentation_viewer.io import RangeStringValidator, range_string_to_list
 
 
@@ -40,13 +55,12 @@ class CustomComboBox(QComboBox):
         super().setCurrentText(text)
 
 
-class FineScrubber():
+class FineScrubber:
     def __init__(self, *args, scale=1, **kwargs):
         super().__init__(*args, **kwargs)
         self.fine_scrubbing = False
         self.fine_scrub_factor = 0.1  # Adjust this to change sensitivity
         self.original_press_pos = None
-        
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.RightButton:
@@ -112,12 +126,14 @@ class FineScrubber():
         self._singleStep = step
         self._pageStep = step * 10
         self.setRange(min_val, max_val)
-    
+
+
 class FineDoubleRangeSlider(QDoubleRangeSlider, FineScrubber):
     def __init__(self, *args, scale=1, **kwargs):
         super().__init__(*args, scale=scale, **kwargs)
-        self._singleStep=scale
-        self._pageStep=scale*10
+        self._singleStep = scale
+        self._pageStep = scale * 10
+
 
 class FineRangeSlider(QRangeSlider, FineScrubber):
     pass
@@ -132,12 +148,12 @@ def labeled_LUT_slider(slider_name=None, mode='int', decimals=2, default_range=(
 
     if mode == 'int':
         slider = FineRangeSlider(orientation=Qt.Orientation.Horizontal, parent=parent)
-        validator=QIntValidator(*default_range)
+        validator = QIntValidator(*default_range)
     elif mode == 'float':
         slider = FineDoubleRangeSlider(orientation=Qt.Orientation.Horizontal, parent=parent)
-        validator=QDoubleValidator(*default_range, decimals)
+        validator = QDoubleValidator(*default_range, decimals)
     else:
-        raise ValueError(f"Invalid slider mode: {mode}")
+        raise ValueError(f'Invalid slider mode: {mode}')
     slider.setRange(*default_range)
     slider.setValue(default_range)
 
@@ -196,8 +212,8 @@ def labeled_LUT_slider(slider_name=None, mode='int', decimals=2, default_range=(
     # Connect slider value changes to update the QLineEdit text
     def update_edits_from_slider():
         min_val, max_val = slider.value()
-        min_val=format_label(min_val)
-        max_val=format_label(max_val)
+        min_val = format_label(min_val)
+        max_val = format_label(max_val)
         range_labels[0].setText(min_val)
         range_labels[1].setText(max_val)
 
@@ -210,6 +226,7 @@ def labeled_LUT_slider(slider_name=None, mode='int', decimals=2, default_range=(
     labels_and_slider.addWidget(range_labels[1])
 
     return labels_and_slider, slider, range_labels
+
 
 class SubstackDialog(QDialog):
     def __init__(self, array_length, parent=None):
@@ -233,8 +250,8 @@ class SubstackDialog(QDialog):
         submit_layout = QHBoxLayout()
         self.button_confirm = QPushButton('Confirm', self)
         self.button_cancel = QPushButton('Cancel', self)
-        submit_layout.addWidget(self.button_confirm)
         submit_layout.addWidget(self.button_cancel)
+        submit_layout.addWidget(self.button_confirm)
 
         layout.addLayout(submit_layout)
 
@@ -251,6 +268,7 @@ class SubstackDialog(QDialog):
         except ValueError:
             QMessageBox.warning(self, 'Invalid Input', 'Invalid input. Please enter a valid range of frames.')
             return None
+
 
 class OverlaySettingsDialog(QDialog):
     settings_applied = pyqtSignal(dict)
@@ -316,9 +334,9 @@ class OverlaySettingsDialog(QDialog):
         self.button_ok = QPushButton('OK', self)
         self.button_cancel = QPushButton('Cancel', self)
         self.button_apply = QPushButton('Apply', self)
-        submit_layout.addWidget(self.button_ok)
         submit_layout.addWidget(self.button_cancel)
         submit_layout.addWidget(self.button_apply)
+        submit_layout.addWidget(self.button_ok)
 
         dialog_layout.addLayout(submit_layout)
 
@@ -480,9 +498,10 @@ class CollapsibleWidget(QWidget):
 
 
 class ChannelOrderDialog(QDialog):
-    previewRequested=pyqtSignal(list)
-    clearPreviewRequested=pyqtSignal()
-    finished=pyqtSignal(list)
+    previewRequested = pyqtSignal(list)
+    clearPreviewRequested = pyqtSignal()
+    finished = pyqtSignal(list)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Channel Order')
@@ -514,12 +533,12 @@ class ChannelOrderDialog(QDialog):
 
     def _check_input(self):
         try:
-            channel_order=self.get_input()
+            channel_order = self.get_input()
             if len(channel_order) == 3:
                 self.previewRequested.emit(channel_order)
         except ValueError:
             self.clearPreviewRequested.emit()
-        
+
     def clear_and_reject(self):
         self.clearPreviewRequested.emit()
         self.reject()
@@ -529,7 +548,7 @@ class ChannelOrderDialog(QDialog):
         Returns the text entered by the user in the QLineEdit.
         """
         return range_string_to_list(self.line_edit.text())
-    
+
     def confirm_and_finish(self):
         try:
             channel_order = self.get_input()
@@ -542,14 +561,16 @@ class ChannelOrderDialog(QDialog):
             QMessageBox.warning(self, 'Invalid Input', f'Invalid input: {self.line_edit.text()}')
             return None
 
+
 class LookupTableDialog(QDialog):
-    valueChanged=pyqtSignal(list)
+    valueChanged = pyqtSignal(list)
+
     def __init__(self, parent=None, options=[], initial_LUTs=[]):
         super().__init__(parent)
         self.setWindowTitle('Edit LUTs')
 
         # Layout and widgets
-        layout=QVBoxLayout(self)
+        layout = QVBoxLayout(self)
         dropdown_layout = QFormLayout()
         dropdown_layout.setSpacing(2)
         self.label = QLabel('Enter lookup tables:', self)
@@ -566,7 +587,7 @@ class LookupTableDialog(QDialog):
             dropdown.addItems(options)
             dropdown.setCurrentText(current_value)
             dropdown.currentIndexChanged.connect(self.send_preview)
-        
+
         dropdown_layout.addRow(red_label, self.red_dropdown)
         dropdown_layout.addRow(green_label, self.green_dropdown)
         dropdown_layout.addRow(blue_label, self.blue_dropdown)
@@ -580,7 +601,7 @@ class LookupTableDialog(QDialog):
 
         layout.addLayout(dropdown_layout)
         layout.addLayout(submit_layout)
-        
+
         # Connect buttons
         self.button_confirm.clicked.connect(self.accept)
         self.button_cancel.clicked.connect(self.reject)
@@ -591,21 +612,22 @@ class LookupTableDialog(QDialog):
     def get_input(self):
         return [self.red_dropdown.currentText(), self.green_dropdown.currentText(), self.blue_dropdown.currentText()]
 
+
 class FrameStackDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         # dialog to save either frame or stack
-        self.setWindowTitle("Save Options")
-        
+        self.setWindowTitle('Save Options')
+
         # Create custom button box
-        layout=QHBoxLayout(self)
-        save_stack_button = QPushButton("Save Stack")
-        save_frame_button = QPushButton("Save Frame")
-        
+        layout = QHBoxLayout(self)
+        save_stack_button = QPushButton('Save Stack')
+        save_frame_button = QPushButton('Save Frame')
+
         # Add buttons to layout
         layout.addWidget(save_frame_button)
         layout.addWidget(save_stack_button)
-        
+
         # Connect signals
         save_stack_button.clicked.connect(self.save_stack)
         save_frame_button.clicked.connect(self.save_frame)
@@ -620,7 +642,7 @@ class FrameStackDialog(QDialog):
     def save_frame(self):
         self.output = 'frame'
         self.done(QDialog.DialogCode.Accepted)
-        
+
     @staticmethod
     def get_choice(parent=None):
         dialog = FrameStackDialog(parent)
@@ -630,11 +652,13 @@ class FrameStackDialog(QDialog):
         else:
             return None
 
+
 class UndoHistoryWindow(QMainWindow):
     """A child window that displays the undo stack history."""
+
     def __init__(self, stack, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("History")
+        self.setWindowTitle('History')
 
         # Create central widget
         central_widget = QWidget(self)
@@ -647,13 +671,14 @@ class UndoHistoryWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         self.show()
 
+
 class QueuedUndoStack(QUndoStack):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.push_queue = UndoStackManager(self)
         self.undo_queue = []  # Will contain 'undo' or 'redo' strings
         self.processing = False
-        
+
     def queuedUndo(self):
         # If the last queued operation is a redo, cancel it out
         if self.undo_queue and self.undo_queue[-1] == 'redo':
@@ -661,9 +686,9 @@ class QueuedUndoStack(QUndoStack):
         else:
             # Otherwise, queue an undo
             self.undo_queue.append('undo')
-        
+
         self.processQueue()
-        
+
     def queuedRedo(self):
         # If the last queued operation is an undo, cancel it out
         if self.undo_queue and self.undo_queue[-1] == 'undo':
@@ -671,31 +696,31 @@ class QueuedUndoStack(QUndoStack):
         else:
             # Otherwise, queue a redo
             self.undo_queue.append('redo')
-        
+
         self.processQueue()
-    
+
     def processQueue(self):
         # Don't start processing if we're already processing or if the queue is empty
         if self.processing or not self.undo_queue:
             return
-            
+
         self.processing = True
         operation = self.undo_queue.pop(0)  # Get and remove the first operation
-        
+
         if operation == 'undo':
             super().undo()
         else:  # operation == 'redo'
             super().redo()
-        
+
         self.processing = False
-        
+
         if self.undo_queue:
             QTimer.singleShot(0, self.processQueue)
 
     # Override the original methods to use queued versions
     def undo(self):
         self.queuedUndo()
-        
+
     def redo(self):
         self.queuedRedo()
 
@@ -705,29 +730,129 @@ class QueuedUndoStack(QUndoStack):
     def push(self, command):
         self.push_queue.push(command)
 
+
 class UndoStackManager(QObject):
-    """Manages queued command execution for QUndoStack"""    
+    """Manages queued command execution for QUndoStack"""
+
     def __init__(self, undo_stack: QUndoStack):
         super().__init__()
         self.undo_stack = undo_stack
         self.pending_commands = []
         self.is_executing = False
-    
+
     def push(self, command: QUndoCommand):
         """Add command to queue and start processing if not already running"""
         self.pending_commands.append(command)
-        
+
         if not self.is_executing:
             self._process_next_command()
-    
+
     def _process_next_command(self):
         """Process the next command in the queue"""
         if not self.pending_commands:
             self.is_executing = False
             return
-        
+
         self.is_executing = True
         command = self.pending_commands.pop(0)
-        
+
         self.undo_stack._push(command)
         self._process_next_command()
+
+
+class ColormapPickerDialog(QDialog):
+    colormap_selected = pyqtSignal(str)
+
+    def __init__(self, current_cmap, parent=None, ignored_cmaps={'gist_grey', 'gist_yerg', 'grey', 'Greys'}):
+        from matplotlib.pyplot import colormaps
+        super().__init__(parent)
+
+        self.original_cmap = current_cmap
+        all_cmaps = set(colormaps()) - ignored_cmaps
+        self.reversed_cmaps = {cmap for cmap in all_cmaps if cmap.endswith('_r')}
+        self.cmaps = all_cmaps - self.reversed_cmaps
+
+        if current_cmap in self.reversed_cmaps:
+            current_cmap = current_cmap[:-2]
+            inverted = True
+        else:
+            inverted = False
+
+        if current_cmap not in self.cmaps:
+            current_cmap = 'viridis'
+
+        self.setWindowTitle('Colormap Picker')
+
+        layout = QVBoxLayout(self)
+
+        # Invert checkbox
+        self.invert_checkbox = QCheckBox('Invert colormap', self)
+        self.invert_checkbox.stateChanged.connect(self.select_colormap)
+        self.invert_checkbox.setChecked(inverted)
+
+        # Dropdown for colormaps
+        self.cmap_combo = QComboBox(self)
+        self.populate_colormap_dropdown(self.cmaps)
+        self.cmap_combo.currentTextChanged.connect(self.select_colormap)
+        self.cmap_combo.setCurrentText(current_cmap)
+
+        # Confirm and Cancel buttons
+        button_layout = QHBoxLayout()
+        self.confirm_button = QPushButton('Confirm')
+        self.cancel_button = QPushButton('Cancel')
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_button)
+        button_layout.addWidget(self.confirm_button)
+
+        self.confirm_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+
+        layout.addWidget(QLabel('Overlay Colormap:'))
+        layout.addWidget(self.cmap_combo)
+        layout.addWidget(self.invert_checkbox)
+        layout.addLayout(button_layout)
+
+    def populate_colormap_dropdown(self, cmaps):
+        for cmap_name in sorted(cmaps):
+            icon = self.create_colormap_icon(cmap_name)
+            self.cmap_combo.addItem(icon, cmap_name)
+
+    def create_colormap_icon(self, cmap_name):
+        cmap = cm.get_cmap(cmap_name)
+        gradient = np.linspace(0, 1, 100)
+        colors = cmap(gradient)
+
+        # Convert to RGB array (0-255)
+        rgb_array = (colors[:, :3] * 255).astype(np.uint8)
+
+        # Create QImage directly
+        height = 20
+        width = 20
+        image = QImage(width, height, QImage.Format.Format_RGB888)
+
+        for x in range(width):
+            color_index = int(x * (len(rgb_array) - 1) / (width - 1))
+            color = rgb_array[color_index]
+            qcolor = QColor(color[0], color[1], color[2])
+
+            for y in range(height):
+                image.setPixelColor(x, y, qcolor)
+
+        return QIcon(QPixmap.fromImage(image))
+
+    def select_colormap(self):
+        cmap = self.cmap_combo.currentText()
+        cmap_reversed = cmap + '_r'
+        if cmap_reversed not in self.reversed_cmaps:
+            self.invert_checkbox.setChecked(False)
+            self.invert_checkbox.setEnabled(False)
+        else:
+            self.invert_checkbox.setEnabled(True)
+        if self.invert_checkbox.isChecked():
+            cmap += '_r'
+        self.colormap_selected.emit(cmap)
+
+    def reject(self):
+        # Restore original colormap on cancel
+        self.colormap_selected.emit(self.original_cmap)
+        super().reject()

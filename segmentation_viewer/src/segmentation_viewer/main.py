@@ -248,7 +248,8 @@ class MainWidget(QMainWindow):
             'Show Grayscale': (self._toggle_grayscale, None),
             'Invert Contrast': (self._toggle_inverted, 'I'),
             'Overlay Settings...': (self._open_overlay_settings, None),
-            'Change LUTs...': (self._change_LUTs, None),
+            'Change Image LUTs...': (self._change_LUTs, None),
+            'Change Overlay Colormap...': (self._change_overlay_colormap, None),
         }
         image_actions = {
             'Reorder Channels...': (self._reorder_channels, None),
@@ -670,7 +671,7 @@ class MainWidget(QMainWindow):
             return
         current_attr = self.seg_overlay_attr.currentText()
         self._cell_attrs = self._get_cell_frame_attrs(ignored={'frame', 'n', 'green', 'red', 'cycle_stage'})
-        self._frame_attrs = self._get_frame_array_attrs(self.frame)
+        self._frame_attrs = self._get_frame_array_attrs(self.frame, ignored={'masks', 'outlines', 'scaled_heights'})
         keys = self._cell_attrs + self._frame_attrs
 
         keys = ['Select Cell Attribute'] + natsorted(keys)
@@ -3615,6 +3616,15 @@ class MainWidget(QMainWindow):
         dialog.valueChanged.connect(apply_LUTs)
         dialog.rejected.connect(revert_LUTs)
         dialog.exec()
+
+    def _change_overlay_colormap(self):
+        from .qt import ColormapPickerDialog
+
+        dialog = ColormapPickerDialog(self.canvas.seg_stat_overlay.current_cmap, self)
+        dialog.colormap_selected.connect(self.canvas.update_stat_overlay_lut)
+
+        dialog.exec()
+
 
     def _clear_stored_overlays(self):
         for frame in self.stack.frames:

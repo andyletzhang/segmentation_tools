@@ -67,9 +67,19 @@ def picklesize(o):
     '''
     return len(pickle.dumps(o))/(1024**2)
 
+def frame_array_attrs(frame):
+    ''' Return all frame attributes which are image-shaped arrays '''
+    img_shape = frame.resolution
+    attrs = []
+    for attr in dir(frame):
+        val = getattr(frame, attr)
+        if isinstance(val, np.ndarray) and val.shape == img_shape:
+            attrs.append(attr)
+    return attrs
+
 
 def cell_scalar_attrs(cell):
-    ''' Return all common attributes which are scalar cell attributes '''
+    ''' Return all cell attributes which are scalars '''
     attrs=set(dir(cell))
     ignored_attrs={'vertex_area','shape_parameter','sorted_vertices','vertex_perimeter'}
     test_attrs=attrs-ignored_attrs

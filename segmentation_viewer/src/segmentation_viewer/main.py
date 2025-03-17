@@ -36,7 +36,7 @@ from PyQt6.QtWidgets import (
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
 from segmentation_tools.preprocessing import get_quantile
 from segmentation_tools.segmented_comprehension import Cell, SegmentedImage, SegmentedStack
-from segmentation_tools.utils import cell_scalar_attrs, masks_to_outlines, outlines_list
+from segmentation_tools.utils import cell_scalar_attrs, frame_array_attrs, masks_to_outlines, outlines_list
 from skimage import draw
 from tqdm import tqdm
 
@@ -614,6 +614,17 @@ class MainWidget(QMainWindow):
 
         return attrs
 
+    def _get_frame_array_attrs(self, frame=None, ignored={'masks', 'outlines'}):
+        """Return all attributes which are image-shaped arrays"""
+        if not self.file_loaded:
+            return []
+
+        if frame is None:
+            frame = self.frame
+
+        keys = set(frame_array_attrs(frame))
+        return list(keys-ignored)
+
     def _get_cell_frame_attrs(self, ignored={'frame', 'n', 'green', 'red'}):
         """Return all attributes from any cell in the current frame"""
         if len(self.frame.cells) == 0:
@@ -658,9 +669,10 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         current_attr = self.seg_overlay_attr.currentText()
-        keys = self._get_cell_frame_attrs(ignored={'frame', 'n', 'green', 'red', 'cycle_stage'})
-        if hasattr(self.frame, 'heights'):
-            keys.append('heights')
+        self._cell_attrs = self._get_cell_frame_attrs(ignored={'frame', 'n', 'green', 'red', 'cycle_stage'})
+        self._frame_attrs = self._get_frame_array_attrs(self.frame)
+        keys = self._cell_attrs + self._frame_attrs
+
         keys = ['Select Cell Attribute'] + natsorted(keys)
         self.seg_overlay_attr.blockSignals(True)
         self.seg_overlay_attr.clear()
@@ -683,11 +695,12 @@ class MainWidget(QMainWindow):
             self.stat_LUT_slider.blockSignals(False)
 
         else:
-            if plot_attr == 'heights':
+            if plot_attr in self._frame_attrs:
                 stat = []
                 for frame in self.stack.frames:
-                    if hasattr(frame, 'heights'):
-                        stat.append(frame.heights.flatten())
+                    val = getattr(frame, plot_attr, None)
+                    if val is not None:
+                        stat.append(val.flatten())
                 stat = np.concatenate(stat)
             else:
                 cell_attrs = []
@@ -726,16 +739,18 @@ class MainWidget(QMainWindow):
             self._clear_seg_stat()
         else:
             self.canvas.cb.setVisible(True)
-            if plot_attr == 'heights':
-                if not hasattr(self.frame, 'heights'):
-                    self.seg_overlay_attr.setCurrentIndex(0)
+            if plot_attr in self._frame_attrs:
+                if not hasattr(self.frame, plot_attr):
                     return
+                if plot_attr == 'heights':
+                    if not hasattr(self.frame, 'z_scale'):
+                        print(f'No z scale found for {self.frame.name}, defaulting to 1.')
+                        self.left_toolbar.z_size = 1.0
 
-                if not hasattr(self.frame, 'z_scale'):
-                    print(f'No z scale found for {self.frame.name}, defaulting to 1.')
-                    self.left_toolbar.z_size = 1.0
-
-                self._overlay_seg_stat(self.frame.scaled_heights)
+                    plot_attr='scaled_heights'
+                
+                array_values = getattr(self.frame, plot_attr)
+                self._overlay_seg_stat(array_values)
             else:
                 cell_attrs = np.array(self.frame.get_cell_attrs(plot_attr, fill_value=np.nan))
 

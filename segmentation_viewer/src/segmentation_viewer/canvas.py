@@ -127,6 +127,13 @@ class PyQtGraphCanvas(QWidget):
         """Redirect wheel events to the main window."""
         self.main_window._canvas_wheelEvent(event)
 
+    def update_outlines(self):
+        """ Update outlines overlays to match the current frame. """
+        outlines = self.image_transform(self.main_window.frame.outlines)
+        self.seg_data = np.repeat(np.array(outlines[..., np.newaxis]), 4, axis=-1).astype(np.uint8)
+        self.seg.setImage(self.seg_data, levels=(0, 1))
+        self.render_imgplot_outlines()
+
     def overlay_outlines(self):
         self.img_outline_overlay.setVisible(self.main_window.outlines_visible)
 
@@ -549,7 +556,7 @@ class PyQtGraphCanvas(QWidget):
         execution_times['self.img.setImage(self.img_data)'] = time.time() - start_time
 
         start_time = time.time()
-        self.seg.setImage(self.seg_data)
+        self.seg.setImage(self.seg_data, levels=(0, 1))
         execution_times['self.seg.setImage(self.seg_data)'] = time.time() - start_time
 
         start_time = time.time()

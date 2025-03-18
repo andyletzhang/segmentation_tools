@@ -1417,7 +1417,7 @@ class MainWidget(QMainWindow):
 
         # remove cell outline
         self.frame.outlines[cell.mask] = False
-        self._update_outlines()
+        self.canvas.update_outlines()
 
     def clear_tracking(self):
         """
@@ -2255,18 +2255,10 @@ class MainWidget(QMainWindow):
         if replace_masks and hasattr(self.frame, 'stored_mask_overlay'):
             del self.frame.stored_mask_overlay
 
-        self._update_outlines()
+        self.canvas.update_outlines()
         self.canvas.overlay_masks()
         self._update_tracking_overlay()
         self._update_ROIs_label()
-
-    def _update_outlines(self):
-        if not self.file_loaded:
-            return
-        outlines = self.canvas.image_transform(self.frame.outlines)
-        self.canvas.seg_data = np.repeat(np.array(outlines[..., np.newaxis]), 4, axis=-1).astype(np.uint8)
-        self.canvas.seg.setImage(self.canvas.seg_data, autoLevels=False)
-        self.canvas.render_imgplot_outlines()
 
     def _autorange_LUT_sliders(self):
         if self.is_grayscale:

@@ -1901,6 +1901,10 @@ class MainWidget(QMainWindow):
             The frames to compute spherical volumes for
         """
         for frame in self._progress_bar(frames):
+            if not hasattr(frame, 'scale'):
+                print(f'No scale available for {frame.name}. Defaulting to 0.1625.')
+                self.left_toolbar.xy_size = 0.1625
+                frame.scale = 0.1625  # 40x objective with 0.325 µm/pixel camera
             frame.get_spherical_volumes()
 
     def change_current_frame(self, frame_number, reset=False):

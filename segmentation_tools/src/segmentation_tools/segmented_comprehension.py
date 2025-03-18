@@ -22,41 +22,8 @@ from typing import Union, Optional
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
 
 
-def scaled_properties(cls):
-    for _, func in list(cls.__dict__.items()):
-        if hasattr(func, '_scaling'):
-            original_name = func.__name__
-            scaling = func._scaling
-            scaled_name = original_name.replace('_pixels', '')
-
-            # Define the original property
-            def original_property(self, func=func):
-                return func(self)
-
-            # Define the scaled property
-            def scaled_property(self, func=func):
-                try:
-                    scale = self.parent.scale
-                except AttributeError:
-                    scale = None
-
-                if scale is None:
-                    return None
-                else:
-                    value = func(self)
-                    if value is None:
-                        return None
-                    return value * scale**scaling
-
-            # Add the properties to the class
-            setattr(cls, original_name, property(original_property))
-            setattr(cls, scaled_name, property(scaled_property))
-    return cls
-
-
-@scaled_properties
 class Cell:
-    """class for each labeled cell membrane."""
+    """Class for each labeled cell membrane."""
 
     def __init__(self, n, outline=None, parent=None, frame_number=None, **kwargs):
         self.frame = frame_number
@@ -77,23 +44,46 @@ class Cell:
     @outline.setter
     def outline(self, outline):
         self._outline = outline
+        
+    @property
+    def scale(self):
+        """Get scale from parent or return None."""
+        try:
+            return self.parent.scale
+        except AttributeError:
+            return None
 
+    @property
     def area_pixels(self):
         area = 0.5 * np.abs(
-            np.dot(self.outline.T[0], np.roll(self.outline.T[1], 1)) - np.dot(self.outline.T[1], np.roll(self.outline.T[0], 1))
+            np.dot(self.outline.T[0], np.roll(self.outline.T[1], 1)) - 
+            np.dot(self.outline.T[1], np.roll(self.outline.T[0], 1))
         )
         return area
-
-    area_pixels._scaling = 2
-
+        
+    @property
+    def area(self):
+        """Area in scaled units."""
+        pixels = self.area_pixels
+        if pixels is None or self.scale is None:
+            return None
+        return pixels * self.scale**2
+    
+    @property
     def perimeter_pixels(self):
         if len(self.outline) == 0:
             return 0
         else:
             perimeter = np.sum(np.linalg.norm(np.diff(self.outline, axis=0, append=[self.outline[0]]).T, axis=0))
             return perimeter
-
-    perimeter_pixels._scaling = 1
+            
+    @property
+    def perimeter(self):
+        """Perimeter in scaled units."""
+        pixels = self.perimeter_pixels
+        if pixels is None or self.scale is None:
+            return None
+        return pixels * self.scale
 
     @property
     def circularity(self):

@@ -51,7 +51,16 @@ def read_tif_shape(tif_file: TiffFile) -> tuple:
 
 def read_tif(tif_file: TiffFile) -> np.ndarray:
     shape, order=read_tif_shape(tif_file)
-    pages_shape=(shape[:3]) # shape without the XY dimensions
+    tif_shape=tif_file.pages[0].shape
+    if len(tif_shape)==2:
+        pages_dims='TPZC'
+    elif len(tif_shape)==3:
+        pages_dims='TPZ'
+    else:
+        raise ValueError(f"Found invalid tiff shape when reading tif file: {tif_shape}")
+
+    # shape without the XYC dimensions
+    pages_shape=shape[:-len(tif_shape)]
     axes_map = {axis: i for i, axis in enumerate(reversed(order))}
     if len(tif_file.pages)==1 and np.prod(pages_shape)>1:
         # BigTIFF-adjacent (?) case with only one page.
@@ -63,10 +72,13 @@ def read_tif(tif_file: TiffFile) -> np.ndarray:
             placeholder[i,j,k]=lambda i=i, j=j, k=k:np.array([a.compute() for a in tif_pages[i,j,k]])
         return placeholder
     else:
-        tif_pages=np.array(tif_file.pages).reshape(pages_shape).transpose(axes_map['T'], axes_map['P'], axes_map['Z'])
+        tif_pages=np.array(tif_file.pages).reshape(pages_shape).transpose(*[axes_map[dim] for dim in pages_dims])
         placeholder=np.empty(tif_pages.shape[:3], dtype=object)
         for i,j,k in np.ndindex(placeholder.shape):
-            placeholder[i,j,k]=lambda i=i, j=j, k=k:tif_pages[i,j,k].asarray().transpose(2,0,1) # lazy load
+            if len(tif_shape)==2:
+                placeholder[i,j,k]=lambda i=i, j=j, k=k:np.array([img.asarray() for img in tif_pages[i,j,k]])
+            else:
+                placeholder[i,j,k]=lambda i=i, j=j, k=k:tif_pages[i,j,k].asarray()
         return placeholder
 
 def read_nd2_shape(nd2_file: ND2File) -> tuple:

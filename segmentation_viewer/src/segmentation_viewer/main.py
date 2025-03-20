@@ -95,7 +95,7 @@ class MainWidget(QMainWindow):
         self.drawing_cell_roi = False
         self.drawing_cell_split = False
         self.spacer = (0, 10)  # default spacer size (width, height)
-        self.globals_dict = {'main': self, 'np': np, 'pd': pd}
+        self.globals_dict = {'main': self, 'np': np, 'pd': pd, 'progress':self._progress_bar}
         self.locals_dict = {}
         self.font_metrics = QFontMetrics(QLabel().font())  # metrics for the default font
         self.digit_width = self.font_metrics.horizontalAdvance('0')  # text length scale
@@ -107,6 +107,7 @@ class MainWidget(QMainWindow):
         self.undo_stack = QueuedUndoStack(self)
         self.globals_dict['history'] = self.undo_stack
         self.model_type = 'cyto3'
+        self.progress_widget = None
 
         # Status bar
         self.status_cell = QLabel('Selected Cell: None', self)
@@ -1111,6 +1112,10 @@ class MainWidget(QMainWindow):
         if length is None:
             length = len(iterable)
 
+        if self.progress_widget is not None:
+            self.statusBar().removeWidget(self.progress_widget)
+            self.progress_widget = None
+
         if length <= 1:
             return iterable
         else:
@@ -1129,6 +1134,7 @@ class MainWidget(QMainWindow):
             self.status_coordinates.setVisible(False)
             self.status_pixel_value.setVisible(False)
 
+            self.progress_widget = qprogress_bar
             self.statusBar().addPermanentWidget(qprogress_bar)
 
             # Custom iterator to update both progress bars
@@ -1146,6 +1152,7 @@ class MainWidget(QMainWindow):
                     qprogress_bar.setValue(i + 1)
                 tqdm_bar.close()
                 self.statusBar().removeWidget(qprogress_bar)
+                self.progress_widget = None
                 # Restore existing permanent status bar widgets
                 self.status_coordinates.setVisible(True)
                 self.status_pixel_value.setVisible(True)

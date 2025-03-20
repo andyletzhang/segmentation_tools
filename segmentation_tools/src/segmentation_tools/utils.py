@@ -72,7 +72,10 @@ def frame_array_attrs(frame):
     img_shape = frame.resolution
     attrs = []
     for attr in dir(frame):
-        val = getattr(frame, attr)
+        try:
+            val = getattr(frame, attr)
+        except AttributeError:
+            continue
         if isinstance(val, np.ndarray) and val.shape == img_shape:
             attrs.append(attr)
     return attrs

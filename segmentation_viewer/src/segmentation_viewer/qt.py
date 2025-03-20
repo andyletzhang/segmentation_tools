@@ -55,11 +55,10 @@ class CustomComboBox(QComboBox):
         super().setCurrentText(text)
 
 
-class FineScrubber:
-    def __init__(self, *args, scale=1, **kwargs):
-        super().__init__(*args, **kwargs)
+class FineScrubberMixin:
+    def __init__(self, fine_scrub_factor=0.1):
         self.fine_scrubbing = False
-        self.fine_scrub_factor = 0.1  # Adjust this to change sensitivity
+        self.fine_scrub_factor = fine_scrub_factor  # Adjust this to change sensitivity
         self.original_press_pos = None
 
     def mousePressEvent(self, event: QMouseEvent):
@@ -76,9 +75,10 @@ class FineScrubber:
                 Qt.MouseButton.LeftButton,  # Active buttons
                 event.modifiers(),
             )
-            super().mousePressEvent(modified_event)
+
+            super(FineScrubberMixin, self).mousePressEvent(modified_event)
         else:
-            super().mousePressEvent(event)
+            super(FineScrubberMixin, self).mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.RightButton and self.fine_scrubbing:
@@ -93,9 +93,9 @@ class FineScrubber:
             )
             self.fine_scrubbing = False
             self.original_press_pos = None
-            super().mouseReleaseEvent(modified_event)
+            super(FineScrubberMixin, self).mouseReleaseEvent(modified_event)
         else:
-            super().mouseReleaseEvent(event)
+            super(FineScrubberMixin, self).mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self.fine_scrubbing and self.original_press_pos is not None:
@@ -115,9 +115,9 @@ class FineScrubber:
                 Qt.MouseButton.LeftButton,
                 event.modifiers(),
             )
-            super().mouseMoveEvent(modified_event)
+            super(FineScrubberMixin, self).mouseMoveEvent(modified_event)
         else:
-            super().mouseMoveEvent(event)
+            super(FineScrubberMixin, self).mouseMoveEvent(event)
 
     def rescale(self, min_val: float, max_val: float, step: float) -> None:
         """
@@ -128,15 +128,18 @@ class FineScrubber:
         self.setRange(min_val, max_val)
 
 
-class FineDoubleRangeSlider(QDoubleRangeSlider, FineScrubber):
-    def __init__(self, *args, scale=1, **kwargs):
-        super().__init__(*args, scale=scale, **kwargs)
+class FineDoubleRangeSlider(FineScrubberMixin, QDoubleRangeSlider):
+    def __init__(self, *args, fine_scrub_factor=0.1, scale=1, **kwargs):
+        FineScrubberMixin.__init__(self, fine_scrub_factor=fine_scrub_factor)
+        QDoubleRangeSlider.__init__(self, *args, **kwargs)
         self._singleStep = scale
         self._pageStep = scale * 10
 
 
-class FineRangeSlider(QRangeSlider, FineScrubber):
-    pass
+class FineRangeSlider(FineScrubberMixin, QRangeSlider):
+    def __init__(self, *args, fine_scrub_factor=0.1, **kwargs):
+        FineScrubberMixin.__init__(self, fine_scrub_factor=fine_scrub_factor)
+        QRangeSlider.__init__(self, *args, **kwargs)
 
 
 def labeled_LUT_slider(slider_name=None, mode='int', decimals=2, default_range=(0, 65535), parent=None, digit_width=5):

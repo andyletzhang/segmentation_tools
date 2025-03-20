@@ -477,7 +477,6 @@ class MainWidget(QMainWindow):
         self.selected_particle_prompt.returnPressed.connect(self._particle_prompt_changed)
         # stat overlay
         self.seg_overlay_attr.dropdownOpened.connect(self._get_overlay_attrs)
-        self.seg_overlay_attr.activated.connect(self._new_seg_overlay)
         self.seg_overlay_attr.currentIndexChanged.connect(self._new_seg_overlay)
         self.stat_frame_button.toggled.connect(self._update_stat_LUT)
         self.stat_stack_button.toggled.connect(self._update_stat_LUT)
@@ -610,7 +609,7 @@ class MainWidget(QMainWindow):
 
     def _cell_stat_attrs(self, cell):
         """Return all common attributes which are meaningful cell-level metrics"""
-        ignored_attrs = {'cycle_stage', 'n', 'frame', 'red', 'green'}
+        ignored_attrs = {'cycle_stage', 'n', 'frame', 'red', 'green', 'scale'}
         attrs = cell_scalar_attrs(cell) - ignored_attrs
 
         return attrs
@@ -626,7 +625,7 @@ class MainWidget(QMainWindow):
         keys = set(frame_array_attrs(frame))
         return list(keys-ignored)
 
-    def _get_cell_frame_attrs(self, ignored={'frame', 'n', 'green', 'red'}):
+    def _get_cell_frame_attrs(self, ignored={'frame', 'n', 'green', 'red', 'scale'}):
         """Return all attributes from any cell in the current frame"""
         if len(self.frame.cells) == 0:
             return []
@@ -670,7 +669,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         current_attr = self.seg_overlay_attr.currentText()
-        self._cell_attrs = self._get_cell_frame_attrs(ignored={'frame', 'n', 'green', 'red', 'cycle_stage'})
+        self._cell_attrs = self._get_cell_frame_attrs(ignored={'frame', 'n', 'green', 'red', 'cycle_stage', 'scale'})
         self._frame_attrs = self._get_frame_array_attrs(self.frame, ignored={'masks', 'outlines', 'scaled_heights'})
         keys = self._cell_attrs + self._frame_attrs
 
@@ -717,10 +716,10 @@ class MainWidget(QMainWindow):
 
             min_val, max_val, step = calculate_range_params(stat)
             self.stat_stack_bounds = tuple(get_quantile(stat[..., np.newaxis])[0])
-            if isinstance(step, float):
-                mode = 'float'
-            else:
+            if isinstance(step, (int, np.integer)):
                 mode = 'int'
+            else:
+                mode = 'float'
             self.get_stat_LUT_slider(mode=mode)
             self.stat_LUT_slider.blockSignals(True)
             self.stat_LUT_slider.rescale(min_val, max_val, step)
@@ -3194,7 +3193,7 @@ class MainWidget(QMainWindow):
         self._convert_red_green()
 
         cells = np.concatenate([frame.cells for frame in self.stack.frames])
-        attrs = self._get_cell_frame_attrs(ignored={'n', 'frame'})  # get all cell attributes except n and frame (redundant)
+        attrs = self._get_cell_frame_attrs(ignored={'n', 'frame', 'scale'})  # get all cell attributes except n and frame (redundant)
 
         for attr in attrs:
             df[attr] = np.array([getattr(cell, attr) for cell in cells])

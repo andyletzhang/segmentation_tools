@@ -1039,14 +1039,14 @@ def calculate_range_params(data: np.ndarray) -> tuple[float, float, float]:
         A tuple containing the minimum value, maximum value, and step size
     """
     data=np.asarray(data)
-    data = data[~np.isnan(data)].flatten()
-    if len(data) == 0:
+    if data.size == 0:
         return 0, 1, 1
+    data = data[~np.isnan(data)].flatten()
     min_val = np.min(data)
     max_val = np.max(data)
     if min_val == max_val:
-        return 0, 1, 1
-    if np.issubdtype(data.dtype, np.integer):
+        return min_val - 0.5, max_val + 0.5, 0.1
+    elif np.issubdtype(data.dtype, np.integer):
         return min_val, max_val, 1
     else:
         if max_val-min_val > 100: # if the range is large, use integer steps
@@ -1054,6 +1054,9 @@ def calculate_range_params(data: np.ndarray) -> tuple[float, float, float]:
             max_val = np.ceil(max_val)
             step = 1
         else:
+            if data.size > 1e6:
+                scale_factor=int(data.size/1e6)
+                data = data[::scale_factor]
             unique_diffs = np.unique(np.diff(np.sort(data)))
             step = unique_diffs[unique_diffs > 0].min()
         return min_val, max_val, step

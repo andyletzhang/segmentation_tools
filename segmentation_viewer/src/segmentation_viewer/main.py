@@ -95,7 +95,7 @@ class MainWidget(QMainWindow):
         self.drawing_cell_roi = False
         self.drawing_cell_split = False
         self.spacer = (0, 10)  # default spacer size (width, height)
-        self.globals_dict = {'main': self, 'np': np, 'pd': pd, 'progress':self._progress_bar}
+        self.globals_dict = {'main': self, 'np': np, 'pd': pd}
         self.locals_dict = {}
         self.font_metrics = QFontMetrics(QLabel().font())  # metrics for the default font
         self.digit_width = self.font_metrics.horizontalAdvance('0')  # text length scale
@@ -1141,22 +1141,24 @@ class MainWidget(QMainWindow):
             def custom_iterator():
                 self.is_iterating = True
                 self.cancel_iter = False
-                for i, item in enumerate(iterable):
-                    QApplication.processEvents()  # allow updates, check for key presses
+                try:
+                    for i, item in enumerate(iterable):
+                        QApplication.processEvents()  # allow updates, check for key presses
+                        if self.cancel_iter:
+                            break
+                        yield item
+                        tqdm_bar.update(1)
+                        qprogress_bar.setValue(i + 1)
+                finally:
+                    tqdm_bar.close()
+                    self.statusBar().removeWidget(qprogress_bar)
+                    self.progress_widget = None
+                    # Restore existing permanent status bar widgets
+                    self.status_coordinates.setVisible(True)
+                    self.status_pixel_value.setVisible(True)
+                    self.is_iterating = False
                     if self.cancel_iter:
-                        self.is_iterating = False
                         QMessageBox.warning(self, 'Operation Cancelled', 'Operation cancelled by user.')
-                        break
-                    yield item
-                    tqdm_bar.update(1)
-                    qprogress_bar.setValue(i + 1)
-                tqdm_bar.close()
-                self.statusBar().removeWidget(qprogress_bar)
-                self.progress_widget = None
-                # Restore existing permanent status bar widgets
-                self.status_coordinates.setVisible(True)
-                self.status_pixel_value.setVisible(True)
-                self.is_iterating = False
 
             return custom_iterator()
 
@@ -2428,7 +2430,9 @@ class MainWidget(QMainWindow):
     def _open_script_editor(self):
         # Create a separate window for the script editor
         if not hasattr(self, 'script_window') or not self.script_window.isVisible():
-            self.script_window = ScriptWindow(self, self.globals_dict, self.locals_dict)
+            script_globals=self.globals_dict.copy()
+            script_globals['progress'] = self._progress_bar
+            self.script_window = ScriptWindow(self, script_globals, self.locals_dict)
             self.script_window.show()
 
     def _show_undo_history(self):

@@ -1894,11 +1894,15 @@ class MainWidget(QMainWindow):
         else:
             frames = [self.frame]
 
-        self.get_spherical_volumes(frames)
+        if self.left_toolbar.xy_size is None:
+            print('No xy scale specified. Defaulting to 0.1625.')
+            self.left_toolbar.xy_size = 0.1625
+
+        self.get_spherical_volumes(frames, scale=self.left_toolbar.xy_size)
 
         self._refresh_right_toolbar('volume')
 
-    def get_spherical_volumes(self, frames):
+    def get_spherical_volumes(self, frames, scale=None):
         """
         Compute the volumes of cells if their areas are treated as circular cross-sections of spheres.
         This is used for estimating the volumes of cells in suspension.
@@ -1908,11 +1912,12 @@ class MainWidget(QMainWindow):
         frames : list of Frame
             The frames to compute spherical volumes for
         """
+        if scale is None:
+            print('No xy scale specified. Defaulting to 0.1625.')
+            scale=0.1625
+
         for frame in self._progress_bar(frames):
-            if not hasattr(frame, 'scale'):
-                print(f'No scale available for {frame.name}. Defaulting to 0.1625.')
-                self.left_toolbar.xy_size = 0.1625
-                frame.scale = 0.1625  # 40x objective with 0.325 µm/pixel camera
+            frame.scale=scale
             frame.get_spherical_volumes()
 
     def change_current_frame(self, frame_number, reset=False):

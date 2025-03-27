@@ -436,21 +436,26 @@ class SegmentedStack:
 
     def delete_frame(self, frame_number):
         self.frames = np.delete(self.frames, frame_number)
-        for n, frame in enumerate(self.frames):
-            frame.frame_number = n
+        self.renumber_frames()
+
         if hasattr(self, 'tracked_centroids'):
             self.tracked_centroids = self.tracked_centroids[self.tracked_centroids['frame'] != frame_number]
             self.tracked_centroids.loc[self.tracked_centroids['frame'] > frame_number, 'frame'] -= 1
 
     def make_substack(self, frame_numbers: np.ndarray):
         self.frames = self.frames[frame_numbers]
-        for n, frame in enumerate(self.frames):
-            frame.frame_number = n
+        self.renumber_frames()
+
         if hasattr(self, 'tracked_centroids'):
             self.tracked_centroids = self.tracked_centroids[self.tracked_centroids['frame'].isin(frame_numbers)]
             self.tracked_centroids['frame'] = self.tracked_centroids['frame'].map(
                 {frame_number: n for n, frame_number in enumerate(frame_numbers)}
             )
+
+    def renumber_frames(self):
+        for n, frame in enumerate(self.frames):
+            frame.frame_number = n
+            frame.set_cell_attrs('frame', n)
 
     # -------------I/O Tracking Data---------------
     def load_tracking(self, tracking_path=None):

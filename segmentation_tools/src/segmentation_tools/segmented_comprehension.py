@@ -25,8 +25,9 @@ from typing import Union, Optional
 class Cell:
     """Class for each labeled cell membrane."""
 
-    def __init__(self, n, outline=None, parent=None, frame_number=None, **kwargs):
-        self.frame = frame_number
+    def __init__(self, n, outline=None, parent=None, **kwargs):
+        if parent is None:
+            raise ValueError('Cell must be initialized with a parent SegmentedImage object.')
         self.n = n
         if outline is not None:
             self._outline = outline
@@ -34,6 +35,14 @@ class Cell:
 
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    @property
+    def frame(self):
+        """Get frame number from parent or return None."""
+        try:
+            return self.parent.frame_number
+        except AttributeError:
+            return None
 
     @property
     def outline(self):
@@ -455,7 +464,6 @@ class SegmentedStack:
     def renumber_frames(self):
         for n, frame in enumerate(self.frames):
             frame.frame_number = n
-            frame.set_cell_attrs('frame', n)
 
     # -------------I/O Tracking Data---------------
     def load_tracking(self, tracking_path=None):
@@ -1276,7 +1284,7 @@ class SegmentedImage:
 
         # Instantiate Cell objects for each cell labeled in the image
         self.cells = np.array(
-            [Cell(n, self.outlines_list[n], parent=self, frame_number=frame_number) for n in range(self.n_cells)]
+            [Cell(n, self.outlines_list[n], parent=self) for n in range(self.n_cells)]
         )
 
         # assign cell cycle to cell objects

@@ -1173,7 +1173,7 @@ class MainWidget(QMainWindow):
 
         frame.cells = np.array(
             [
-                Cell(n, outline=outline, frame_number=frame.frame_number, parent=frame)
+                Cell(n, outline=outline, parent=frame)
                 for n, outline in enumerate(outlines_list(frame.masks))
             ]
         )
@@ -2835,7 +2835,7 @@ class MainWidget(QMainWindow):
             return False, None
 
         outline = outlines_list(binary_mask)[0]
-        cell = Cell(new_mask_n, outline=outline, frame_number=frame.frame_number, parent=frame, red=False, green=False)
+        cell = Cell(new_mask_n, outline=outline, parent=frame, red=False, green=False)
 
         return cell, binary_mask
 
@@ -4669,7 +4669,7 @@ class SplitCellCommand(QUndoCommand):
                 new_mask = coords_to_mask(new_mask, shape=self.main_window.frame.masks.shape)
                 new_outline = outlines_list(new_mask)[0]
                 color_ID = self.main_window.canvas.random_color_ID()
-                new_cell = Cell(label_id, new_outline, parent=self.main_window.frame, frame_number=self.main_window.frame_number, color_ID=color_ID)
+                new_cell = Cell(label_id, new_outline, parent=self.main_window.frame, color_ID=color_ID)
                 commands.append(
                     AddCellCommand(
                         self.main_window,

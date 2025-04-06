@@ -95,7 +95,6 @@ class MainWidget(QMainWindow):
         self.drawing_cell_roi = False
         self.drawing_cell_split = False
         self.spacer = (0, 10)  # default spacer size (width, height)
-        self.globals_dict = {'main': self, 'np': np, 'pd': pd}
         self.locals_dict = {}
         self.font_metrics = QFontMetrics(QLabel().font())  # metrics for the default font
         self.digit_width = self.font_metrics.horizontalAdvance('0')  # text length scale
@@ -105,9 +104,11 @@ class MainWidget(QMainWindow):
         self.mitosis_mode = 0
         self.bounds_processor = BoundsProcessor(self, n_cores=1)
         self.undo_stack = QueuedUndoStack(self)
-        self.globals_dict['history'] = self.undo_stack
         self.model_type = 'cyto3'
         self.progress_widget = None
+        self.globals_dict = {'main': self, 'np': np, 'pd': pd, 'progress':self._progress_bar, 'history': self.undo_stack}
+        self.stat_quantile=(1,99)
+        self._quantile=(1,99)
 
         # Status bar
         self.status_cell = QLabel('Selected Cell: None', self)

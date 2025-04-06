@@ -4082,7 +4082,7 @@ class MainWidget(QMainWindow):
                     str(file_path), image_shape=image_shape, progress_bar=self._progress_bar, desc=f'Loading {file_path.name}'
                 )
                 if imgs is None:
-                    return False, None
+                    return False
                 for v, img in enumerate(self._progress_bar(imgs, desc=f'Processing {file_path.stem}')):
                     if img.shape[-1] == 2:  # pad to 3 color channels
                         img = np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)

@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .qt import CustomComboBox, labeled_LUT_slider, CollapsibleWidget, bordered
+from .qt import bordered, labeled_LUT_slider, CustomComboBox, CollapsibleWidget, FrameStackButtons
 
 spacer = (0, 10)  # default spacer size (width, height)
 
@@ -324,11 +324,7 @@ class LeftToolbar(QScrollArea):
         # segmentation utilities
         segmentation_utils_widget = QWidget(objectName='bordered')
         segmentation_utils_layout = QVBoxLayout(segmentation_utils_widget)
-        operate_on_label = QLabel('Operate on:', self)
-        operate_on_layout = QHBoxLayout()
-        self.segment_on_frame = QRadioButton('Frame', self)
-        self.segment_on_stack = QRadioButton('Stack', self)
-        self.segment_on_frame.setChecked(True)
+        self.utils_frame_stack = FrameStackButtons('Operate on:', self)
         mend_remove_layout = QHBoxLayout()
         self.mend_gaps_button = QPushButton('Mend Gaps', self)
         self.remove_edge_masks_button = QPushButton('Remove Edge Masks', self)
@@ -346,8 +342,6 @@ class LeftToolbar(QScrollArea):
         clear_masks_button = QPushButton('Clear Masks', self, objectName='deleteButton')
         generate_remove_layout.addWidget(generate_outlines_button)
         generate_remove_layout.addWidget(clear_masks_button)
-        operate_on_layout.addWidget(self.segment_on_frame)
-        operate_on_layout.addWidget(self.segment_on_stack)
         segmentation_button_layout.addWidget(self.mend_gaps_button)
         segmentation_button_layout.addWidget(self.remove_edge_masks_button)
 
@@ -357,8 +351,7 @@ class LeftToolbar(QScrollArea):
         segment_frame_layout.addWidget(self.ROIs_label)
         segment_frame_layout.addLayout(segmentation_button_layout)
 
-        segmentation_utils_layout.addWidget(operate_on_label)
-        segmentation_utils_layout.addLayout(operate_on_layout)
+        segmentation_utils_layout.addWidget(self.utils_frame_stack)
         segmentation_utils_layout.addLayout(mend_remove_layout)
         segmentation_utils_layout.addLayout(gap_size_layout)
         segmentation_utils_layout.addLayout(generate_remove_layout)
@@ -514,13 +507,7 @@ class LeftToolbar(QScrollArea):
         volumes_layout.setSpacing(10)
         volumes_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        operate_on_label = QLabel('Operate on:', self)
-        operate_on_layout = QHBoxLayout()
-        self.volumes_on_frame = QRadioButton('Frame', self)
-        self.volumes_on_stack = QRadioButton('Stack', self)
-        operate_on_layout.addWidget(self.volumes_on_frame)
-        operate_on_layout.addWidget(self.volumes_on_stack)
-        self.volumes_on_frame.setChecked(True)
+        self.volumes_frame_stack = FrameStackButtons('Operate on:', self)
 
         self.get_heights_layout = QHBoxLayout()
         self.get_heights_button = QPushButton('Measure Heights', self)
@@ -554,7 +541,7 @@ class LeftToolbar(QScrollArea):
 
         volumes_widget = CollapsibleWidget(header_text='Volumes', parent=self.tabbed_widget)
         volumes_border = bordered(volumes_widget)
-        
+
         volumes_widget.addLayout(self.peak_prominence_layout)
         volumes_widget.addLayout(self.coverslip_prominence_layout)
         volumes_widget.addWidget(self.get_spherical_volumes)
@@ -563,9 +550,7 @@ class LeftToolbar(QScrollArea):
 
         volumes_widget.hide_content()
 
-
-        volumes_layout.addWidget(operate_on_label)
-        volumes_layout.addLayout(operate_on_layout)
+        volumes_layout.addWidget(self.volumes_frame_stack)
         volumes_layout.addWidget(volumes_border)
 
         self.volume_button.clicked.connect(self.main_window._measure_volumes_action.trigger)
@@ -576,7 +561,6 @@ class LeftToolbar(QScrollArea):
         return self.volumes_tab
 
     def get_tracking_tab(self):
-
         tracking_tab = QWidget()
         tracking_tab_layout = QVBoxLayout(tracking_tab)
         tracking_tab_layout.setSpacing(5)
@@ -1031,14 +1015,14 @@ def clear_layout(layout):
 def calculate_range_params(data: np.ndarray) -> tuple[float, float, float]:
     """
     Get the bounds and step size for the range slider based on the data.
-    
+
     Args:
         data: The data to determine the bounds and step size from
-    
+
     Returns:
         A tuple containing the minimum value, maximum value, and step size
     """
-    data=np.asarray(data)
+    data = np.asarray(data)
     if data.size == 0:
         return 0, 1, 1
     data = data[~np.isnan(data)].flatten()
@@ -1049,16 +1033,14 @@ def calculate_range_params(data: np.ndarray) -> tuple[float, float, float]:
     elif np.issubdtype(data.dtype, np.integer):
         return min_val, max_val, 1
     else:
-        if max_val-min_val > 100: # if the range is large, use integer steps
+        if max_val - min_val > 100:  # if the range is large, use integer steps
             min_val = np.floor(min_val)
             max_val = np.ceil(max_val)
             step = 1
         else:
             if data.size > 1e6:
-                scale_factor=int(data.size/1e6)
+                scale_factor = int(data.size / 1e6)
                 data = data[::scale_factor]
             unique_diffs = np.unique(np.diff(np.sort(data)))
             step = unique_diffs[unique_diffs > 0].min()
         return min_val, max_val, step
-
-

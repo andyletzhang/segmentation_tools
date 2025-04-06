@@ -885,7 +885,7 @@ class MainWidget(QMainWindow):
     def _mend_gaps(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.segment_on_stack.isChecked():
+        if self.left_toolbar.utils_frame_stack.value == 'stack':
             frames = self.stack.frames
         else:
             frames = [self.frame]
@@ -919,7 +919,7 @@ class MainWidget(QMainWindow):
     def _remove_edge_masks(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.segment_on_stack.isChecked():
+        if self.left_toolbar.utils_frame_stack.value == 'stack':
             frames = self.stack.frames
             current_frame = self.frame_number
         else:
@@ -1119,7 +1119,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
 
-        if self.left_toolbar.segment_on_stack.isChecked():
+        if self.left_toolbar.utils_frame_stack.value == 'stack':
             frames = self.stack.frames
         else:
             frames = [self.frame]
@@ -1738,7 +1738,7 @@ class MainWidget(QMainWindow):
     def _measure_volumes(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.volumes_on_stack.isChecked():
+        if self.left_toolbar.volumes_frame_stack.value == 'stack':
             frames = self.stack.frames
         else:
             frames = [self.frame]
@@ -1795,7 +1795,7 @@ class MainWidget(QMainWindow):
     def _calibrate_coverslip_height(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.volumes_on_stack.isChecked():
+        if self.left_toolbar.volumes_frame_stack.value == 'stack':
             frames = self.stack.frames
             if not all(hasattr(frame, 'zstack') for frame in frames):
                 raise ValueError('No z-stacks available to calibrate coverslip height.')
@@ -1854,7 +1854,7 @@ class MainWidget(QMainWindow):
     def _measure_heights(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.volumes_on_stack.isChecked():
+        if self.left_toolbar.volumes_frame_stack.value == 'stack':
             frames = self.stack.frames
         else:
             frames = self.frame
@@ -1914,7 +1914,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
 
-        if self.left_toolbar.volumes_on_stack.isChecked():
+        if self.left_toolbar.volumes_frame_stack.value == 'stack':
             frames = self.stack.frames
         else:
             frames = [self.frame]
@@ -3029,7 +3029,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
 
-        if self.left_toolbar.segment_on_stack.isChecked():
+        if self.left_toolbar.utils_frame_stack.value == 'stack':
             frames = self.stack.frames
         else:
             frames = [self.frame]

@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import (
     QUndoView,
     QVBoxLayout,
     QWidget,
+    QRadioButton,
 )
 from superqt import QDoubleRangeSlider, QRangeSlider
 
@@ -859,3 +860,40 @@ class ColormapPickerDialog(QDialog):
         # Restore original colormap on cancel
         self.colormap_selected.emit(self.original_cmap)
         super().reject()
+
+
+class FrameStackButtons(QWidget):
+    valueChanged = pyqtSignal()
+
+    def __init__(self, label=None, parent=None):
+        super().__init__(parent)
+        self.vertical_layout=QVBoxLayout(self)
+        self.vertical_layout.setContentsMargins(0,0,0,0)
+        self.vertical_layout.setSpacing(0)
+        if label is not None:
+            label=QLabel(label, self)
+            self.vertical_layout.addWidget(label)
+        self.button_layout=QHBoxLayout()
+        self.vertical_layout.addLayout(self.button_layout)
+
+        self.frame_button=QRadioButton('Frame', self)
+        self.stack_button=QRadioButton('Stack', self)
+
+        self.frame_button.setChecked(True)
+
+        self.button_layout.addWidget(self.frame_button)
+        self.button_layout.addWidget(self.stack_button)
+
+        self.frame_button.toggled.connect(self._value_changed)
+        self.stack_button.toggled.connect(self._value_changed)
+
+    @property
+    def value(self):
+        if self.frame_button.isChecked():
+            out='frame'
+        else:
+            out='stack'
+        return out
+
+    def _value_changed(self):
+        self.valueChanged.emit()

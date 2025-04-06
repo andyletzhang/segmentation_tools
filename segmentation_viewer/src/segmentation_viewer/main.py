@@ -192,6 +192,31 @@ class MainWidget(QMainWindow):
         self.canvas.seg_plot.scene().sigMouseClicked.connect(self._on_click)
 
     @property
+    def quantile(self) -> tuple[float, float]:
+        if not hasattr(self, '_quantile'):
+            self._quantile = (1, 99)
+        return self._quantile
+
+    @quantile.setter
+    def quantile(self, value: tuple):
+        # check if the value is a tuple
+        if not isinstance(value, tuple):
+            raise ValueError('Quantile must be a tuple of scalar values')
+        # check if the tuple has two values
+        if len(value) != 2:
+            raise ValueError('Quantile must have two values')
+        # check if the values are floats
+        if not all(isinstance(val, (int, float)) for val in value):
+            raise ValueError('Quantile values must be scalars')
+        if hasattr(self, 'stack'):
+            self._quantile = value
+            for frame in self.stack.frames:
+                if hasattr(frame, 'bounds'):
+                    del frame.bounds
+            self.bounds_processor.process_frames(self.stack)
+        self._normalize()
+
+    @property
     def open_dir(self) -> str:
         if not hasattr(self, '_open_dir'):
             self._open_dir = Path.cwd()
@@ -717,7 +742,7 @@ class MainWidget(QMainWindow):
                     return
 
             min_val, max_val, step = calculate_range_params(stat)
-            self.stat_stack_bounds = tuple(get_quantile(stat[..., np.newaxis])[0])
+            self.stat_stack_bounds = tuple(get_quantile(stat[..., np.newaxis], q=self.stat_quantile)[0])
             if isinstance(step, (int, np.integer)):
                 mode = 'int'
             else:
@@ -770,7 +795,7 @@ class MainWidget(QMainWindow):
             self.canvas.seg_stat_overlay.clear()
         else:
             if self.stat_LUT_type == 'frame':
-                stat_range = tuple(get_quantile(stat[..., np.newaxis])[0])
+                stat_range = tuple(get_quantile(stat[..., np.newaxis], q=self.stat_quantile)[0])
                 levels = stat_range
             elif self.stat_LUT_type == 'stack':
                 levels = self.stat_stack_bounds
@@ -2319,6 +2344,8 @@ class MainWidget(QMainWindow):
             self.left_toolbar.z_size = z_size
 
     def _normalize(self):
+        if not self.file_loaded:
+            return
         execution_times = {}
 
         start_time = time.time()
@@ -2371,7 +2398,7 @@ class MainWidget(QMainWindow):
 
         bounds = []
         for z_slice in img:
-            bounds.append(get_quantile(z_slice, q=(1, 99), mask_zeros=True))
+            bounds.append(get_quantile(z_slice, q=self.quantile, mask_zeros=True))
 
         if len(bounds) == 1:
             bounds = bounds[0]
@@ -2419,7 +2446,7 @@ class MainWidget(QMainWindow):
                 img = img.reshape(*img.shape, 1)
             all_imgs.append(img)
         all_imgs = np.stack(all_imgs)
-        bounds = get_quantile(all_imgs, q=(1, 99), mask_zeros=True)
+        bounds = get_quantile(all_imgs, q=self.quantile, mask_zeros=True)
 
         return bounds
 

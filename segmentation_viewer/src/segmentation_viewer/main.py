@@ -1063,7 +1063,6 @@ class MainWidget(QMainWindow):
 
         # update the display
         self.left_toolbar.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
-        self._refresh_segmentation(replace_masks=True)
         self.masks_visible = True
         self._FUCCI_overlay()
 
@@ -1109,6 +1108,7 @@ class MainWidget(QMainWindow):
             self.replace_segmentation(frame, masks)
 
             if frame == self.frame:
+                self._refresh_segmentation(replace_masks=True)
                 self._update_ROIs_label()
 
     def clear_masks(self):
@@ -1131,8 +1131,7 @@ class MainWidget(QMainWindow):
                 self.stack.tracked_centroids = t[t.frame != frame.frame_number]
                 self.left_toolbar.also_save_tracking.setChecked(True)
 
-            if hasattr(frame, 'stored_mask_overlay'):
-                del frame.stored_mask_overlay
+        self._refresh_segmentation(replace_masks=True)
 
     def _progress_bar(self, iterable, desc: str = None, length: int | None = None, leave: bool = True):
         if length is None:

@@ -2462,9 +2462,7 @@ class MainWidget(QMainWindow):
     def _open_script_editor(self):
         # Create a separate window for the script editor
         if not hasattr(self, 'script_window') or not self.script_window.isVisible():
-            script_globals=self.globals_dict.copy()
-            script_globals['progress'] = self._progress_bar
-            self.script_window = ScriptWindow(self, script_globals, self.locals_dict)
+            self.script_window = ScriptWindow(self, self.globals_dict, self.locals_dict)
             self.script_window.show()
 
     def _show_undo_history(self):

@@ -1203,6 +1203,10 @@ class MainWidget(QMainWindow):
             ]
         )
 
+        for cell in frame.cells:
+            if cell.area_pixels==0:
+                frame.delete_cells([cell.n])
+
         if hasattr(frame, 'stored_mask_overlay'):
             del frame.stored_mask_overlay
             self.canvas.draw_masks_bg(frame)

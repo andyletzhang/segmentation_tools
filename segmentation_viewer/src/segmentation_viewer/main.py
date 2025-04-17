@@ -1900,18 +1900,25 @@ class MainWidget(QMainWindow):
         if isinstance(frames, SegmentedImage):
             frames = [frames]
 
+        if sigma is None:
+            if hasattr(frames[0], 'scale'):
+                sigma = 2 / frames[0].scale
+            else:
+                print(f'No xy scale available for {frames[0].name}. Defaulting to 0.325.')
+                sigma = 2 / 0.325
         for frame in self._progress_bar(frames):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
             else:
-                if not coverslip_height:
-                    coverslip_height = self.calibrate_coverslip_height(frame, prominence=coverslip_prominence)
-                frame.coverslip_height = coverslip_height
+                if coverslip_height is None:
+                    frame.coverslip_height = self.calibrate_coverslip_height(frame, prominence=coverslip_prominence)
+                else:
+                    frame.coverslip_height = coverslip_height
                 if self.is_grayscale:
                     membrane = frame.zstack
                 else:
                     membrane = frame.zstack[..., membrane_channel]  # TODO: allow user to specify membrane channel
-                frame.heights = get_heights(membrane, peak_prominence=peak_prominence)
+                frame.heights = get_heights(membrane, peak_prominence=peak_prominence, sigma=sigma)
                 frame.to_heightmap()
 
     def _compute_spherical_volumes(self):

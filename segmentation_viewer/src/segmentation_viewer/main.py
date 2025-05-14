@@ -1881,7 +1881,7 @@ class MainWidget(QMainWindow):
         self._export_heights_action.setEnabled(True)
         self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
 
-    def measure_heights(self, frames, peak_prominence=0.01, coverslip_prominence=0.01, coverslip_height=None, membrane_channel=2):
+    def measure_heights(self, frames, peak_prominence=0.01, coverslip_prominence=0.01, coverslip_height=None, membrane_channel=2, sigma=None):
         """
         Compute the heightmap of the monolayer for the specified frames.
 

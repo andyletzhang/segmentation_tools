@@ -2412,7 +2412,7 @@ class MainWidget(QMainWindow):
 
         if len(bounds) == 1:
             bounds = bounds[0]
-        return bounds
+        return np.array(bounds)
 
     def _precompute_bounds(self, frames=None):
         if not self.file_loaded:

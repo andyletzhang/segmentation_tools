@@ -202,8 +202,8 @@ def height_to_3d_mask(heights, max_height=None):
 def expand_slice(s, size=1):
     return slice(max(0, s.start-size), s.stop+size)
 
-def get_heights(membrane, min_region_size=1000, peak_prominence=0.004):
-    heights=process_zstack(membrane, peak_prominence)
+def get_heights(membrane, min_region_size=1000, peak_prominence=0.004, sigma=6):
+    heights=process_zstack(membrane, peak_prominence, sigma=sigma)
 
     masked_outliers=get_outliers(heights, min_region_size)
 

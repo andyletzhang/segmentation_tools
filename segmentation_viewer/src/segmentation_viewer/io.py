@@ -297,7 +297,7 @@ class ExportWizard(QDialog):
 
 
 class RangeStringValidator(QValidator):
-    def __init__(self, max_value, parent=None):
+    def __init__(self, max_value=None, parent=None):
         """
         Validator for integer sequences and ranges.
         Accepts formats like: "1", "1, 3", "1-5", "1, 3-5, 7, 9-11"
@@ -354,14 +354,16 @@ class RangeStringValidator(QValidator):
                     start = int(start_str.strip())
                     end = int(end_str.strip())
 
-                    if start > self.max_value or end > self.max_value:
-                        return (QValidator.State.Invalid, input_str, pos)
+                    if self.max_value is not None:
+                        if start > self.max_value or end > self.max_value:
+                            return (QValidator.State.Invalid, input_str, pos)
                 else:
                     # Handle single number, if it's not empty
                     if part.strip():
                         num = int(part.strip())
-                        if num > self.max_value:
-                            return (QValidator.State.Invalid, input_str, pos)
+                        if self.max_value is not None:
+                            if num > self.max_value:
+                                return (QValidator.State.Invalid, input_str, pos)
 
             return (QValidator.State.Acceptable, input_str, pos)
 

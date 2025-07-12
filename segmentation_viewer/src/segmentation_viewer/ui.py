@@ -301,13 +301,10 @@ class LeftToolbar(QScrollArea):
         self.cell_diameter = QLineEdit(self, placeholderText='Auto')
         self.cell_diameter.setValidator(QDoubleValidator(bottom=0))  # non-negative floats only
         self.cell_diameter.setFixedWidth(60)
-        self.cell_diameter_calibrate = QPushButton('Calibrate', self)
-        self.cell_diameter_calibrate.setFixedWidth(70)
         self.cell_diameter_layout = QHBoxLayout()
         self.cell_diameter_layout.setSpacing(5)
         self.cell_diameter_layout.addWidget(QLabel('Cell Diameter:', self))
         self.cell_diameter_layout.addWidget(self.cell_diameter)
-        self.cell_diameter_layout.addWidget(self.cell_diameter_calibrate)
 
         # channel selection
         self.segmentation_channels_widget = QWidget()
@@ -362,7 +359,6 @@ class LeftToolbar(QScrollArea):
         self.mend_gaps_button.clicked.connect(self.main_window._mend_gaps_action.trigger)
         self.remove_edge_masks_button.clicked.connect(self.main_window._remove_edge_masks_action.trigger)
         self.cell_diameter.textChanged.connect(self.main_window._update_cell_diameter)
-        self.cell_diameter_calibrate.clicked.connect(self.main_window._calibrate_diameter_action.trigger)
         self.segment_frame_button.clicked.connect(self.main_window._segment_frame_action.trigger)
         self.segment_stack_button.clicked.connect(self.main_window._segment_stack_action.trigger)
         generate_outlines_button.clicked.connect(self.main_window._generate_outlines_action.trigger)

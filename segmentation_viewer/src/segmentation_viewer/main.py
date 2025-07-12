@@ -294,7 +294,6 @@ class MainWidget(QMainWindow):
             'Add Mitosis': (self._add_mitosis, 'Ctrl+M'),
             'Delete Mitosis': (self._delete_mitosis, 'Ctrl+Shift+M'),
             # Other Actions
-            'Calibrate Diameter': (self._calibrate_diameter, None),
             'Segment Frame': (self._segment_frame, None),
             'Segment Stack': (self._segment_stack, None),
             'Clear FUCCI Frame': (self._clear_FUCCI_frame, None),
@@ -979,52 +978,6 @@ class MainWidget(QMainWindow):
         self.circle_mask = QGraphicsEllipseItem(padding, img_shape[0] + padding, diameter, diameter)
         self.circle_mask.setBrush(pg.mkBrush(color='#4A90E2'))
         self.canvas.img_plot.addItem(self.circle_mask)
-
-    def _calibrate_diameter(self):
-        channels = self.left_toolbar.segmentation_channels
-        diam = self.calibrate_cell_diameter(self.frame.img, channels)
-
-        print(f'Computed cell diameter {diam:.2f} with channels {channels}')
-        self.left_toolbar.cell_diameter.setText(f'{diam:.2f}')
-
-    def calibrate_cell_diameter(self, img, channels):
-        """
-        Automatically calibrate the cell diameter for the specified image using Cellpose.
-
-        Parameters
-        ----------
-        img : np.ndarray
-            The image to calibrate the cell diameter for.
-        channels : length-2 tuple of ints
-            The channels (membrane, nuclei) to use for segmentation.
-            0 is grayscale, 1-3 are RGB, 4 is FUCCI (combined red and green) and is only available for nuclei.
-        """
-        if not self.file_loaded:
-            return
-
-        if not hasattr(self, 'size_model'):
-            from cellpose import models
-
-            self.cellpose_model = models.CellposeModel(gpu=True, model_type=self.model_type)
-            self.size_model_path = models.size_model_path(self.model_type)
-            self.size_model = models.SizeModel(self.cellpose_model, pretrained_size=self.size_model_path)
-
-        if channels[1] == 4:  # FUCCI channel
-            from segmentation_tools.image_segmentation import combine_FUCCI_channels
-
-            if channels[0] == 0:
-                membrane = np.mean(img, axis=-1)  # grayscale
-            else:
-                membrane = img[..., channels[0] - 1]  # fetch specified channel
-
-            nuclei = combine_FUCCI_channels(img)[..., 0]
-            img = np.stack([nuclei, membrane], axis=-1)
-            diam, _ = self.size_model.eval(img, channels=[2, 1])
-        else:
-            diam, _ = self.size_model.eval(img, channels=channels)
-
-        return diam
-
     def _segment_frame(self):
         if not self.file_loaded:
             return
@@ -1039,7 +992,6 @@ class MainWidget(QMainWindow):
         self.segment([self.frame], diameter=diameter, channels=channels)
 
         # update the display
-        self.left_toolbar.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
         self._refresh_segmentation(replace_masks=True)
         self.masks_visible = True
         self._FUCCI_overlay()
@@ -1062,7 +1014,6 @@ class MainWidget(QMainWindow):
         self.segment(self.stack.frames, diameter=diameter, channels=channels)
 
         # update the display
-        self.left_toolbar.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
         self.masks_visible = True
         self._FUCCI_overlay()
 
@@ -1075,7 +1026,7 @@ class MainWidget(QMainWindow):
         frames : list of frames
             The frames to segment.
         diameter : float
-            The cell diameter to use for segmentation. If None, the diameter is automatically calibrated.
+            The cell diameter to use for segmentation, if resampling is needed.
         channels : length-2 tuple of ints
             The channels (membrane, nuclei) to use for segmentation.
             0 is grayscale, 1-3 are RGB, 4 is FUCCI (combined red and green) and is only available for nuclei.
@@ -1088,9 +1039,6 @@ class MainWidget(QMainWindow):
             self.cellpose_model = models.CellposeModel(gpu=True, model_type=model_type)
 
         for frame in self._progress_bar(frames, desc='Segmenting frames'):
-            if diameter is None:
-                diameter = self.calibrate_cell_diameter(frame.img, channels)
-            frame.cell_diameter = diameter
             if channels[1] == 4:  # FUCCI channel
                 img = frame.img.copy()
                 from segmentation_tools.image_segmentation import combine_FUCCI_channels
@@ -1825,8 +1773,15 @@ class MainWidget(QMainWindow):
 
         Parameters
         ----------
-        frames : list of Frame
+        frames : SegmentedImage or list of SegmentedImage
             The frames to calibrate the coverslip height for.
+
+        membrane_channel : int
+            The channel to use for membrane detection. Defaults to 2 (blue).
+        
+        prominence : float
+            The minimum prominence of a peak to be considered the top of a cell. Defaults to 0.01.
+            If the height map is very noisy, consider increasing this value. If cell membranes are not being detected, try decreasing it.
 
         Returns
         -------
@@ -2031,9 +1986,6 @@ class MainWidget(QMainWindow):
             self.left_toolbar.green_threshold = None
 
         self._update_voxel_size_labels()
-
-        if hasattr(self.frame, 'cell_diameter'):
-            self.left_toolbar.cell_diameter.setText(f'{self.frame.cell_diameter:.2f}')
 
         if self.FUCCI_dropdown != 0:
             self._FUCCI_overlay()

@@ -11,7 +11,7 @@ dependencies = [
     "PyOpenGL",
     "shapely",
     "numpy<2",
-    "cellpose",
+    "cellpose>3",
     "superqt",
     "pyqtgraph",
     "requests",

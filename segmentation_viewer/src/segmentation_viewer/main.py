@@ -51,18 +51,21 @@ from .workers import BoundsProcessor
 
 # high priority
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
-# ndimage labeled measurements on any of these attributes to create new ones
+    # TODO: ndimage labeled measurements on any of these attributes to create new ones
 # TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
+# TODO: generalize image loading to >3 color channels
 
 # low priority
 # TODO: unify print statements with status bar messages
-# TODO: when cell is clicked, have option to show its entire colormapped track
+# TODO: show tracking trajectories
+    # TODO: show all tracks in a different color
+    # TODO: show tracks colormapped by time
+    # TODO: when cell is clicked, have option to show its entire colormapped track
 # TODO: use fastremap to add cell highlights?
 
 # TODO: some image pyramid approach to speed up work on large images??
 # TODO: maybe load images/frames only when they are accessed? (lazy loading)
-# TODO: number of neighbors
 
 # eventual QOL improvements
 # TODO: rename and streamline update_display, imshow. Combine other updates (plot_particle_statistic etc.)
@@ -104,7 +107,7 @@ class MainWidget(QMainWindow):
         self.mitosis_mode = 0
         self.bounds_processor = BoundsProcessor(self, n_cores=1)
         self.undo_stack = QueuedUndoStack(self)
-        self.model_type = 'cyto3'
+        self.pretrained_model = 'cpsam'
         self.progress_widget = None
         self.globals_dict = {'main': self, 'np': np, 'pd': pd, 'progress':self._progress_bar, 'history': self.undo_stack}
         self.stat_quantile=(1,99)
@@ -1017,7 +1020,7 @@ class MainWidget(QMainWindow):
         self.masks_visible = True
         self._FUCCI_overlay()
 
-    def segment(self, frames, diameter=None, channels=[0, 0]):
+    def segment(self, frames, diameter=None, channels=None):
         """
         Performs segmentation on the specified frames using Cellpose.
 
@@ -1035,26 +1038,14 @@ class MainWidget(QMainWindow):
         if not hasattr(self, 'cellpose_model'):
             from cellpose import models
 
-            model_type = 'cyto3'
-            self.cellpose_model = models.CellposeModel(gpu=True, model_type=model_type)
+            pretrained_model = 'cpsam'
+            self.cellpose_model = models.CellposeModel(gpu=True, pretrained_model=pretrained_model)
 
         for frame in self._progress_bar(frames, desc='Segmenting frames'):
-            if channels[1] == 4:  # FUCCI channel
-                img = frame.img.copy()
-                from segmentation_tools.image_segmentation import combine_FUCCI_channels
-
-                if channels[0] == 0:
-                    membrane = np.mean(img, axis=-1)  # grayscale
-                else:
-                    membrane = img[..., channels[0] - 1]  # fetch specified channel
-
-                nuclei = combine_FUCCI_channels(img)[..., 0]
-                img = np.stack([nuclei, membrane], axis=-1)
-                masks, _, _ = self.cellpose_model.eval(img, channels=[2, 1], diameter=diameter)
-            else:
-                masks, _, _ = self.cellpose_model.eval(frame.img, channels=channels, diameter=diameter)
+            img = frame.img[..., channels] # segment with the specified channels
+            masks = self.cellpose_model.eval(img, diameter=diameter)[0]
             self.replace_segmentation(frame, masks)
-
+ 
             if frame == self.frame:
                 self._refresh_segmentation(replace_masks=True)
                 self._update_ROIs_label()
@@ -2214,29 +2205,33 @@ class MainWidget(QMainWindow):
         second_particle : int
             The second particle to merge.
         """
+        # no tracking data
+        if not hasattr(self.stack, 'tracked_centroids'):
+            return
 
-        if hasattr(self.stack, 'tracked_centroids'):
-            if first_particle == second_particle:  # same particle, no need to merge
-                return
+        # same particle, no need to merge
+        elif first_particle == second_particle:
+            return
 
-            if (
-                self.stack.tracked_centroids[self.stack.tracked_centroids.particle == first_particle]['frame'].min()
-                >= self.frame_number
-            ):
-                return  # first particle doesn't have a head, nothing to merge
-            
-            # Apply visual changes to the current frame
-            cell2 = self.frame.cells[self.cell_from_particle(second_particle)]
-            merge_color = self.stack.get_particle(first_particle)[0].color_ID
-            self.canvas.clear_overlay('selection')
-            self._mock_select_recolor(cell2, merge_color)
+        # first particle doesn't have a head, nothing to merge
+        elif (
+            self.stack.tracked_centroids[self.stack.tracked_centroids.particle == first_particle]['frame'].min()
+            >= self.frame_number
+        ):
+            return
+        
+        # Apply visual changes to the current frame
+        cell2 = self.frame.cells[self.cell_from_particle(second_particle)]
+        merge_color = self.stack.get_particle(first_particle)[0].color_ID
+        self.canvas.clear_overlay('selection')
+        self._mock_select_recolor(cell2, merge_color)
 
-            # Create and execute the merge command
-            command = MergeParticleTracksCommand(self, first_particle, second_particle, self.frame_number)
-            self.undo_stack.push(command)
+        # Create and execute the merge command
+        command = MergeParticleTracksCommand(self, first_particle, second_particle, self.frame_number)
+        self.undo_stack.push(command)
 
-            self.left_toolbar.also_save_tracking.setChecked(True)
-            self.select_cell(particle=first_particle)
+        self.left_toolbar.also_save_tracking.setChecked(True)
+        self.select_cell(particle=first_particle)
 
     def _set_LUTs(self, refresh=True):
         """Set the LUTs for the image display based on the current slider values."""
@@ -3757,7 +3752,11 @@ class MainWidget(QMainWindow):
                 'ext': 'gif',
                 'ffmpeg_opts': {
                     'codec': None,  # ffmpeg will automatically use gif encoder
-                    'extra': ['-filter_complex', '[0:v] split [a][b];[a] palettegen [p];[b][p] paletteuse'],
+                    'extra': [
+                        '-filter_complex',
+                        # Add reserve_transparent=off to palettegen
+                        '[0:v] split [a][b];[a] palettegen=reserve_transparent=off [p];[b][p] paletteuse'
+                        ]
                 },
             },
             'MP4 (*.mp4)': {
@@ -3906,7 +3905,7 @@ class MainWidget(QMainWindow):
         for item in items:
             item.setEnabled(value)
 
-    def open_stack(self, files, image_shape=None):
+    def open_stack(self, files: str | list, image_shape: dict | None=None):
         """
         Open a stack of images or segmentation files.
         If multiple file types are present, the function will attempt to load the segmented files first, then the image files.
@@ -3960,6 +3959,8 @@ class MainWidget(QMainWindow):
             self.left_toolbar.grayscale_mode()
         elif self.frame.img.ndim == 3:  # RGB
             self.left_toolbar.RGB_mode()
+            self.left_toolbar.channels_validator.max_value = self.frame.img.shape[-1]  # set max value for channels prompt validator
+            
         else:
             raise ValueError(f'{self.frame.name} has {self.frame.img.ndim} image dimensions, must be 2 (grayscale) or 3 (RGB).')
 
@@ -3987,7 +3988,7 @@ class MainWidget(QMainWindow):
         if len(files) > 0:
             self.open_stack(files)
 
-    def _load_files(self, files, image_shape=None):
+    def _load_files(self, files: str | list, image_shape: dict | None=None):
         """
         Load a stack of images.
         If a tracking.csv is found, the tracking data is returned as well

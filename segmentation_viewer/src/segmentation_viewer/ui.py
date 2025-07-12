@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .qt import bordered, labeled_LUT_slider, CustomComboBox, CollapsibleWidget, FrameStackButtons
+from segmentation_viewer.io import RangeStringValidator, range_string_to_list
 
 spacer = (0, 10)  # default spacer size (width, height)
 
@@ -214,8 +215,7 @@ class LeftToolbar(QScrollArea):
         self.clear_RGB_checkboxes()
         self.add_grayscale_sliders(self.slider_layout)
         self.segmentation_channels_widget.hide()
-        self.membrane_channel.setCurrentIndex(0)
-        self.nuclear_channel.setCurrentIndex(0)
+        self.segmentation_channels_input.setText('') # clear segmentation channels input
 
     def RGB_mode(self):
         """Show RGB GUI elements when an RGB image is loaded."""
@@ -266,27 +266,13 @@ class LeftToolbar(QScrollArea):
         self.main_window._update_display()
 
     def add_channel_layout(self, channel_layout):
-        self.membrane_channel = QComboBox(self)
-        self.membrane_channel_label = QLabel('Membrane Channel:', self)
-        self.membrane_channel.addItems(['Gray', 'Red', 'Green', 'Blue'])
-        self.membrane_channel.setCurrentIndex(3)
-        self.membrane_channel.setFixedWidth(70)
-        self.nuclear_channel = QComboBox(self)
-        self.nuclear_channel_label = QLabel('Nuclear Channel:', self)
-        self.nuclear_channel.addItems(['None', 'Red', 'Green', 'Blue', 'FUCCI'])
-        self.nuclear_channel.setFixedWidth(70)
+        channels_label = QLabel('Segmentation Channels:', self)
+        self.segmentation_channels_input = QLineEdit(self, placeholderText='All')
+        self.channels_validator = RangeStringValidator()
+        self.segmentation_channels_input.setValidator(self.channels_validator)
 
-        membrane_tab_layout = QHBoxLayout()
-        membrane_tab_layout.setSpacing(10)
-        membrane_tab_layout.addWidget(self.membrane_channel_label)
-        membrane_tab_layout.addWidget(self.membrane_channel)
-        nuclear_layout = QHBoxLayout()
-        nuclear_layout.setSpacing(5)
-        nuclear_layout.addWidget(self.nuclear_channel_label)
-        nuclear_layout.addWidget(self.nuclear_channel)
-
-        channel_layout.addLayout(membrane_tab_layout)
-        channel_layout.addLayout(nuclear_layout)
+        channel_layout.addWidget(channels_label)
+        channel_layout.addWidget(self.segmentation_channels_input)
 
         return channel_layout
 
@@ -302,15 +288,15 @@ class LeftToolbar(QScrollArea):
         self.cell_diameter.setValidator(QDoubleValidator(bottom=0))  # non-negative floats only
         self.cell_diameter.setFixedWidth(60)
         self.cell_diameter_layout = QHBoxLayout()
-        self.cell_diameter_layout.setSpacing(5)
         self.cell_diameter_layout.addWidget(QLabel('Cell Diameter:', self))
         self.cell_diameter_layout.addWidget(self.cell_diameter)
 
         # channel selection
         self.segmentation_channels_widget = QWidget()
         self.segmentation_channels_widget.setContentsMargins(0, 0, 0, 0)
-        self.segmentation_channels_layout = QVBoxLayout(self.segmentation_channels_widget)
-        self.add_channel_layout(self.segmentation_channels_layout)
+        self.segmentation_channels_layout = QHBoxLayout(self.segmentation_channels_widget)
+        self.segmentation_channels_layout.setContentsMargins(0, 0, 0, 0)
+        self.add_channel_layout(self.segmentation_channels_layout) # add "Channels" label and input to the layout
 
         segmentation_button_layout = QHBoxLayout()
         self.segment_frame_button = QPushButton('Segment Frame', self)
@@ -841,7 +827,11 @@ class LeftToolbar(QScrollArea):
 
     @property
     def segmentation_channels(self):
-        return self.membrane_channel.currentIndex(), self.nuclear_channel.currentIndex()
+        channels_text = self.segmentation_channels_input.text()
+        if channels_text == '':
+            return slice(None) # use all channels
+        else:
+            return range_string_to_list(channels_text)
 
     @property
     def mitosis_params(self):

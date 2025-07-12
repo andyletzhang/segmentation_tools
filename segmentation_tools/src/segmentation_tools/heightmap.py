@@ -32,7 +32,7 @@ if HAS_GPU:
 
     def process_zstack_gpu(zstack, prominence=0.004, sigma=6):
         # Move data to GPU
-        zstack_gpu = cp.asarray(zstack)
+        zstack_gpu = cp.asarray(zstack, dtype=cp.float32)
         zstack_gpu = normalize_gpu(zstack_gpu)
         zstack_gpu = cp_ndimage.gaussian_filter(zstack_gpu, sigma=(0,sigma,sigma))
 
@@ -57,7 +57,12 @@ if HAS_GPU:
 
     def normalize_gpu(data):
         bounds = cp.percentile(data, [1, 99])
-        return (data - bounds[0]) / (bounds[1] - bounds[0])
+        # normalize in place
+        data -= bounds[0]
+        data /= bounds[1] - bounds[0]
+        data[data < 0] = 0
+        data[data > 1] = 1
+        return data
 
 else:
     # Fallback for CPU execution

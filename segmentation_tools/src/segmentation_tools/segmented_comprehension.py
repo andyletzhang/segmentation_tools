@@ -598,7 +598,7 @@ class TimeStack(SegmentedStack):
 
         if search_range is None:  # get a search range by evaluating the velocity distribution.
             # This is a simplified copy of the get_velocities() method.
-            v = t_corrected[['x', 'y', 'frame', 'particle']].groupby('particle').apply(np.diff, axis=0)
+            v = t_corrected[['x', 'y', 'frame']].groupby(t_corrected['particle']).apply(np.diff, axis=0)
             v_arr = np.concatenate(v.values)[:, :3]
             velocities = np.linalg.norm(v_arr[:, :2], axis=1) / v_arr[:, 2]  # get magnitude of velocity normalized by time
 

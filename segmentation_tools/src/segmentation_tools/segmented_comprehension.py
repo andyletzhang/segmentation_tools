@@ -140,7 +140,10 @@ class Cell:
         could replace this with a sort_vertices which pulls them by outline now that I have that.
         only calculable for cells with reconstructed vertices ('good cells').
         """
-        zeroed_coords = self.vertices - self.centroid  # zero vertices to the centroid
+        if not hasattr(self, 'vertices'):
+            return np.array([])  # if no vertices are defined, return empty array
+        
+        zeroed_coords = self.vertices - self.centroid[::-1]  # zero vertices to the centroid
         angles = np.arctan2(zeroed_coords[:, 0], zeroed_coords[:, 1])  # get polar angles
         vertex_order = np.argsort(angles)  # sort polar angles
         return self.vertices[vertex_order]
@@ -152,6 +155,10 @@ class Cell:
         else:
             self._sorted_vertices = self.sort_vertices()
             return self._sorted_vertices
+
+    @sorted_vertices.setter
+    def sorted_vertices(self, vertices):
+        self._sorted_vertices = vertices
 
     def TCJ_axis(self):
         """

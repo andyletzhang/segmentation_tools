@@ -1821,13 +1821,13 @@ class MainWidget(QMainWindow):
         else:
             coverslip_height = float(coverslip_height)
 
-        self.measure_heights(frames, peak_prominence, coverslip_height)
+        self.measure_heights(frames, peak_prominence, coverslip_height=coverslip_height)
         self._show_seg_overlay()
         self.left_toolbar.volume_button.setEnabled(True)
         self._export_heights_action.setEnabled(True)
         self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
 
-    def measure_heights(self, frames, peak_prominence=0.01, coverslip_prominence=0.01, coverslip_height=None, membrane_channel=2, sigma=None):
+    def measure_heights(self, frames, peak_prominence:float=0.01, coverslip_prominence:float=0.01, coverslip_height: float | None = None, membrane_channel:int=2, sigma:float|None=None):
         """
         Compute the heightmap of the monolayer for the specified frames.
 
@@ -3351,7 +3351,7 @@ class MainWidget(QMainWindow):
             self.canvas.clear_overlay('selection')  # clear basic selection during FUCCI labeling
             if len(self.frame.cells) == 0:
                 return
-            if FUCCI_index == 3:
+            if FUCCI_index == 3: # all colors
                 colors = np.array(['g', 'r', 'orange'])
                 green, red = np.array(self.frame.get_cell_attrs(['green', 'red'])).T
                 colored_cells = np.where(red | green)[0]  # cells that are either red or green
@@ -3359,7 +3359,7 @@ class MainWidget(QMainWindow):
                 cell_colors = colors[cell_cycle[colored_cells]]  # map cell cycle state to green, red, orange
                 self.canvas.highlight_cells(colored_cells, alpha=1, cell_colors=cell_colors, img_type='outlines', layer='FUCCI')
 
-            else:
+            else: # get single color
                 colored_cells = np.where(self.frame.get_cell_attrs(overlay_color))[0]
                 self.canvas.highlight_cells(colored_cells, alpha=1, color=overlay_color, img_type='outlines', layer='FUCCI')
 

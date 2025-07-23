@@ -140,8 +140,6 @@ class Cell:
         could replace this with a sort_vertices which pulls them by outline now that I have that.
         only calculable for cells with reconstructed vertices ('good cells').
         """
-        if not hasattr(self, 'vertices'):
-            return np.array([])  # if no vertices are defined, return empty array
         
         zeroed_coords = self.vertices - self.centroid[::-1]  # zero vertices to the centroid
         angles = np.arctan2(zeroed_coords[:, 0], zeroed_coords[:, 1])  # get polar angles

@@ -1827,7 +1827,7 @@ class MainWidget(QMainWindow):
         self._export_heights_action.setEnabled(True)
         self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
 
-    def measure_heights(self, frames, peak_prominence:float=0.01, coverslip_prominence:float=0.01, coverslip_height: float | None = None, membrane_channel:int=2, sigma:float|None=None):
+    def measure_heights(self, frames, peak_prominence:float=0.01, coverslip_prominence:float=0.01, coverslip_height: float | None = None, membrane_channel:int=2, sigma:float|None=None, min_region_size: int=None):
         """
         Compute the heightmap of the monolayer for the specified frames.
 
@@ -1846,12 +1846,19 @@ class MainWidget(QMainWindow):
         if isinstance(frames, SegmentedImage):
             frames = [frames]
 
+        if hasattr(frames[0], 'scale'):
+            scale=frames[0].scale
+        else:
+            print(f'No xy scale available for {frames[0].name}. Defaulting to 0.325.')
+            scale = 0.325
+        
         if sigma is None:
-            if hasattr(frames[0], 'scale'):
-                sigma = 2 / frames[0].scale
-            else:
-                print(f'No xy scale available for {frames[0].name}. Defaulting to 0.325.')
-                sigma = 2 / 0.325
+            sigma = 2 / scale
+            print(f'Sigma not specified. Defaulting to {sigma:.2f} pixels.')
+        if min_region_size is None:
+            min_region_size = 100 / scale**2
+            print(f"Min region size not specified. Defaulting to {min_region_size:.2f} pixels.")
+
         for frame in self._progress_bar(frames):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
@@ -1864,7 +1871,7 @@ class MainWidget(QMainWindow):
                     membrane = frame.zstack
                 else:
                     membrane = frame.zstack[..., membrane_channel]  # TODO: allow user to specify membrane channel
-                frame.heights = get_heights(membrane, peak_prominence=peak_prominence, sigma=sigma)
+                frame.heights = get_heights(membrane, peak_prominence=peak_prominence, sigma=sigma, min_region_size=min_region_size)
                 frame.to_heightmap()
 
     def _compute_spherical_volumes(self):

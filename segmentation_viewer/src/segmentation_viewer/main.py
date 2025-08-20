@@ -1757,6 +1757,7 @@ class MainWidget(QMainWindow):
                 del frame.coverslip_heights  # overwrite heightmap if it exists
 
         self.left_toolbar.coverslip_height.setText(f'{frame.coverslip_height:.2f}')
+        self._show_seg_overlay()
 
     def calibrate_coverslip_height(self, frames, membrane_channel=2, prominence=None):
         """

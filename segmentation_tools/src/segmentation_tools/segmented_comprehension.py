@@ -1344,6 +1344,7 @@ class SegmentedImage:
             'z_scale',
             'units',
             'heights',
+            'coverslip_heights',
             'coverslip_height',
         ]  # if any of these exist, export them as well
         write_attrs = set(write_attrs + optional_attrs)  # add optional attrs to write_attrs

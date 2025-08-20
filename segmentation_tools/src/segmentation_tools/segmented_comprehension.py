@@ -1845,9 +1845,10 @@ class HeightMap(SegmentedImage):
         """heights in um"""
         scaled = self.heights.copy().astype(float)
 
-        if hasattr(
-            self, 'coverslip_height'
-        ):  # new convention is to store heights as ints, and subtract the coverslip height after
+        if hasattr(self, 'coverslip_heights'):  # heightmap for the coverslip
+            scaled -= self.coverslip_heights
+
+        elif hasattr(self, 'coverslip_height'):  # scalar offset for the coverslip
             scaled -= self.coverslip_height
 
         if self.zero_to_nan:

@@ -520,13 +520,17 @@ class LeftToolbar(QScrollArea):
         self.get_coverslip_height_layout.addWidget(self.coverslip_height)
         self.get_coverslip_height_layout.addWidget(self.get_coverslip_height_button)
         self.get_spherical_volumes = QPushButton('Compute Spherical Volumes', self)
+        self.get_coverslip_heightmaps_button = QPushButton('Coverslip Heightmap', self)
+        self.dropdown_volumes_layout=QHBoxLayout()
+        self.dropdown_volumes_layout.addWidget(self.get_spherical_volumes)
+        self.dropdown_volumes_layout.addWidget(self.get_coverslip_heightmaps_button)
 
         volumes_widget = CollapsibleWidget(header_text='Volumes', parent=self.tabbed_widget)
         volumes_border = bordered(volumes_widget)
 
         volumes_widget.addLayout(self.peak_prominence_layout)
         volumes_widget.addLayout(self.coverslip_prominence_layout)
-        volumes_widget.addWidget(self.get_spherical_volumes)
+        volumes_widget.addLayout(self.dropdown_volumes_layout)
         volumes_widget.core_layout.addLayout(self.get_heights_layout)
         volumes_widget.core_layout.addLayout(self.get_coverslip_height_layout)
 
@@ -539,6 +543,7 @@ class LeftToolbar(QScrollArea):
         self.get_heights_button.clicked.connect(self.main_window._measure_heights_action.trigger)
         self.get_coverslip_height_button.clicked.connect(self.main_window._calibrate_coverslip_height_action.trigger)
         self.get_spherical_volumes.clicked.connect(self.main_window._compute_spherical_volumes_action.trigger)
+        self.get_coverslip_heightmaps_button.clicked.connect(self.main_window._measure_coverslip_heightmaps_action.trigger)
 
         return self.volumes_tab
 

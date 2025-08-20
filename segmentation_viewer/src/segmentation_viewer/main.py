@@ -303,6 +303,7 @@ class MainWidget(QMainWindow):
             'Clear FUCCI Stack': (self._clear_FUCCI_stack, None),
             'Measure Volumes': (self._measure_volumes, None),
             'Measure Heights': (self._measure_heights, None),
+            'Get Coverslip Heightmaps': (self._measure_coverslip_heightmaps, None),
             'Get Coverslip Height': (self._calibrate_coverslip_height, None),
             'Get Spherical Volumes': (self._compute_spherical_volumes, None),
             'Get Mitoses': (self._get_mitoses, None),
@@ -1690,7 +1691,6 @@ class MainWidget(QMainWindow):
 
         # update the display if necessary
         self._refresh_right_toolbar('volume')
-        self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
 
     def measure_volumes(self, frames):
         """
@@ -1815,19 +1815,12 @@ class MainWidget(QMainWindow):
         else:
             peak_prominence = float(peak_prominence)
 
-        coverslip_height = self.left_toolbar.coverslip_height.text()
-        if coverslip_height == '':
-            coverslip_height = None
-        else:
-            coverslip_height = float(coverslip_height)
-
-        self.measure_heights(frames, peak_prominence, coverslip_height=coverslip_height)
+        self.measure_heights(frames, peak_prominence)
         self._show_seg_overlay()
         self.left_toolbar.volume_button.setEnabled(True)
         self._export_heights_action.setEnabled(True)
-        self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
 
-    def measure_heights(self, frames, peak_prominence:float=0.01, coverslip_prominence:float=0.01, coverslip_height: float | None = None, membrane_channel:int=2, sigma:float|None=None, min_region_size: int=None):
+    def measure_heights(self, frames, peak_prominence:float=0.01, coverslip_prominence:float=0.01, membrane_channel:int=2, sigma:float|None=None, min_region_size: int=None):
         """
         Compute the heightmap of the monolayer for the specified frames.
 
@@ -1863,15 +1856,65 @@ class MainWidget(QMainWindow):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
             else:
-                if coverslip_height is None:
-                    frame.coverslip_height = self.calibrate_coverslip_height(frame, prominence=coverslip_prominence)
-                else:
-                    frame.coverslip_height = coverslip_height
                 if self.is_grayscale:
                     membrane = frame.zstack
                 else:
                     membrane = frame.zstack[..., membrane_channel]  # TODO: allow user to specify membrane channel
                 frame.heights = get_heights(membrane, peak_prominence=peak_prominence, sigma=sigma, min_region_size=min_region_size)
+                frame.to_heightmap()
+
+    def _measure_coverslip_heightmaps(self):
+        if not self.file_loaded:
+            return
+        if self.left_toolbar.volumes_frame_stack.value == 'stack':
+            frames = self.stack.frames
+        else:
+            frames = self.frame
+
+        peak_prominence = self.left_toolbar.peak_prominence.text()
+        if peak_prominence == '':
+            peak_prominence = 0.01
+        else:
+            peak_prominence = float(peak_prominence)
+
+        self.measure_coverslip_heightmaps(frames, peak_prominence)
+        self._show_seg_overlay()
+        self.left_toolbar.coverslip_height.setText('')  # Clear coverslip height display
+
+    def measure_coverslip_heightmaps(self, frames, peak_prominence:float=0.01, membrane_channel:int=2, sigma:float=None, min_region_size:int=None):
+        '''
+        Identify the heightmap corresponding to the bottom of the coverslip by running get_heights on the inverted z stack.
+        '''
+        from segmentation_tools.heightmap import get_heights
+
+        if isinstance(frames, SegmentedImage):
+            frames = [frames]
+
+        if hasattr(frames[0], 'scale'):
+            scale=frames[0].scale
+        else:
+            print(f'No xy scale available for {frames[0].name}. Defaulting to 0.325.')
+            scale = 0.325
+        
+        if sigma is None:
+            sigma = 4 / scale
+            print(f'Sigma not specified. Defaulting to {sigma:.2f} pixels.')
+        if min_region_size is None:
+            min_region_size = 200 / scale**2
+            print(f"Min region size not specified. Defaulting to {min_region_size:.2f} pixels.")
+
+        for frame in self._progress_bar(frames):
+            if not hasattr(frame, 'zstack'):
+                raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
+            else:
+                if self.is_grayscale:
+                    membrane = frame.zstack
+                else:
+                    membrane = frame.zstack[..., membrane_channel]
+
+                frame.coverslip_heights = len(membrane) - get_heights(membrane[::-1], peak_prominence=peak_prominence, sigma=sigma, min_region_size=min_region_size)
+                if hasattr(frame, 'coverslip_height'):
+                    del frame.coverslip_height
                 frame.to_heightmap()
 
     def _compute_spherical_volumes(self):

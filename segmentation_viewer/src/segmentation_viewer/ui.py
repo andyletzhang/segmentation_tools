@@ -512,8 +512,7 @@ class LeftToolbar(QScrollArea):
         self.coverslip_prominence_layout.addWidget(self.coverslip_prominence)
         self.get_coverslip_height_layout = QHBoxLayout()
         coverslip_height_label = QLabel('Coverslip Height (μm):', self)
-        self.coverslip_height = QLineEdit(self, placeholderText='Auto')
-        self.coverslip_height.setValidator(QDoubleValidator(bottom=0))  # non-negative floats only
+        self.coverslip_height = QLabel('None', self)
         self.coverslip_height.setFixedWidth(60)
         self.get_coverslip_height_button = QPushButton('Calibrate', self)
         self.get_coverslip_height_layout.addWidget(coverslip_height_label)

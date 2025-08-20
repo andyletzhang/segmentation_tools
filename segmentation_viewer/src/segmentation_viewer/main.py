@@ -1706,14 +1706,12 @@ class MainWidget(QMainWindow):
             if not hasattr(frame, 'heights'):
                 if hasattr(frame, 'zstack'):
                     peak_prominence = self.left_toolbar.peak_prominence.text()
-                    coverslip_height = self.left_toolbar.coverslip_height.text()
+                    coverslip_height = getattr(frame, 'coverslip_height', None)
                     if peak_prominence == '':
                         peak_prominence = 0.01
                     else:
                         peak_prominence = float(peak_prominence)
-                    if coverslip_height == '':
-                        coverslip_height = None
-                    else:
+                    if coverslip_height:
                         coverslip_height = float(coverslip_height)
 
                     coverslip_prominence = self.left_toolbar.coverslip_prominence.text()
@@ -1755,6 +1753,8 @@ class MainWidget(QMainWindow):
 
         for frame in self._progress_bar(frames):
             frame.coverslip_height = self.calibrate_coverslip_height(frame, prominence=peak_prominence)
+            if hasattr(frame, 'coverslip_heights'):
+                del frame.coverslip_heights  # overwrite heightmap if it exists
 
         self.left_toolbar.coverslip_height.setText(f'{frame.coverslip_height:.2f}')
 
@@ -1879,7 +1879,7 @@ class MainWidget(QMainWindow):
 
         self.measure_coverslip_heightmaps(frames, peak_prominence)
         self._show_seg_overlay()
-        self.left_toolbar.coverslip_height.setText('')  # Clear coverslip height display
+        self.left_toolbar.coverslip_height.setText('Heightmap')
 
     def measure_coverslip_heightmaps(self, frames, peak_prominence:float=0.01, membrane_channel:int=2, sigma:float=None, min_region_size:int=None):
         '''
@@ -1992,14 +1992,18 @@ class MainWidget(QMainWindow):
 
         if self.is_zstack or hasattr(self.frame, 'heights'):
             self.left_toolbar.volume_button.setEnabled(True)
-
-            if hasattr(self.frame, 'coverslip_height'):
-                self.left_toolbar.coverslip_height.setText(f'{self.frame.coverslip_height:.2f}')
-            else:
-                self.left_toolbar.coverslip_height.setText('')
+            
+            coverslip_height = getattr(self.frame, 'coverslip_height', None)
+            if coverslip_height: # scalar value found
+                coverslip_height = f'{coverslip_height:.2f}'
+            elif hasattr(self.frame, 'coverslip_heights'): # heightmap found
+                coverslip_height = 'Heightmap'
+            else: # nothing
+                coverslip_height='None'
         else:
             self.left_toolbar.volume_button.setEnabled(False)
-            self.left_toolbar.coverslip_height.setText('')
+            coverslip_height='None'
+        self.left_toolbar.coverslip_height.setText(coverslip_height)
 
         self._export_heights_action.setEnabled(hasattr(self.frame, 'heights'))
 

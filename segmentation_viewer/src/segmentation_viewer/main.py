@@ -2074,13 +2074,13 @@ class MainWidget(QMainWindow):
             return None, None, None
         elif not hasattr(self, 'frame'):  # catch case where file_loaded is mistakenly True due to some exception
             return None, None, None
-        img = self.canvas.inverse_image_transform(self.canvas.img_data)
+        img = self.canvas.img_data
 
         if x < 0 or y < 0 or x >= img.shape[1] or y >= img.shape[0]:  # outside image bounds
             return None, None, None
 
-        if self.is_grayscale:
-            return [img[y, x]]
+        if self.is_grayscale: # reshape grayscale value
+            return np.array([img[y, x]])
 
         hidden_channels = np.where(~np.array(self.left_toolbar.RGB_visible))[0]
         pixel_value = list(img[y, x])

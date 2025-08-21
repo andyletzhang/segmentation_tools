@@ -57,7 +57,6 @@ from .workers import BoundsProcessor
 # TODO: generalize image loading to >3 color channels
 
 # low priority
-# TODO: unify print statements with status bar messages
 # TODO: show tracking trajectories
     # TODO: show all tracks in a different color
     # TODO: show tracks colormapped by time
@@ -351,9 +350,9 @@ class MainWidget(QMainWindow):
                 return
 
             except Exception as e:
-                print(f'Error loading config file: {e} - using defaults instead.')
+                self._print(f'Error loading config file: {e} - using defaults instead.')
 
-        print(f'Creating config file at {config_path}')
+        self._print(f'Creating config file at {config_path}')
         config = self._dump_config(config_path)
         self._set_config(config)
 
@@ -741,7 +740,7 @@ class MainWidget(QMainWindow):
                         continue
                 stat = np.array(cell_attrs)
                 if len(stat) == 0:
-                    print(f'Attribute {plot_attr} not found in cells')
+                    self._print(f'Attribute {plot_attr} not found in cells')
                     return
 
             min_val, max_val, step = calculate_range_params(stat)
@@ -774,7 +773,7 @@ class MainWidget(QMainWindow):
                     return
                 if plot_attr == 'heights':
                     if not hasattr(self.frame, 'z_scale'):
-                        print(f'No z scale found for {self.frame.name}, defaulting to 1.')
+                        self._print(f'No z scale found for {self.frame.name}, defaulting to 1.')
                         self.left_toolbar.z_size = 1.0
 
                     plot_attr='scaled_heights'
@@ -957,7 +956,7 @@ class MainWidget(QMainWindow):
         """
         edge_cells = self.stack.remove_edge_cells(self._progress_bar(frames), margin=margin)
         for deleted_cells, frame in zip(edge_cells, frames):
-            print(f'Removed {len(deleted_cells)} edge cells from frame {frame.frame_number}')
+            self._print(f'Removed {len(deleted_cells)} edge cells from frame {frame.frame_number}')
             if hasattr(frame, 'stored_mask_overlay'):
                 del frame.stored_mask_overlay
         self.canvas.draw_masks_parallel(frames)
@@ -1151,6 +1150,10 @@ class MainWidget(QMainWindow):
             del frame.stored_mask_overlay
             self.canvas.draw_masks_bg(frame)
 
+    def _print(self, msg, duration=2000):
+        self.statusBar().showMessage(msg, duration)
+        print(msg)
+
     def get_tracked_FUCCI(self):
         """
         Get cell cycle classification by tracking particles through time.
@@ -1159,7 +1162,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
-            self.statusBar().showMessage('No tracked centroids found.', 2000)
+            self._print('Error classifying FUCCI with tracking data: no tracked centroids found.')
             return
 
         self.stack.measure_FUCCI_by_transitions(progress=self._progress_bar)
@@ -1191,7 +1194,7 @@ class MainWidget(QMainWindow):
         if state != 2 or not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
-            self.statusBar().showMessage('No tracked centroids found.', 2000)
+            self._print('Failed to propagate FUCCI labels: no tracked centroids found.')
             return
 
         self._convert_red_green()
@@ -1440,15 +1443,15 @@ class MainWidget(QMainWindow):
 
         deleted_m = self.stack.mitoses.iloc[[idx]][['frame', 'mother', 'daughter1', 'daughter2']].to_string(index=False)
         self.stack.mitoses.drop(self.stack.mitoses.index[idx], inplace=True)
-        print(f'Deleted mitosis\n{deleted_m}')
+        self._print(f'Deleted mitosis\n{deleted_m}')
         self._update_tracking_overlay()
 
     def _add_mitosis(self, event=None):
-        print('Add mitosis')
+        self._print('Adding mitosis')
         if not self.file_loaded:
             return
         if not hasattr(self.stack, 'tracked_centroids'):
-            self.statusBar().showMessage("Can't create mitoses without tracking data.", 2000)
+            self._print("Failed to add mitosis: can't create mitoses without tracking data.")
             return
 
         if not self.mitosis_mode:
@@ -1461,7 +1464,7 @@ class MainWidget(QMainWindow):
             frame_number = self.frame_number
         self.mitosis_mode = 1
         self.current_mitosis = {'frame': frame_number}
-        print(f'Starting mitosis at frame {frame_number}. Select mother cell.')
+        self._print(f'Starting mitosis at frame {frame_number}. Select mother cell.')
 
     def _mitosis_selected(self, particle_n):
         if not hasattr(self, 'current_mitosis'):
@@ -1481,7 +1484,7 @@ class MainWidget(QMainWindow):
             self.canvas.add_cell_highlight(
                 self.cell_from_particle(particle_n), color=color, layer='mitosis', alpha=self.canvas.masks_alpha
             )
-        print(f'Selected {key} cell: {particle_n}. Select {keys[self.mitosis_mode]} cell.')
+        self._print(f'Selected {key} cell: {particle_n}. Select {keys[self.mitosis_mode]} cell.')
         self.mitosis_mode += 1
 
     def _cancel_mitosis(self):
@@ -1489,7 +1492,7 @@ class MainWidget(QMainWindow):
             return
         self.mitosis_mode = 0
         del self.current_mitosis
-        print('Add mitosis cancelled.')
+        self._print('Add mitosis cancelled.')
         self.canvas.clear_overlay('mitosis')
 
     def _end_mitosis(self):
@@ -1497,7 +1500,7 @@ class MainWidget(QMainWindow):
             return
 
         self.stack.add_mitosis(self.current_mitosis)
-        print(f'Added mitosis {self.current_mitosis}')
+        self._print(f'Added mitosis {self.current_mitosis}')
         self.canvas.clear_overlay('mitosis')
         self.mitosis_mode = 0
         del self.current_mitosis
@@ -1725,10 +1728,10 @@ class MainWidget(QMainWindow):
                     raise ValueError(f'No heights or z-stack available to measure volumes for {frame.name}.')
 
             if not hasattr(frame, 'z_scale'):
-                print(f'No z-scale available for {frame.name}. Defaulting to 1.')
+                self._print(f'No z-scale available for {frame.name}. Defaulting to 1.')
                 self.left_toolbar.z_size = 1.0
             if not hasattr(frame, 'scale'):
-                print(f'No scale available for {frame.name}. Defaulting to 0.1625.')
+                self._print(f'No scale available for {frame.name}. Defaulting to 0.1625.')
                 self.left_toolbar.xy_size = 0.1625
                 frame.scale = 0.1625  # 40x objective with 0.325 µm/pixel camera
             frame.get_volumes()
@@ -1795,7 +1798,7 @@ class MainWidget(QMainWindow):
                 )
 
         if not hasattr(self.frame, 'z_scale'):
-            print(f'No z-scale available for {self.frame.name}. Defaulting to 1.')
+            self._print(f'No z-scale available for {self.frame.name}. Defaulting to 1.')
             self.left_toolbar.z_size = 1.0
         scale = self.frame.z_scale
 
@@ -1843,15 +1846,15 @@ class MainWidget(QMainWindow):
         if hasattr(frames[0], 'scale'):
             scale=frames[0].scale
         else:
-            print(f'No xy scale available for {frames[0].name}. Defaulting to 0.325.')
+            self._print(f'No xy scale available for {frames[0].name}. Defaulting to 0.325.')
             scale = 0.325
         
         if sigma is None:
             sigma = 2 / scale
-            print(f'Sigma not specified. Defaulting to {sigma:.2f} pixels.')
+            self._print(f'Sigma not specified. Defaulting to {sigma:.2f} pixels.')
         if min_region_size is None:
             min_region_size = 100 / scale**2
-            print(f"Min region size not specified. Defaulting to {min_region_size:.2f} pixels.")
+            self._print(f"Min region size not specified. Defaulting to {min_region_size:.2f} pixels.")
 
         for frame in self._progress_bar(frames):
             if not hasattr(frame, 'zstack'):
@@ -1894,15 +1897,15 @@ class MainWidget(QMainWindow):
         if hasattr(frames[0], 'scale'):
             scale=frames[0].scale
         else:
-            print(f'No xy scale available for {frames[0].name}. Defaulting to 0.325.')
+            self._print(f'No xy scale available for {frames[0].name}. Defaulting to 0.325.')
             scale = 0.325
         
         if sigma is None:
             sigma = 4 / scale
-            print(f'Sigma not specified. Defaulting to {sigma:.2f} pixels.')
+            self._print(f'Sigma not specified. Defaulting to {sigma:.2f} pixels.')
         if min_region_size is None:
             min_region_size = 200 / scale**2
-            print(f"Min region size not specified. Defaulting to {min_region_size:.2f} pixels.")
+            self._print(f"Min region size not specified. Defaulting to {min_region_size:.2f} pixels.")
 
         for frame in self._progress_bar(frames):
             if not hasattr(frame, 'zstack'):
@@ -1928,7 +1931,7 @@ class MainWidget(QMainWindow):
             frames = [self.frame]
 
         if self.left_toolbar.xy_size is None:
-            print('No xy scale specified. Defaulting to 0.1625.')
+            self._print('No xy scale specified. Defaulting to 0.1625.')
             self.left_toolbar.xy_size = 0.1625
 
         self.get_spherical_volumes(frames, scale=self.left_toolbar.xy_size)
@@ -1946,7 +1949,7 @@ class MainWidget(QMainWindow):
             The frames to compute spherical volumes for
         """
         if scale is None:
-            print('No xy scale specified. Defaulting to 0.1625.')
+            self._print('No xy scale specified. Defaulting to 0.1625.')
             scale=0.1625
 
         for frame in self._progress_bar(frames):
@@ -2042,7 +2045,7 @@ class MainWidget(QMainWindow):
         self.status_frame_number.setText(f'Frame: {frame_number}')
 
         if debug_execution_times:
-            print(f'Total frame change time: {time.time() - start_time:.3f}s')
+            self._print(f'Total frame change time: {time.time() - start_time:.3f}s')
 
     @property
     def FUCCI_dropdown(self):
@@ -2126,18 +2129,17 @@ class MainWidget(QMainWindow):
         if memory == '':
             memory = 0
 
-        self.statusBar().showMessage('Tracking centroids...')
+        self._print('Tracking centroids...')
 
         try:
             self.track_centroids(search_range=tracking_range, memory=int(memory))
         except Exception as e:
-            print(e)
-            self.statusBar().showMessage(f'Error tracking centroids: {e}', 4000)
+            self._print(f'Error tracking centroids: {e}')
             return
 
-        print(f'Tracked centroids for stack {self.stack.name}')
+        self._print(f'Tracked centroids for stack {self.stack.name}')
         self.left_toolbar.tracking_range.setText(f'{self.stack.tracking_range:.2f}')
-        self.statusBar().showMessage(f'Tracked centroids for stack {self.stack.name}.', 2000)
+        self._print(f'Tracked centroids for stack {self.stack.name}.')
         self._update_tracking_overlay()
         self._recolor_tracks()
         self.canvas.draw_masks()
@@ -2389,12 +2391,12 @@ class MainWidget(QMainWindow):
         self.left_toolbar.LUT_slider_values = bounds
         execution_times['self.left_toolbar.LUT_slider_values = bounds'] = time.time() - start_time
 
-        # Print all execution times sorted by duration
+        # self._print all execution times sorted by duration
         if debug_execution_times:
-            print('-------------NORMALIZE-------------')
+            self._print('-------------NORMALIZE-------------')
             sorted_execution_times = sorted(execution_times.items(), key=lambda item: item[1], reverse=True)
             for description, duration in sorted_execution_times:
-                print(f'{description}: {duration:.4f} seconds')
+                self._print(f'{description}: {duration:.4f} seconds')
 
         return bounds
 
@@ -2455,7 +2457,7 @@ class MainWidget(QMainWindow):
                 img = frame.img
                 img = img[::downsample_factor]
             if is_grayscale:
-                img = img.reshape(*img.shape, 1)
+                img = img[..., np.newaxis]
             all_imgs.append(img)
         all_imgs = np.stack(all_imgs)
         bounds = get_quantile(all_imgs, q=self.quantile, mask_zeros=True)
@@ -3032,11 +3034,11 @@ class MainWidget(QMainWindow):
         """for troubleshooting: check if the cell numbers in the frame and the masks align."""
         cell_number_alignment = np.array([cell.n != n for n, cell in enumerate(self.frame.cells)])
         if np.any(cell_number_alignment):
-            print(f'{np.sum(cell_number_alignment)} cell numbers misalign starting with {np.where(cell_number_alignment)[0][0]}')
+            self._print(f'{np.sum(cell_number_alignment)} cell numbers misalign starting with {np.where(cell_number_alignment)[0][0]}')
 
         mask_number_alignment = np.array([n != mask_n for n, mask_n in enumerate(fastremap.unique(self.frame.masks))])
         if np.any(mask_number_alignment):
-            print(f'{np.sum(mask_number_alignment)} cell masks misalign starting with {np.where(mask_number_alignment)[0][0]}')
+            self._print(f'{np.sum(mask_number_alignment)} cell masks misalign starting with {np.where(mask_number_alignment)[0][0]}')
 
     def _generate_outlines(self):
         if not self.file_loaded:
@@ -3048,7 +3050,7 @@ class MainWidget(QMainWindow):
             frames = [self.frame]
 
         self.generate_outlines(frames)
-        self.statusBar().showMessage('Generated outlines.', 1000)
+        self._print('Generated outlines.')
 
     def generate_outlines(self, frames: list[SegmentedImage]):
         """
@@ -3080,8 +3082,7 @@ class MainWidget(QMainWindow):
             return
 
         if not hasattr(self.stack, 'tracked_centroids'):
-            print('No tracking data to save.')
-            self.statusBar().showMessage('No tracking data to save.', 1500)
+            self._print('No tracking data to save.')
             return
 
         if file_path is None:
@@ -3096,10 +3097,10 @@ class MainWidget(QMainWindow):
             scores_path = file_path.replace('tracking.csv', 'mitosis_scores.csv')
             self.stack.mitoses.to_csv(mitoses_path)
             self.stack.mitosis_scores.to_csv(scores_path)
-            print(f'Saved mitoses to {mitoses_path}')
+            self._print(f'Saved mitoses to {mitoses_path}')
 
         self.stack.save_tracking(file_path)
-        print(f'Saved tracking data to {file_path}')
+        self._print(f'Saved tracking data to {file_path}')
 
     def _load_tracking(self):
         if not self.file_loaded:
@@ -3111,8 +3112,7 @@ class MainWidget(QMainWindow):
         self.open_dir = Path(file_path).parent
 
         self.stack.load_tracking(file_path)
-        print(f'Loaded tracking data from {file_path}')
-        self.statusBar().showMessage(f'Loaded tracking data from {file_path}', 2000)
+        self._print(f'Loaded tracking data from {file_path}')
         self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(True)
         self._recolor_tracks()
 
@@ -3132,7 +3132,7 @@ class MainWidget(QMainWindow):
         for frame in self._progress_bar(frames_to_save):
             self.save_frame(frame)  # save the frame to the same file path
 
-        print(f'Saved segmentation to {self.stack.name}')
+        self._print(f'Saved segmentation to {self.stack.name}')
 
     def _save_as(self):
         if not self.file_loaded:
@@ -3154,7 +3154,7 @@ class MainWidget(QMainWindow):
                 file_path = file_path + '_seg.npy'
             self.save_frame(self.frame, file_path)
 
-        print(f'Saved segmentation to {folder_path}')
+        self._print(f'Saved segmentation to {folder_path}')
         self.save_dir = folder_path
         if self.left_toolbar.also_save_tracking.isChecked():
             self.save_tracking(file_path=folder_path + '/tracking.csv')
@@ -3214,7 +3214,7 @@ class MainWidget(QMainWindow):
             for roi in rois:
                 if roi is not None:
                     roiwrite(frame_export_path, roi)  # save each ROI to the correct path
-            print(f'Saved {len(rois)} ROIs to {frame_export_path}')
+            self._print(f'Saved {len(rois)} ROIs to {frame_export_path}')
 
     def _export_csv(self):
         if not self.file_loaded:
@@ -3232,7 +3232,7 @@ class MainWidget(QMainWindow):
             return
 
         self.export_csv(save_path, columns=checked_attributes, csv_df=df)
-        print(f'Saved CSV to {save_path}')
+        self._print(f'Saved CSV to {save_path}')
 
     def _get_export(self):
         # get the data to export
@@ -3299,7 +3299,7 @@ class MainWidget(QMainWindow):
             return
 
         self.export_heights(frames, save_path)
-        print(f'Saved heights to {save_path}')
+        self._print(f'Saved heights to {save_path}')
         self.save_dir = Path(save_path).parent
 
     def export_heights(self, frames, file_path):
@@ -3347,7 +3347,7 @@ class MainWidget(QMainWindow):
             frame.z_scale = z_scale
         self.open_dir = Path(heights_path).parent
 
-        print(f'Loaded heights from {heights_path} for {len(frames)} frames.')
+        self._print(f'Loaded heights from {heights_path} for {len(frames)} frames.')
 
     def _convert_red_green(self, frames=None):
         """convert cell.red, cell.green attributes to FUCCI labeling for the stack."""
@@ -3462,12 +3462,12 @@ class MainWidget(QMainWindow):
         execution_times['histogram_plot'] = time.time() - start_time
 
         if debug_execution_times:
-            print('-----------IMSHOW TIMES-----------')
+            self._print('-----------IMSHOW TIMES-----------')
             sorted_execution_times = sorted(execution_times.items(), key=lambda item: item[1], reverse=True)
             for description, duration in sorted_execution_times:
                 if duration < 0.001:
                     continue
-                print(f'{description}: {duration:.4f} seconds')
+                self._print(f'{description}: {duration:.4f} seconds')
 
     def keyPressEvent(self, event):
         """Handle key press events (e.g., arrow keys for frame navigation)."""
@@ -3727,7 +3727,7 @@ class MainWidget(QMainWindow):
                     'Missing tracks',
                     f'tracked_centroids is missing {len(missing_tracks)} cells in frame {frame.frame_number}: {missing_tracks}',
                 )
-                print(f'tracked_centroids is missing {len(missing_tracks)} cells in frame {frame.frame_number}: {missing_tracks}')
+                self._print(f'tracked_centroids is missing {len(missing_tracks)} cells in frame {frame.frame_number}: {missing_tracks}')
 
             extra_tracks = set(tracked_cells) - set(frame_cells)
             if len(extra_tracks) > 0:
@@ -3736,7 +3736,7 @@ class MainWidget(QMainWindow):
                     'Extra tracks',
                     f'tracked_centroids has {len(extra_tracks)} extra tracks in frame {frame.frame_number}: {extra_tracks}',
                 )
-                print(f'tracked_centroids has {len(extra_tracks)} extra tracks in frame {frame.frame_number}: {extra_tracks}')
+                self._print(f'tracked_centroids has {len(extra_tracks)} extra tracks in frame {frame.frame_number}: {extra_tracks}')
 
     # --------------I/O----------------
     def take_screenshot(self):
@@ -3760,21 +3760,21 @@ class MainWidget(QMainWindow):
         if file_path == '':
             return
         self.save_screenshot(file_path=file_path)
-        print(f'Saved screenshot to {file_path}')
+        self._print(f'Saved screenshot to {file_path}')
 
     def _save_img_plot(self):
         file_path, _ = QFileDialog.getSaveFileName(self, 'Save image plot as...', filter='*.png', directory=self.save_dir)
         if file_path == '':
             return
         self.canvas.save_img_plot(file_path)
-        print(f'Saved image plot to {file_path}')
+        self._print(f'Saved image plot to {file_path}')
 
     def _save_seg_plot(self):
         file_path, _ = QFileDialog.getSaveFileName(self, 'Save segmentation plot as...', filter='*.png', directory=self.save_dir)
         if file_path == '':
             return
         self.canvas.save_seg_plot(file_path)
-        print(f'Saved segmentation plot to {file_path}')
+        self._print(f'Saved segmentation plot to {file_path}')
 
     def save_screenshot(self, file_path):
         """
@@ -3847,7 +3847,7 @@ class MainWidget(QMainWindow):
             return
 
         self.save_dir = Path(file_path).parent
-        print(f'Saved video as {selected_filter} to {file_path}')
+        self._print(f'Saved video as {selected_filter} to {file_path}')
 
     def export_window_video(self, file_path: str, screenshot: str = 'window', fps: int = 10, format_settings: dict = None):
         """
@@ -3995,9 +3995,8 @@ class MainWidget(QMainWindow):
             out_message = f'Loaded frame {self.stack.frames[0].name}.'
         else:
             out_message = f'Loaded stack {self.stack.name} with {len(self.stack.frames)} frames.'
-        print(out_message)
+        self._print(out_message)
         self.undo_stack.clear()
-        self.statusBar().showMessage(out_message, 3000)
         self.open_dir = Path(self.stack.name).parent
 
         if hasattr(self.frame, 'zstack'):
@@ -4083,9 +4082,9 @@ class MainWidget(QMainWindow):
                         stack.mitosis_scores = pd.read_csv(
                             tracking_file.replace('tracking.csv', 'mitosis_scores.csv'), index_col=0
                         )
-                        print(f'Loaded mitoses from {tracking_file.replace("tracking.csv", "mitoses.csv")}')
+                        self._print(f'Loaded mitoses from {tracking_file.replace("tracking.csv", "mitoses.csv")}')
                     except FileNotFoundError:
-                        print(f'Failed to load mitoses from {tracking_file.replace("tracking.csv", "mitoses.csv")}')
+                        self._print(f'Failed to load mitoses from {tracking_file.replace("tracking.csv", "mitoses.csv")}')
                         if hasattr(stack, 'mitoses'):
                             del stack.mitoses
 
@@ -4117,7 +4116,7 @@ class MainWidget(QMainWindow):
             return stack
 
         else:  # can't find any seg.npy or tiff files, ignore
-            self.statusBar().showMessage(f'ERROR: File {files[0]} is not a seg.npy or tiff file, cannot be loaded.', 4000)
+            self._print(f'ERROR: File {files[0]} is not a seg.npy or tiff file, cannot be loaded.')
             return False
 
     def delete_frame(self, event=None, frame_number=None):

@@ -211,12 +211,16 @@ class MainWidget(QMainWindow):
         if not all(isinstance(val, (int, float)) for val in value):
             raise ValueError('Quantile values must be scalars')
         if hasattr(self, 'stack'):
+            if hasattr(self.stack, 'bounds'):
+                del self.stack.bounds
             self._quantile = value
             for frame in self.stack.frames:
                 if hasattr(frame, 'bounds'):
                     del frame.bounds
             self.bounds_processor.process_frames(self.stack)
+
         self._normalize()
+        self._set_LUTs()
 
     @property
     def open_dir(self) -> str:
@@ -2448,7 +2452,12 @@ class MainWidget(QMainWindow):
         if downsample_factor == 0:
             downsample_factor = 1
 
-        all_imgs = []
+        if is_grayscale:
+            color_channels=[None]
+            all_img_data=[[]]
+        else:
+            color_channels=np.arange(shape[-1])
+            all_img_data = [[] for _ in color_channels]
         for frame in self.stack.frames:
             if hasattr(frame, 'zstack'):
                 img = frame.zstack
@@ -2456,13 +2465,17 @@ class MainWidget(QMainWindow):
             else:
                 img = frame.img
                 img = img[::downsample_factor]
-            if is_grayscale:
-                img = img[..., np.newaxis]
-            all_imgs.append(img)
-        all_imgs = np.stack(all_imgs)
-        bounds = get_quantile(all_imgs, q=self.quantile, mask_zeros=True)
+            
+            for color_channel in color_channels:
+                img_channel = img[..., color_channel]
+                zero_mask = np.any(img_channel, axis=(1,2))
+                all_img_data[color_channel].extend(img_channel[zero_mask].flatten())
 
-        return bounds
+        bounds=[]
+        for color_channel in color_channels:
+            bounds.extend(get_quantile(np.array(all_img_data[color_channel])[np.newaxis,...,np.newaxis], q=self.quantile, mask_zeros=True))
+
+        return np.array(bounds)
 
     def _open_command_line(self):
         # Create a separate window for the command line interface

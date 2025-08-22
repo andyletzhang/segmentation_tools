@@ -100,10 +100,9 @@ class PyQtGraphCanvas(QWidget):
         # Connect the range change signals to the custom slots
         self.img_plot.sigRangeChanged.connect(self.sync_seg_plot)
         self.seg_plot.sigRangeChanged.connect(self.sync_img_plot)
-
         # Connect the mouse move signals to the custom slots
-        self.img_plot.scene().sigMouseMoved.connect(self.mouse_moved)
-        self.seg_plot.scene().sigMouseMoved.connect(self.mouse_moved)
+        self.img_mouse_proxy=pg.SignalProxy(self.img_plot.scene().sigMouseMoved, rateLimit=60, slot=self.mouse_moved)
+        self.seg_mouse_proxy=pg.SignalProxy(self.seg_plot.scene().sigMouseMoved, rateLimit=60, slot=self.mouse_moved)
 
         # Create crosshair lines
         self.img_vline = pg.InfiniteLine(angle=90, movable=False)
@@ -455,7 +454,8 @@ class PyQtGraphCanvas(QWidget):
             x, y = int(y), int(x)
         return x, y
 
-    def mouse_moved(self, pos):
+    def mouse_moved(self, event):
+        pos=event[0]
         x, y = self.get_plot_coords(pos, pixels=False)
         self.update_cursor(x, y)
 

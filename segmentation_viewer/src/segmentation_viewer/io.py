@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 from segmentation_tools.io import read_nd2, read_nd2_shape, read_tif, read_tif_shape
 from tifffile import TiffFile
+import warnings
 
 
 def read_image_file(file_path, progress_bar: callable = None, image_shape: dict | None = None, **progress_kwargs):
@@ -75,6 +76,11 @@ def read_image_file(file_path, progress_bar: callable = None, image_shape: dict 
         img = get_img()
         if img.ndim == 2:  # mono
             img = img[np.newaxis]
+        if img.dtype == np.float32: # convert 32-bit float to 16-bit
+            warnings.warn("32-bit float image detected. Normalizing and converting to 16-bit.")
+            upper, lower = img.max(), img.min()
+            img = ((img - lower) / (upper - lower) * 65535).astype(np.uint16)
+
         result_array[idx] = img.transpose(1, 2, 0)[..., c_bounds]  # Call the function and store the result
     file.close()
     # remove either P or T dimension

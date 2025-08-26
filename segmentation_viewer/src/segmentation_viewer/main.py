@@ -52,7 +52,6 @@ from .workers import BoundsProcessor
 # high priority
 # TODO: generalized data analysis pipeline. Ability to identify any img-shaped attributes in the frame and overlay them a la heights
     # TODO: ndimage labeled measurements on any of these attributes to create new ones
-# TODO: frame histogram should have options for aggregating over frame or stack
 # TODO: import masks (and everything else except img/zstack)
 # TODO: generalize image loading to >3 color channels
 
@@ -80,7 +79,6 @@ from .workers import BoundsProcessor
 # TODO: expand/collapse segmentation plot
 # TODO: pick better colors for highlight track ends which don't overlap with FUCCI
 # TODO: user can specify membrane channel for volumes tab
-# TODO: mask nan slices during normalization
 
 debug_execution_times = False
 N_CORES = cpu_count()
@@ -547,16 +545,34 @@ class MainWidget(QMainWindow):
         self.histogram = pg.PlotWidget(background='transparent')
         self.histogram.setMinimumHeight(200)
         self.histogram.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.histogram.setLabel('bottom', 'Select Cell Attribute')
         self.histogram.setLabel('left', 'Probability Density')
         self.histogram.showGrid(x=True, y=True)
+        frame_stack_widget = QWidget()
+        frame_stack_layout = QHBoxLayout(frame_stack_widget)
+        frame_stack_layout.setContentsMargins(0, 0, 0, 0)
+        self.hist_frame_button = QRadioButton('Frame', self)
+        self.hist_stack_button = QRadioButton('Stack', self)
+        frame_stack_layout.addWidget(self.hist_frame_button)
+        frame_stack_layout.addWidget(self.hist_stack_button)
+        self.hist_frame_button.setChecked(True)
+        self.hist_LUT_type='frame'
 
         frame_histogram_layout.addLayout(histogram_menu_layout)
         frame_histogram_layout.addWidget(self.histogram)
+        frame_histogram_layout.addWidget(frame_stack_widget)
 
         self.histogram_menu.dropdownOpened.connect(self._menu_frame_attrs)
         self.histogram_menu.currentTextChanged.connect(self._new_histogram)
+        self.hist_frame_button.toggled.connect(self._update_hist_LUT)
+        self.hist_stack_button.toggled.connect(self._update_hist_LUT)
         return frame_histogram_widget
+
+    def _update_hist_LUT(self):
+        buttons = [self.hist_frame_button, self.hist_stack_button]
+        selected = [button.isChecked() for button in buttons].index(True)
+        self.hist_LUT_type = ['frame', 'stack'][selected]
+
+        self._plot_histogram()
 
     def _get_particle_stat_tab(self):
         particle_plot_widget = QWidget()
@@ -658,8 +674,11 @@ class MainWidget(QMainWindow):
         keys = set(frame_array_attrs(frame))
         return list(keys-ignored)
 
-    def _get_cell_frame_attrs(self, ignored={'frame', 'n', 'green', 'red', 'scale'}):
+    def _get_cell_frame_attrs(self, ignored=set(), kept=set()):
         """Return all attributes from any cell in the current frame"""
+        ignored = {'frame', 'n', 'green', 'red', 'color_ID'} | ignored # default to ignoring these (not analytically meaningful)
+        ignored = ignored - kept # unless explicitly requested
+
         if len(self.frame.cells) == 0:
             return []
         keys = set(np.concatenate([dir(cell) for cell in self.frame.cells]))
@@ -689,7 +708,7 @@ class MainWidget(QMainWindow):
         current_attr = menu.currentText()
         menu.blockSignals(True)
         menu.clear()
-        keys = self._get_cell_frame_attrs()
+        keys = self._get_cell_frame_attrs(ignored={'cycle_stage'})
         keys = ['Select Cell Attribute'] + natsorted(keys)
         menu.addItems(keys)
         menu.blockSignals(False)
@@ -702,7 +721,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
         current_attr = self.seg_overlay_attr.currentText()
-        self._cell_attrs = self._get_cell_frame_attrs(ignored={'frame', 'n', 'green', 'red', 'cycle_stage', 'scale'})
+        self._cell_attrs = self._get_cell_frame_attrs(ignored={'scale', 'cycle_stage'})
         self._frame_attrs = self._get_frame_array_attrs(self.frame, ignored={'masks', 'outlines', 'scaled_heights'})
         keys = self._cell_attrs + self._frame_attrs
 
@@ -2571,24 +2590,32 @@ class MainWidget(QMainWindow):
             return
         self.histogram.clear()
         hist_attr = self.histogram_menu.currentText()
-        self.histogram.setLabel('bottom', hist_attr)
         if hist_attr == 'Select Cell Attribute':
             return
         # get the attribute values
-        # TODO: check whether to operate on stack or frame
-        cell_attrs = np.array(self.frame.get_cell_attrs(hist_attr, fill_value=np.nan))
+        if self.hist_LUT_type=='frame': # frame
+            cell_attrs = np.array(self.frame.get_cell_attrs(hist_attr, fill_value=np.nan))
+            brush = (0,0,255,150)
+        else: # stack
+            cell_attrs=[]
+            for frame in self.stack.frames:
+                cell_attrs.extend(self.frame.get_cell_attrs(hist_attr, fill_value=np.nan))
+            cell_attrs=np.array(cell_attrs)
+            brush = (0,128,255,150)
 
         if np.all(np.isnan(cell_attrs)):
             return
 
-        hist_data = np.array(cell_attrs)[~np.isnan(cell_attrs)]
+        hist_data = cell_attrs[~np.isnan(cell_attrs)]
 
+        # Freedman-Diaconis bin widths
         iqr = np.percentile(hist_data, 75) - np.percentile(hist_data, 25)
         bin_width = 2 * iqr / (len(hist_data) ** (1 / 3))
+
         bins = np.arange(np.min(hist_data), np.max(hist_data) + bin_width, bin_width)
 
         n, bins = np.histogram(hist_data, bins=bins, density=True)
-        self.histogram.plot(bins, n, stepMode=True, fillLevel=0, brush=(0, 0, 255, 150))
+        self.histogram.plot(bins, n, stepMode=True, fillLevel=0, brush=brush)
 
     def _plot_particle_statistic(self):
         if not self.file_loaded or not hasattr(self.stack, 'tracked_centroids'):

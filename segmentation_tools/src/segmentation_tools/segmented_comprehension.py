@@ -39,7 +39,7 @@ class Cell:
     def frame(self):
         """Get frame number from parent or return None."""
         try:
-            return self.parent.frame_number
+            return self.parent().frame_number
         except AttributeError:
             return None
 
@@ -57,7 +57,7 @@ class Cell:
     def scale(self):
         """Get scale from parent or return None."""
         try:
-            return self.parent.scale
+            return self.parent().scale
         except AttributeError:
             return None
 
@@ -108,10 +108,10 @@ class Cell:
 
     @property
     def corrected_centroid(self):
-        if self.parent is None or not hasattr(self.parent, 'drift'):
+        if self.parent() is None or not hasattr(self.parent(), 'drift'):
             return self.centroid
         else:
-            return self.centroid - self.parent.drift
+            return self.centroid - self.parent().drift
 
     @centroid.setter
     def centroid(self, centroid):
@@ -130,8 +130,8 @@ class Cell:
 
     @property
     def mask(self):
-        if self.parent is not None:
-            return self.parent.masks == self.n + 1
+        if self.parent() is not None:
+            return self.parent().masks == self.n + 1
         else:
             raise ValueError("Cannot pull cell mask without parent masks object!")
 

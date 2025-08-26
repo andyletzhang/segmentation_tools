@@ -7,6 +7,7 @@ import pandas as pd
 from natsort import natsorted
 from scipy import ndimage
 import copy
+import weakref
 
 from . import preprocessing
 from .utils import masks_to_outlines, outlines_list
@@ -26,12 +27,10 @@ class Cell:
     """Class for each labeled cell membrane."""
 
     def __init__(self, n, outline=None, parent=None, **kwargs):
-        if parent is None:
-            raise ValueError('Cell must be initialized with a parent SegmentedImage object.')
         self.n = n
         if outline is not None:
             self._outline = outline
-        self.parent = parent
+        self.parent = weakref.ref(parent)
 
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -109,7 +108,7 @@ class Cell:
 
     @property
     def corrected_centroid(self):
-        if not hasattr(self.parent, 'drift'):
+        if self.parent is None or not hasattr(self.parent, 'drift'):
             return self.centroid
         else:
             return self.centroid - self.parent.drift
@@ -131,7 +130,10 @@ class Cell:
 
     @property
     def mask(self):
-        return self.parent.masks == self.n + 1
+        if self.parent is not None:
+            return self.parent.masks == self.n + 1
+        else:
+            raise ValueError("Cannot pull cell mask without parent masks object!")
 
     def sort_vertices(self):
         """

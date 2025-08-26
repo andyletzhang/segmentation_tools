@@ -2453,22 +2453,28 @@ class MainWidget(QMainWindow):
             downsample_factor = 1
 
         if is_grayscale:
-            color_channels=[None]
+            color_channels=[0]
             all_img_data=[[]]
         else:
             color_channels=np.arange(shape[-1])
             all_img_data = [[] for _ in color_channels]
+            
         for frame in self.stack.frames:
             if hasattr(frame, 'zstack'):
                 img = frame.zstack
                 img = img[:, ::downsample_factor]
+                xy_axes=(1,2)
             else:
                 img = frame.img
                 img = img[::downsample_factor]
+                xy_axes=(0,1)
             
+            if is_grayscale:
+                img=img[...,np.newaxis]
+
             for color_channel in color_channels:
                 img_channel = img[..., color_channel]
-                zero_mask = np.any(img_channel, axis=(1,2))
+                zero_mask = np.any(img_channel, axis=xy_axes)
                 all_img_data[color_channel].extend(img_channel[zero_mask].flatten())
 
         bounds=[]

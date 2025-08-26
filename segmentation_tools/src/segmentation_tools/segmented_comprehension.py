@@ -1272,7 +1272,7 @@ class SegmentedImage:
         self.resolution = self.masks.shape  # Image resolution
 
         try:
-            self.outlines = self.outlines.todense()
+            self.outlines = np.array(self.outlines.todense())
         except AttributeError:  # if it's already dense, carry on
             pass
         self.outlines = self.outlines != 0  # convert to boolean

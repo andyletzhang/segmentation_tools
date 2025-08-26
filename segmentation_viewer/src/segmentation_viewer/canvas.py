@@ -7,7 +7,7 @@ import pyqtgraph as pg
 from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QBrush, QColor, QCursor, QImage, QPainter, QPainterPath, QPen, QPolygonF
 from PyQt6.QtWidgets import QGraphicsPathItem, QGraphicsPolygonItem, QGraphicsScene, QHBoxLayout, QWidget
-from segmentation_tools.shape_operations import get_enclosed_pixels, get_mask_boundary, get_bounding_box
+from segmentation_tools.shape_operations import get_bounding_box, get_enclosed_pixels, get_mask_boundary
 
 from .workers import MaskProcessor
 
@@ -101,8 +101,8 @@ class PyQtGraphCanvas(QWidget):
         self.img_plot.sigRangeChanged.connect(self.sync_seg_plot)
         self.seg_plot.sigRangeChanged.connect(self.sync_img_plot)
         # Connect the mouse move signals to the custom slots
-        self.img_mouse_proxy=pg.SignalProxy(self.img_plot.scene().sigMouseMoved, rateLimit=60, slot=self.mouse_moved)
-        self.seg_mouse_proxy=pg.SignalProxy(self.seg_plot.scene().sigMouseMoved, rateLimit=60, slot=self.mouse_moved)
+        self.img_mouse_proxy = pg.SignalProxy(self.img_plot.scene().sigMouseMoved, rateLimit=60, slot=self.mouse_moved)
+        self.seg_mouse_proxy = pg.SignalProxy(self.seg_plot.scene().sigMouseMoved, rateLimit=60, slot=self.mouse_moved)
 
         # Create crosshair lines
         self.img_vline = pg.InfiniteLine(angle=90, movable=False)
@@ -127,9 +127,9 @@ class PyQtGraphCanvas(QWidget):
         self.main_window._canvas_wheelEvent(event)
 
     def update_outlines(self):
-        """ Update outlines overlays to match the current frame. """
+        """Update outlines overlays to match the current frame."""
         outlines = self.image_transform(self.main_window.frame.outlines)
-        self.seg_data = np.repeat(np.array(outlines[..., np.newaxis]), 4, axis=-1).astype(np.uint8)
+        self.seg_data = self.seg_data = outlines[..., np.newaxis] * np.ones((1, 1, 4), dtype=np.uint8)
         self.seg.setImage(self.seg_data, levels=(0, 1))
         self.render_imgplot_outlines()
 
@@ -172,7 +172,7 @@ class PyQtGraphCanvas(QWidget):
         else:
             return random_colors[:, :3]
 
-    def random_color_ID(self, n: int=0, ignore: int | list[int] | None = None):
+    def random_color_ID(self, n: int = 0, ignore: int | list[int] | None = None):
         cell_colors = np.arange(self.cell_n_colors)
         if ignore is not None:
             cell_colors = np.setdiff1d(cell_colors, ignore)
@@ -306,21 +306,21 @@ class PyQtGraphCanvas(QWidget):
 
     def redraw_cell_mask(self, cell, **highlight_kwargs):
         if not hasattr(self.main_window.stack.frames[cell.frame], 'stored_mask_overlay'):
-            return # no mask overlay to update
-        highlight_kwargs={'color': cell.color_ID, 'layer':'mask', 'mode':'overwrite'} | highlight_kwargs
+            return  # no mask overlay to update
+        highlight_kwargs = {'color': cell.color_ID, 'layer': 'mask', 'mode': 'overwrite'} | highlight_kwargs
         self.add_cell_highlight(cell.n, frame=cell.frame, **highlight_kwargs)
 
     def add_cell_highlight(
         self,
         cell_index: int,
         frame=None,
-        layer: str='selection',
-        alpha: float | None=None,
-        color: int | None=None,
-        img_type: str='masks',
-        seg_type: str='masks',
-        seg_alpha: bool | float=False,
-        mode: str='overwrite',
+        layer: str = 'selection',
+        alpha: float | None = None,
+        color: int | None = None,
+        img_type: str = 'masks',
+        seg_type: str = 'masks',
+        seg_alpha: bool | float = False,
+        mode: str = 'overwrite',
     ):
         from matplotlib.colors import to_rgb
 
@@ -386,12 +386,12 @@ class PyQtGraphCanvas(QWidget):
             img_cell_mask = cell_mask_bbox[..., np.newaxis] * color
             # Create an opaque mask for the specified cell
             seg_cell_mask = img_cell_mask.copy()
-            
-            if isinstance(seg_alpha, float): # custom segmentation alpha
+
+            if isinstance(seg_alpha, float):  # custom segmentation alpha
                 seg_cell_mask[cell_mask_bbox, -1] = seg_alpha
-            elif not seg_alpha: # default: opaque
+            elif not seg_alpha:  # default: opaque
                 seg_cell_mask[cell_mask_bbox, -1] = 1
-            else: # default: same as img alpha
+            else:  # default: same as img alpha
                 pass
 
             if img_type == 'outlines' or seg_type == 'outlines':
@@ -455,7 +455,7 @@ class PyQtGraphCanvas(QWidget):
         return x, y
 
     def mouse_moved(self, event):
-        pos=event[0]
+        pos = event[0]
         x, y = self.get_plot_coords(pos, pixels=False)
         self.update_cursor(x, y)
 
@@ -535,10 +535,6 @@ class PyQtGraphCanvas(QWidget):
         execution_times['self.img_data = img_data.copy()'] = time.time() - start_time
 
         start_time = time.time()
-        self.seg_data = seg_data.copy()
-        execution_times['self.seg_data = seg_data.copy()'] = time.time() - start_time
-
-        start_time = time.time()
         if RGB_checks is not None:
             for i, check in enumerate(RGB_checks):
                 if not check:
@@ -546,10 +542,8 @@ class PyQtGraphCanvas(QWidget):
         execution_times['RGB_checks handling'] = time.time() - start_time
 
         start_time = time.time()
-        self.seg_data = np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1).astype(np.uint8)
-        execution_times['self.seg_data = np.repeat(np.array(self.seg_data[..., np.newaxis]), 4, axis=-1)'] = (
-            time.time() - start_time
-        )
+        self.seg_data = seg_data[..., np.newaxis] * np.ones((1, 1, 4), dtype=np.uint8)
+        execution_times['self.seg_data = seg_data[..., np.newaxis]*np.ones((1,1,4), dtype=np.uint8)'] = time.time() - start_time
 
         start_time = time.time()
         self.img.setImage(self.img_data)
@@ -565,7 +559,7 @@ class PyQtGraphCanvas(QWidget):
 
         start_time = time.time()
         self.render_imgplot_outlines()
-        execution_times['self.draw_outlines()'] = time.time() - start_time
+        execution_times['self.render_imgplot_outlines()'] = time.time() - start_time
 
         # Print all execution times sorted by duration
         if debug_execution_times:
@@ -618,7 +612,7 @@ def img_item_to_RGBA(img: pg.ImageItem) -> np.ndarray:
         image = img.lut[image]
 
     if image.ndim == 2:
-        image = np.repeat(image[..., np.newaxis], 3, axis=-1)
+        image = image[..., np.newaxis] * np.ones((1, 1, 3), dtype=image.dtype)
 
     # add alpha channel
     if image.shape[-1] == 3:
@@ -786,7 +780,7 @@ class RGB_ImageItem:
     def set_grayscale(self, grayscale):
         self.show_grayscale = grayscale
         self.update_LUTs()
-        
+
 
 class CellMaskPolygons:
     """

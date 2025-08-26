@@ -2326,7 +2326,11 @@ class MainWidget(QMainWindow):
         img_data = self.frame.img
         seg_data = self.canvas.image_transform(self.frame.outlines)
         self._normalize()
-        self.canvas.update_display(img_data=img_data, seg_data=seg_data, RGB_checks=self.left_toolbar.RGB_visible)
+        self.canvas.update_display(img_data=img_data, seg_data=seg_data)
+        mark_time('canvas update', start_time)
+
+    def _RGB_checks_toggled(self):
+        self.canvas.toggle_RGB_checks(self.left_toolbar.RGB_visible)
 
     def _refresh_segmentation(self, replace_masks=False):
         """Redraw the outlines and masks overlays."""

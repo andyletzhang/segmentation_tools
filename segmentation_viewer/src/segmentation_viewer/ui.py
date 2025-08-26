@@ -262,8 +262,8 @@ class LeftToolbar(QScrollArea):
 
         slider.valueChanged.connect(self.LUT_slider_changed)
 
-    def update_display(self):
-        self.main_window._update_display()
+    def RGB_checks_toggled(self):
+        self.main_window._RGB_checks_toggled()
 
     def add_channel_layout(self, channel_layout):
         channels_label = QLabel('Segmentation Channels:', self)
@@ -771,7 +771,7 @@ class LeftToolbar(QScrollArea):
         layout.addWidget(self.show_grayscale_checkbox)
 
         for checkbox in self.RGB_checkboxes:
-            checkbox.stateChanged.connect(self.update_display)
+            checkbox.stateChanged.connect(self.RGB_checks_toggled)
         self.show_grayscale_checkbox.stateChanged.connect(self.main_window._show_grayscale_toggled)
 
     @property

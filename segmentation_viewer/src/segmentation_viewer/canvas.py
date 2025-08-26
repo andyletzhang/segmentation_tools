@@ -164,6 +164,9 @@ class PyQtGraphCanvas(QWidget):
         for layer, overlay in zip(self.mask_overlay, self.main_window.frame.stored_mask_overlay):
             layer.setImage(overlay)
 
+    def toggle_RGB_checks(self, RGB_checks):
+        self.img.toggle_RGB_checks(RGB_checks)
+        
     def random_cell_color(self, n=0):
         random_colors = self.cell_cmap(self.random_color_ID(n))
 
@@ -535,13 +538,6 @@ class PyQtGraphCanvas(QWidget):
         execution_times['self.img_data = img_data.copy()'] = time.time() - start_time
 
         start_time = time.time()
-        if RGB_checks is not None:
-            for i, check in enumerate(RGB_checks):
-                if not check:
-                    self.img_data[..., i] = 0
-        execution_times['RGB_checks handling'] = time.time() - start_time
-
-        start_time = time.time()
         self.seg_data = seg_data[..., np.newaxis] * np.ones((1, 1, 4), dtype=np.uint8)
         execution_times['self.seg_data = seg_data[..., np.newaxis]*np.ones((1,1,4), dtype=np.uint8)'] = time.time() - start_time
 
@@ -694,6 +690,11 @@ class RGB_ImageItem:
         plot.addItem(self.img_item)
         self.show_grayscale = False
         self.update_LUTs()
+
+    def toggle_RGB_checks(self, RGB_checks):
+        for i, check in enumerate(RGB_checks):
+            self.channels[i].setVisible(check)
+        self.refresh()
 
     def image(self):
         """Get the rendered image from the specified plot."""

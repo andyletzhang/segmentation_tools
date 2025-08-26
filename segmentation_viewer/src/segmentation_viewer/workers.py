@@ -48,11 +48,12 @@ class BoundsCalculatorTask(FrameProcessorTask):
             print(f'Error calculating bounds: {e}')
 
 
-class BoundsProcessor:
+class BoundsProcessor(QObject):
     """Manages parallel bounds calculation for frames"""
 
-    def __init__(self, parent, n_cores=None):
-        self.main_window = parent
+    def __init__(self, main_window, n_cores=None):
+        super().__init__(parent=main_window)
+        self.main_window = main_window
         self.thread_pool = QThreadPool.globalInstance()
         if n_cores is not None:
             self.thread_pool.setMaxThreadCount(n_cores)
@@ -83,7 +84,6 @@ class BoundsProcessor:
         self.active_tasks.clear()
 
 
-# Updated mask processing to use common base classes
 class MasksLoaderTask(FrameProcessorTask):
     Signals = FrameProcessorSignals
 
@@ -125,8 +125,9 @@ class MasksLoaderTask(FrameProcessorTask):
             print(f'Error processing frame: {e}')
 
 
-class MaskProcessor:
+class MaskProcessor(QObject):
     def __init__(self, canvas, n_cores=None):
+        super().__init__(parent=canvas)
         self.canvas = canvas
         self.thread_pool = QThreadPool()
         if n_cores is not None:

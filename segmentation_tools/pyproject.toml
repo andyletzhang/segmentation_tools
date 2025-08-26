@@ -26,8 +26,8 @@ dependencies = [
     "natsort",
     "nd2",
     "numba",
-    "dask==2024.8",
-    "zarr==2.13",
+    "dask>=2025",
+    "zarr>=3",
     "pulp",
 ]
 

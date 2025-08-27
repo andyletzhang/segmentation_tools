@@ -4763,6 +4763,8 @@ class SplitCellCommand(QUndoCommand):
                 label_id = next_label + i
                 new_mask = coords_to_mask(new_mask, shape=self.main_window.frame.masks.shape)
                 new_outline = outlines_list(new_mask)[0]
+                if len(new_outline) == 0: # spurious split of a size-0 mask, skip
+                    continue
                 color_ID = self.main_window.canvas.random_color_ID()
                 new_cell = Cell(label_id, new_outline, parent=self.main_window.frame, color_ID=color_ID)
                 commands.append(

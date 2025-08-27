@@ -16,6 +16,9 @@ debug_execution_times = False
 
 N_CORES = cpu_count()
 
+def mark_time(str, start_time):
+    if debug_execution_times:
+        print(f"{str} time: {time.time() - start_time:.3f}s")
 
 class PyQtGraphCanvas(QWidget):
     def __init__(self, parent=None, cell_n_colors=10, cell_cmap='tab10'):
@@ -688,11 +691,15 @@ class RGB_ImageItem:
 
     def image(self):
         """Get the rendered image from the specified plot."""
+        start=time.time()
+
         width, height = self.red.image.shape
         output_img = QImage(width, height, QImage.Format.Format_RGB32)
         output_img.fill(0)
         painter = QPainter(output_img)
-        self.scene.render(painter)
+        mark_time('check0', start)
+        self.scene.render(painter) # takes most of the time
+        mark_time('check1', start)
         painter.end()
         ptr = output_img.bits()
 
@@ -700,17 +707,24 @@ class RGB_ImageItem:
         composite_array = np.array(ptr).reshape((height, width, 4))  # Format_RGB32 includes alpha
         rgb_array = composite_array[..., :3][..., ::-1]
 
+        mark_time('check2', start)
+
         if self.canvas.is_inverted:
             rgb_array = inverted_contrast(rgb_array)
 
+        mark_time('check3', start)
         # add alpha channel
         alpha = np.ones((height, width, 1), dtype=np.uint8) * 255
         rgb_array = np.concatenate((rgb_array, alpha), axis=-1)
+
+        mark_time('check4', start)
         return rgb_array
 
     def refresh(self):
         """Re-render the image item."""
+        start = time.time()
         self.img_item.setImage(self.image(), autoLevels=False)
+        mark_time('setImage refresh time', start)
 
     def setImage(self, img_data):
         self.img_data = img_data

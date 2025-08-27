@@ -1,3 +1,4 @@
+import time
 from multiprocessing import cpu_count
 
 import cv2
@@ -506,9 +507,7 @@ class PyQtGraphCanvas(QWidget):
     def is_inverted(self):
         return self.main_window.is_inverted
 
-    def update_display(self, img_data=None, seg_data=None, RGB_checks=None):
-        import time
-
+    def update_display(self, img_data=None, seg_data=None):
         execution_times = {}
         start_time = time.time()
         if img_data is None:

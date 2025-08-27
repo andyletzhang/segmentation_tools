@@ -83,6 +83,9 @@ from .workers import BoundsProcessor
 debug_execution_times = False
 N_CORES = cpu_count()
 
+def mark_time(str, start_time):
+    if debug_execution_times:
+        print(f"{str} time: {time.time() - start_time:.3f}s")
 
 class MainWidget(QMainWindow):
     def __init__(self):
@@ -2003,6 +2006,8 @@ class MainWidget(QMainWindow):
         self.frame = self.stack.frames[self.frame_number]
         self.globals_dict['frame'] = self.frame
 
+        mark_time('checkpoint 1', start_time)
+
         if hasattr(self.frame, 'zstack'):
             self.frame.img = self.frame.zstack[self.zstack_number]
             self.zstack_slider.setVisible(True)
@@ -2019,6 +2024,8 @@ class MainWidget(QMainWindow):
             self.left_toolbar.get_heights_button.setEnabled(False)
             self.left_toolbar.peak_prominence.setEnabled(False)
 
+        mark_time('checkpoint 2', start_time)
+
         if self.is_zstack or hasattr(self.frame, 'heights'):
             self.left_toolbar.volume_button.setEnabled(True)
             
@@ -2033,13 +2040,15 @@ class MainWidget(QMainWindow):
             self.left_toolbar.volume_button.setEnabled(False)
             coverslip_height='None'
         self.left_toolbar.coverslip_height.setText(coverslip_height)
-
+        
         self._export_heights_action.setEnabled(hasattr(self.frame, 'heights'))
 
+        mark_time('checkpoint 3', start_time)
         self.imshow()
-
+        mark_time('imshow', start_time)
         if reset:
             self.reset_display()
+            mark_time('reset_display', start_time)
         else:
             # preserve selected cell if tracking info is available
             if hasattr(self, 'selected_particle') and self.selected_particle_n is not None:
@@ -2048,6 +2057,7 @@ class MainWidget(QMainWindow):
             # or clear highlight
             else:
                 self.canvas.clear_overlay('selection')  # no tracking data, clear highlights
+        mark_time('checkpoint 4', start_time)
 
         if len(self.frame.cells) > 0 and not hasattr(self.frame.cells[0], 'green'):
             self._get_red_green()
@@ -2059,6 +2069,8 @@ class MainWidget(QMainWindow):
             self.left_toolbar.red_threshold = None
             self.left_toolbar.green_threshold = None
 
+        mark_time('checkpoint 5', start_time)
+
         self._update_voxel_size_labels()
 
         if self.FUCCI_dropdown != 0:
@@ -2069,8 +2081,7 @@ class MainWidget(QMainWindow):
         self.time_series_frame_marker.setPos(self.frame_number)
         self.status_frame_number.setText(f'Frame: {frame_number}')
 
-        if debug_execution_times:
-            self._print(f'Total frame change time: {time.time() - start_time:.3f}s')
+        mark_time('Total', start_time)
 
     @property
     def FUCCI_dropdown(self):
@@ -2324,10 +2335,15 @@ class MainWidget(QMainWindow):
         """Redraw the image data with whatever new settings have been applied from the toolbar."""
         if not self.file_loaded:
             return
+            
+        start_time=time.time()
         self._show_seg_overlay()
+        mark_time('show seg overlay', start_time)
         img_data = self.frame.img
         seg_data = self.canvas.image_transform(self.frame.outlines)
+        mark_time('image transform', start_time)
         self._normalize()
+        mark_time('normalize', start_time)
         self.canvas.update_display(img_data=img_data, seg_data=seg_data)
         mark_time('canvas update', start_time)
 
@@ -3503,7 +3519,9 @@ class MainWidget(QMainWindow):
         self._update_ROIs_label()
         execution_times['update_ROIs_label'] = time.time() - start_time
 
+        start_time = time.time()
         self._update_display()
+        execution_times['update_display'] = time.time() - start_time
 
         start_time = time.time()
         self._show_seg_overlay()

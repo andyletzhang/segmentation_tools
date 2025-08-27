@@ -57,6 +57,8 @@ class PyQtGraphCanvas(QWidget):
         self.seg_stat_overlay = pg.ImageItem()
         self.cb = pg.ColorBarItem(interactive=False, orientation='horizontal', width=15)
         self.update_stat_overlay_lut('viridis')
+        self.update_img_outline_lut()
+        self.seg.setLookupTable(transparent_binary_lut((1,1,1), alpha=1))
         self.cb.setFixedWidth(100)
         self.cb.setImageItem(self.seg_stat_overlay)
         self.cb.setVisible(False)
@@ -128,31 +130,13 @@ class PyQtGraphCanvas(QWidget):
 
     def update_outlines(self):
         """Update outlines overlays to match the current frame."""
-        outlines = self.image_transform(self.main_window.frame.outlines)
-        self.seg_data = self.seg_data = outlines[..., np.newaxis] * np.ones((1, 1, 4), dtype=np.uint8)
+        self.seg_data = self.image_transform(self.main_window.frame.outlines)
         self.seg.setImage(self.seg_data, levels=(0, 1))
-        self.render_imgplot_outlines()
+        self.img_outline_overlay.setImage(self.seg_data, levels=(0,1))
 
     def overlay_outlines(self):
         self.img_outline_overlay.setVisible(self.main_window.outlines_visible)
 
-    def render_imgplot_outlines(self, color=None, alpha=None):
-        """Overlay the outlines of the masks on the image plot."""
-        if alpha is None:
-            alpha = self.outlines_alpha
-        if color is None:
-            color = self.outlines_color
-
-        from matplotlib.colors import to_rgb
-
-        color = [*to_rgb(color), alpha]
-
-        overlay = np.zeros((*self.main_window.frame.masks.shape, 4))
-        overlay[self.main_window.frame.outlines] = color
-
-        overlay = self.image_transform(overlay)
-        self.img_outline_overlay.setImage(overlay)
-        self.overlay_outlines()
 
     def overlay_masks(self):
         for layer in self.mask_overlay:
@@ -166,7 +150,7 @@ class PyQtGraphCanvas(QWidget):
 
     def toggle_RGB_checks(self, RGB_checks):
         self.img.toggle_RGB_checks(RGB_checks)
-        
+
     def random_cell_color(self, n=0):
         random_colors = self.cell_cmap(self.random_color_ID(n))
 
@@ -438,6 +422,9 @@ class PyQtGraphCanvas(QWidget):
 
         return
 
+    def update_img_outline_lut(self):
+        self.img_outline_overlay.setLookupTable(transparent_binary_lut(self.outlines_color, self.outlines_alpha))
+
     def update_stat_overlay_lut(self, colormap):
         lut = get_matplotlib_LUT(colormap)
         self.seg_stat_overlay.setLookupTable(lut)
@@ -538,8 +525,8 @@ class PyQtGraphCanvas(QWidget):
         execution_times['self.img_data = img_data.copy()'] = time.time() - start_time
 
         start_time = time.time()
-        self.seg_data = seg_data[..., np.newaxis] * np.ones((1, 1, 4), dtype=np.uint8)
-        execution_times['self.seg_data = seg_data[..., np.newaxis]*np.ones((1,1,4), dtype=np.uint8)'] = time.time() - start_time
+        self.seg_data = seg_data.copy()
+        execution_times['self.seg_data = seg_data.copy()'] = time.time() - start_time
 
         start_time = time.time()
         self.img.setImage(self.img_data)
@@ -547,15 +534,12 @@ class PyQtGraphCanvas(QWidget):
 
         start_time = time.time()
         self.seg.setImage(self.seg_data, levels=(0, 1))
+        self.img_outline_overlay.setImage(self.seg_data, levels=(0,1))
         execution_times['self.seg.setImage(self.seg_data)'] = time.time() - start_time
 
         start_time = time.time()
         self.overlay_masks()
         execution_times['self.overlay_masks()'] = time.time() - start_time
-
-        start_time = time.time()
-        self.render_imgplot_outlines()
-        execution_times['self.render_imgplot_outlines()'] = time.time() - start_time
 
         # Print all execution times sorted by duration
         if debug_execution_times:
@@ -590,6 +574,13 @@ class PyQtGraphCanvas(QWidget):
         if hasattr(self, 'mask_processor'):
             self.mask_processor.abort_all_tasks()
 
+def transparent_binary_lut(color, alpha):
+    from matplotlib.colors import to_rgb
+
+    color = np.array([*to_rgb(color), alpha])  # convert color to RGBA
+    lut = np.zeros((2, 4), dtype=np.uint8)
+    lut[1] = (color * 255).astype(np.uint8)
+    return lut
 
 # util functions
 def img_item_to_RGBA(img: pg.ImageItem) -> np.ndarray:

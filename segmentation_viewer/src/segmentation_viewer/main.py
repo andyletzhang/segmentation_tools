@@ -420,6 +420,8 @@ class MainWidget(QMainWindow):
 
         for attr, setting in settings.items():
             setattr(self.canvas, attr, setting)
+        
+        self.canvas.update_img_outline_lut()
 
         if self.file_loaded:
             if redraw_masks:

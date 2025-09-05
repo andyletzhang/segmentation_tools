@@ -1348,6 +1348,7 @@ class SegmentedImage:
             'heights',
             'coverslip_heights',
             'coverslip_height',
+            'OPD',
         ]  # if any of these exist, export them as well
         write_attrs = set(write_attrs + optional_attrs)  # add optional attrs to write_attrs
         for attr in write_attrs:
@@ -1855,7 +1856,7 @@ class HeightMap(SegmentedImage):
             scaled -= self.coverslip_height
 
         if self.zero_to_nan:
-            scaled[scaled <= 0] = np.nan
+            scaled[scaled < 0] = np.nan
         return scaled * self.z_scale
 
     def read_NORI(self, file_path=None, mask_nan_z=True):

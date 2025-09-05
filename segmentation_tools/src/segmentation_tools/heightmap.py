@@ -30,11 +30,11 @@ if HAS_GPU:
                         last_peak = i
             heights[x, y] = last_peak
 
-    def process_zstack_gpu(zstack, prominence=0.004, sigma=6):
+    def process_zstack_gpu(zstack, prominence=0.004, sigma=6, z_sigma=0):
         # Move data to GPU
         zstack_gpu = cp.asarray(zstack, dtype=cp.float32)
         zstack_gpu = normalize_gpu(zstack_gpu)
-        zstack_gpu = cp_ndimage.gaussian_filter(zstack_gpu, sigma=(0,sigma,sigma))
+        zstack_gpu = cp_ndimage.gaussian_filter(zstack_gpu, sigma=(z_sigma,sigma,sigma))
 
         # Calculate derivative
         derivative_gpu = cp.gradient(zstack_gpu, axis=0)
@@ -86,9 +86,9 @@ else:
                 heights[x, y] = last_peak
         return heights
 
-    def process_zstack_cpu(zstack, prominence=0.004, sigma=6):
+    def process_zstack_cpu(zstack, prominence=0.004, sigma=6, z_sigma=0):
         zstack = normalize_cpu(zstack)
-        zstack = ndimage.gaussian_filter(zstack, sigma=(0, sigma, sigma))
+        zstack = ndimage.gaussian_filter(zstack, sigma=(z_sigma, sigma, sigma))
         derivative = np.gradient(zstack, axis=0)
         return find_peaks_cpu(-derivative, prominence)
 
@@ -96,11 +96,11 @@ else:
         bounds = np.percentile(data, [1, 99])
         return (data - bounds[0]) / (bounds[1] - bounds[0])
 
-def process_zstack(zstack, prominence=0.004, sigma=6):
+def process_zstack(zstack, prominence=0.004, sigma=6, z_sigma=0):
     if HAS_GPU:
-        return process_zstack_gpu(zstack, prominence, sigma)
+        return process_zstack_gpu(zstack, prominence, sigma, z_sigma=z_sigma)
     else:
-        return process_zstack_cpu(zstack, prominence, sigma)
+        return process_zstack_cpu(zstack, prominence, sigma, z_sigma=z_sigma)
 
 
 def relabel_components(labeled_grid):
@@ -207,8 +207,8 @@ def height_to_3d_mask(heights, max_height=None):
 def expand_slice(s, size=1):
     return slice(max(0, s.start-size), s.stop+size)
 
-def get_heights(membrane, min_region_size=1000, peak_prominence=0.004, sigma=6):
-    heights=process_zstack(membrane, peak_prominence, sigma=sigma)
+def get_heights(membrane, min_region_size=1000, peak_prominence=0.004, sigma=6, z_sigma=0):
+    heights=process_zstack(membrane, peak_prominence, sigma=sigma, z_sigma=z_sigma)
 
     masked_outliers=get_outliers(heights, min_region_size)
 

@@ -1852,7 +1852,7 @@ class MainWidget(QMainWindow):
         self.left_toolbar.volume_button.setEnabled(True)
         self._export_heights_action.setEnabled(True)
 
-    def measure_heights(self, frames, peak_prominence:float=0.01, coverslip_prominence:float=0.01, membrane_channel:int=2, sigma:float|None=None, min_region_size: int=None):
+    def measure_heights(self, frames, peak_prominence:float=0.01, coverslip_prominence:float=0.01, membrane_channel:int=2, sigma:float|None=None, z_sigma: float=None, min_region_size: int=None):
         """
         Compute the heightmap of the monolayer for the specified frames.
 
@@ -1877,12 +1877,18 @@ class MainWidget(QMainWindow):
             self._print(f'No xy scale available for {frames[0].name}. Defaulting to 0.325.')
             scale = 0.325
         
+        if hasattr(frames[0], 'z_scale'):
+            z_scale=frames[0].z_scale
+        else:
+            self._print(f'No z scale available for {frames[0].name}. Defaulting to 1.')
+            z_scale = 1.0
+        
         if sigma is None:
             sigma = 2 / scale
-            self._print(f'Sigma not specified. Defaulting to {sigma:.2f} pixels.')
         if min_region_size is None:
             min_region_size = 100 / scale**2
-            self._print(f"Min region size not specified. Defaulting to {min_region_size:.2f} pixels.")
+        if z_sigma is None:
+            z_sigma = 1 / z_scale
 
         for frame in self._progress_bar(frames):
             if not hasattr(frame, 'zstack'):
@@ -1892,7 +1898,7 @@ class MainWidget(QMainWindow):
                     membrane = frame.zstack
                 else:
                     membrane = frame.zstack[..., membrane_channel]  # TODO: allow user to specify membrane channel
-                frame.heights = get_heights(membrane, peak_prominence=peak_prominence, sigma=sigma, min_region_size=min_region_size)
+                frame.heights = get_heights(membrane, peak_prominence=peak_prominence, sigma=sigma, z_sigma=z_sigma, min_region_size=min_region_size)
                 frame.to_heightmap()
 
     def _measure_coverslip_heightmaps(self):
@@ -1944,7 +1950,7 @@ class MainWidget(QMainWindow):
                 else:
                     membrane = frame.zstack[..., membrane_channel]
 
-                frame.coverslip_heights = len(membrane) - get_heights(membrane[::-1], peak_prominence=peak_prominence, sigma=sigma, min_region_size=min_region_size)
+                frame.coverslip_heights = len(membrane) - get_heights(membrane[::-1], peak_prominence=peak_prominence, sigma=sigma, z_sigma=0, min_region_size=min_region_size)
                 if hasattr(frame, 'coverslip_height'):
                     del frame.coverslip_height
                 frame.to_heightmap()

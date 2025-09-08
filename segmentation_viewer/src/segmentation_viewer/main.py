@@ -1909,7 +1909,7 @@ class MainWidget(QMainWindow):
         else:
             frames = self.frame
 
-        peak_prominence = self.left_toolbar.peak_prominence.text()
+        peak_prominence = self.left_toolbar.coverslip_prominence.text()
         if peak_prominence == '':
             peak_prominence = 0.01
         else:

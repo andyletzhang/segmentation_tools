@@ -22,7 +22,9 @@ def get_viable_mitoses(stack, distance_threshold=1.5, persistence_threshold=0):
     return mitosis_df
 
 
-def get_mitosis_scores(mitosis_df, weights=[1, 1, 1, 1, 1, 1], biases=None):
+def get_mitosis_scores(mitosis_df, weights=None, biases=None):
+    if weights is None:
+        weights = [1,1,1,1,1,1]
     weights = np.array(weights) * default_weights
     if biases is None:
         biases = default_biases

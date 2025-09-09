@@ -115,7 +115,7 @@ class MainWidget(QMainWindow):
 
         # Status bar
         self.status_cell = QLabel('Selected Cell: None', self)
-        self.status_frame_number = QLabel('Frame: None', self)
+        self.status_frame_number = QLabel('Frame: None/None', self)
         self.status_tracking_ID = QLabel('Tracking ID: None', self)
         self.status_coordinates = QLabel('Cursor: (x, y)', self)
         self.status_pixel_value = QLabel('R: None, G: None, B: None', self)
@@ -2085,7 +2085,7 @@ class MainWidget(QMainWindow):
         # frame marker on stat plot
         self.stat_plot_frame_marker.setPos(self.frame_number)
         self.time_series_frame_marker.setPos(self.frame_number)
-        self.status_frame_number.setText(f'Frame: {frame_number}')
+        self.status_frame_number.setText(f'Frame: {frame_number}/{len(self.stack.frames)-1}')
 
         mark_time('Total', start_time)
 

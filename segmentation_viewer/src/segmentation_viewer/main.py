@@ -1737,21 +1737,10 @@ class MainWidget(QMainWindow):
             if not hasattr(frame, 'heights'):
                 if hasattr(frame, 'zstack'):
                     peak_prominence = self.left_toolbar.peak_prominence.text()
-                    coverslip_height = getattr(frame, 'coverslip_height', None)
                     if peak_prominence == '':
                         peak_prominence = 0.01
-                    else:
-                        peak_prominence = float(peak_prominence)
-                    if coverslip_height:
-                        coverslip_height = float(coverslip_height)
 
-                    coverslip_prominence = self.left_toolbar.coverslip_prominence.text()
-                    if coverslip_prominence == '':
-                        coverslip_prominence = 0.01
-                    else:
-                        coverslip_prominence = float(coverslip_prominence)
-
-                    self.measure_heights(frame, peak_prominence, coverslip_prominence, coverslip_height)
+                    self.measure_heights(frame, peak_prominence)
                 else:
                     raise ValueError(f'No heights or z-stack available to measure volumes for {frame.name}.')
 
@@ -1759,9 +1748,9 @@ class MainWidget(QMainWindow):
                 self._print(f'No z-scale available for {frame.name}. Defaulting to 1.')
                 self.left_toolbar.z_size = 1.0
             if not hasattr(frame, 'scale'):
-                self._print(f'No scale available for {frame.name}. Defaulting to 0.1625.')
-                self.left_toolbar.xy_size = 0.1625
-                frame.scale = 0.1625  # 40x objective with 0.325 µm/pixel camera
+                self._print(f'No scale available for {frame.name}. Defaulting to 0.325.')
+                self.left_toolbar.xy_size = 0.325
+                frame.scale = 0.325  # 20x objective with 6.5 µm/pixel camera, or 40x with 2x binning
             frame.get_volumes()
 
     def _calibrate_coverslip_height(self):
@@ -1852,7 +1841,7 @@ class MainWidget(QMainWindow):
         self.left_toolbar.volume_button.setEnabled(True)
         self._export_heights_action.setEnabled(True)
 
-    def measure_heights(self, frames, peak_prominence:float=0.01, coverslip_prominence:float=0.01, membrane_channel:int=2, sigma:float|None=None, z_sigma: float=None, min_region_size: int=None):
+    def measure_heights(self, frames, peak_prominence:float=0.01, membrane_channel:int=2, sigma:float|None=None, z_sigma: float=None, min_region_size: int=None):
         """
         Compute the heightmap of the monolayer for the specified frames.
 
@@ -1863,8 +1852,6 @@ class MainWidget(QMainWindow):
         peak_prominence : float
             The minimum prominence of a peak to be considered the top of a cell. Defaults to 0.01.
             If the height map is very noisy, consider increasing this value. If cell membranes are not being detected, consider decreasing it.
-        coverslip_height : float
-            The height of the coverslip above the bottom of the z-stack. If None, the bottom of the z-stack is treated as the coverslip.
         """
         from segmentation_tools.heightmap import get_heights
 

@@ -273,7 +273,7 @@ def zernike_defocus_surface(shape, cx, cy, coeff, offset):
 
     return fitted_surface
 
-def fit_bottom_surface(data):
+def get_fitted_surface(data):
     center_x, center_y, coeff, offset = fit_zernike_defocus(data)
     fitted_surface = zernike_defocus_surface(data.shape, center_x, center_y, coeff, offset)
     return fitted_surface

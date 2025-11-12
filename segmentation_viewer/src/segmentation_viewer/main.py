@@ -306,8 +306,10 @@ class MainWidget(QMainWindow):
             'Clear FUCCI Stack': (self._clear_FUCCI_stack, None),
             'Measure Volumes': (self._measure_volumes, None),
             'Measure Heights': (self._measure_heights, None),
+            'Clear Coverslip Height': (self._clear_coverslip_height, None),
             'Get Coverslip Heightmaps': (self._measure_coverslip_heightmaps, None),
             'Get Coverslip Height': (self._calibrate_coverslip_height, None),
+            'Fit Coverslip Surface': (self._fit_coverslip_surface, None),
             'Get Spherical Volumes': (self._compute_spherical_volumes, None),
             'Get Mitoses': (self._get_mitoses, None),
             'Apply Mitosis Weights': (self._apply_new_weights, None),
@@ -769,24 +771,33 @@ class MainWidget(QMainWindow):
             self._clear_seg_stat()
         else:
             self.canvas.cb.setVisible(True)
-            if plot_attr in self._frame_attrs:
-                if not hasattr(self.frame, plot_attr):
-                    return
+            if hasattr(self.frame, plot_attr):
                 if plot_attr == 'heights':
                     if not hasattr(self.frame, 'z_scale'):
                         self._print(f'No z scale found for {self.frame.name}, defaulting to 1.')
                         self.left_toolbar.z_size = 1.0
 
-                    plot_attr='scaled_heights'
-                
-                array_values = getattr(self.frame, plot_attr)
+                    array_values = self.frame.scaled_heights
+
+                    outlier_mask=self.left_toolbar.outlier_mask_text.text()
+                    if outlier_mask:
+                        threshold = np.nanstd(array_values)*float(outlier_mask)
+                        median_height = np.nanmedian(array_values)
+                        array_values[(array_values < median_height - threshold) | (array_values > median_height + threshold)] = np.nan
+                    
+                else:
+                    array_values = getattr(self.frame, plot_attr)
                 self._overlay_seg_stat(array_values)
             else:
+                # try pulling it as a cell attribute
                 cell_attrs = np.array(self.frame.get_cell_attrs(plot_attr, fill_value=np.nan))
-
-                value_map = np.concatenate([[np.nan], cell_attrs.astype(float)])
-                mask_values = value_map[self.frame.masks]
-                self._overlay_seg_stat(mask_values)
+                if np.isfinite(cell_attrs).any(): # found something
+                    value_map = np.concatenate([[np.nan], cell_attrs.astype(float)])
+                    mask_values = value_map[self.frame.masks]
+                    self._overlay_seg_stat(mask_values)
+                else: # Attribute not found in this frame, clear overlay
+                    self.canvas.cb.setVisible(False)
+                    self._clear_seg_stat()
 
     def _overlay_seg_stat(self, stat=None):
         if not self.file_loaded:
@@ -1726,6 +1737,23 @@ class MainWidget(QMainWindow):
                 frame.scale = 0.325  # 20x objective with 6.5 µm/pixel camera, or 40x with 2x binning
             frame.get_volumes()
 
+    def _clear_coverslip_height(self):
+        if not self.file_loaded:
+            return
+        if self.left_toolbar.volumes_frame_stack.value == 'stack':
+            frames = self.stack.frames
+        else:
+            frames = [self.frame]
+
+        for frame in self._progress_bar(frames):
+            if hasattr(frame, 'coverslip_height'):
+                del frame.coverslip_height
+            if hasattr(frame, 'coverslip_heights'):
+                del frame.coverslip_heights  # overwrite heightmap if it exists
+
+        self.left_toolbar.coverslip_height.setText('None')
+        self._show_seg_overlay()
+
     def _calibrate_coverslip_height(self):
         if not self.file_loaded:
             return
@@ -1885,7 +1913,7 @@ class MainWidget(QMainWindow):
         self._show_seg_overlay()
         self.left_toolbar.coverslip_height.setText('Heightmap')
 
-    def measure_coverslip_heightmaps(self, frames, peak_prominence:float=0.01, membrane_channel:int=2, sigma:float=None, z_sigma:float=None, min_region_size:int=None):
+    def measure_coverslip_heightmaps(self, frames, peak_prominence:float=0.01, membrane_channel:int=2, sigma:float=None, z_sigma:float=None, min_region_size:int=None, direction:str='up'):
         '''
         Identify the heightmap corresponding to the bottom of the coverslip by running get_heights on the inverted z stack.
         '''
@@ -1915,6 +1943,13 @@ class MainWidget(QMainWindow):
         if z_sigma is None:
             z_sigma = 1 / z_scale
 
+        if direction=='up':
+            index=-1
+        elif direction=='down':
+            index=1
+        else:
+            raise ValueError("Direction must be 'up' or 'down'.")
+
         for frame in self._progress_bar(frames):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
@@ -1924,10 +1959,60 @@ class MainWidget(QMainWindow):
                 else:
                     membrane = frame.zstack[..., membrane_channel]
 
-                frame.coverslip_heights = len(membrane) - get_heights(membrane[::-1], peak_prominence=peak_prominence, sigma=sigma, z_sigma=z_sigma, min_region_size=min_region_size) - 1
+                heightmap = get_heights(membrane[::index], peak_prominence=peak_prominence, sigma=sigma, z_sigma=z_sigma, min_region_size=min_region_size)
+                if direction=='up':
+                    heightmap = len(membrane) - 1 - heightmap
+                frame.coverslip_heights = heightmap
                 if hasattr(frame, 'coverslip_height'):
                     del frame.coverslip_height
                 frame.to_heightmap()
+
+    def _fit_coverslip_surface(self):
+        if not self.file_loaded:
+            return
+        if self.left_toolbar.volumes_frame_stack.value == 'stack':
+            frames = self.stack.frames
+        else:
+            frames = self.frame
+
+        outlier_mask = self.left_toolbar.outlier_mask_text.text()
+        if outlier_mask == '':
+            outlier_mask = None
+        else:
+            outlier_mask = float(outlier_mask)
+
+        peak_prominence = self.left_toolbar.coverslip_prominence.text()
+        if peak_prominence == '':
+            peak_prominence = 0.01
+        else:
+            peak_prominence = float(peak_prominence)
+
+        membrane_channel = self.left_toolbar.zstack_channel_dropdown.currentIndex()
+
+        self.fit_coverslip_surface(frames, outlier_mask=outlier_mask, peak_prominence=peak_prominence, membrane_channel=membrane_channel)
+        self._show_seg_overlay()
+
+    def fit_coverslip_surface(self, frames, outlier_mask:float=None, peak_prominence:float=0.01, membrane_channel:int=2):
+        from segmentation_tools.heightmap import get_fitted_surface
+
+        if isinstance(frames, SegmentedImage):
+            frames = [frames]
+
+        for frame in self._progress_bar(frames):
+            if not hasattr(frame, 'coverslip_heights'):
+                if hasattr(frame, 'zstack'):
+                    self.measure_coverslip_heightmaps(frame, peak_prominence=peak_prominence, membrane_channel=membrane_channel, direction='down')
+                else:
+                    raise ValueError(f'No coverslip heightmap or z-stack available to fit surface for {frame.name}.')
+
+            coverslip_heights=frame.coverslip_heights.copy().astype(float)
+            if outlier_mask is not None:
+                median_height=np.nanmedian(coverslip_heights)
+                std_height=np.nanstd(coverslip_heights)
+                outliers=(coverslip_heights < median_height - outlier_mask*std_height) | (coverslip_heights > median_height + outlier_mask*std_height)
+                coverslip_heights[outliers]=np.nan
+            frame.coverslip_heights = get_fitted_surface(coverslip_heights)
+                
 
     def _compute_spherical_volumes(self):
         if not self.file_loaded:

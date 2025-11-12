@@ -507,17 +507,28 @@ class LeftToolbar(QScrollArea):
         self.coverslip_prominence_layout.addWidget(self.coverslip_prominence)
         self.get_spherical_volumes = QPushButton('Compute Spherical Volumes', self)
         self.coverslip_height_label_layout = QHBoxLayout()
-        self.measure_coverslip_height_layout = QHBoxLayout()
+        self.measure_coverslip_height_layout1 = QHBoxLayout()
+        self.measure_coverslip_height_layout2 = QHBoxLayout()
         coverslip_height_label = QLabel('Coverslip Height (μm):', self)
         self.coverslip_height = QLabel('None', self)
-        self.coverslip_height.setFixedWidth(60)
+        self.coverslip_height.setFixedWidth(45)
+        self.clear_coverslip_height_button = QPushButton('Clear', self, objectName='deleteButton')
         self.get_coverslip_height_button = QPushButton('Calibrate', self)
         self.get_coverslip_heightmaps_button = QPushButton('Coverslip Heightmap', self)
+
+        self.outlier_mask_label = QLabel('Outlier Mask:', self)
+        self.outlier_mask_text = QLineEdit(self, placeholderText='None')
+        self.outlier_mask_text.setValidator(QDoubleValidator(bottom=0))  # non-negative floats only
+        self.outlier_mask_text.setFixedWidth(45)
+        self.fit_coverslip_surface_button = QPushButton('Fit Coverslip', self)
         self.coverslip_height_label_layout.addWidget(coverslip_height_label)
         self.coverslip_height_label_layout.addWidget(self.coverslip_height)
-        self.coverslip_height_label_layout.addStretch()
-        self.measure_coverslip_height_layout.addWidget(self.get_coverslip_height_button)
-        self.measure_coverslip_height_layout.addWidget(self.get_coverslip_heightmaps_button)
+        self.coverslip_height_label_layout.addWidget(self.clear_coverslip_height_button)
+        self.measure_coverslip_height_layout1.addWidget(self.get_coverslip_height_button)
+        self.measure_coverslip_height_layout1.addWidget(self.get_coverslip_heightmaps_button)
+        self.measure_coverslip_height_layout2.addWidget(self.outlier_mask_label)
+        self.measure_coverslip_height_layout2.addWidget(self.outlier_mask_text)
+        self.measure_coverslip_height_layout2.addWidget(self.fit_coverslip_surface_button, stretch=2)
 
         zstack_channel_layout = QHBoxLayout()
         zstack_channel_label = QLabel('Z-Stack Channel:', self)
@@ -535,7 +546,8 @@ class LeftToolbar(QScrollArea):
 
         volumes_widget.core_layout.addSpacerItem(create_vertical_spacer(1))
         volumes_widget.core_layout.addLayout(self.coverslip_height_label_layout)
-        volumes_widget.core_layout.addLayout(self.measure_coverslip_height_layout)
+        volumes_widget.core_layout.addLayout(self.measure_coverslip_height_layout2)
+        volumes_widget.core_layout.addLayout(self.measure_coverslip_height_layout1)
 
         volumes_widget.core_layout.addLayout(zstack_channel_layout)
         
@@ -546,9 +558,12 @@ class LeftToolbar(QScrollArea):
 
         self.volume_button.clicked.connect(self.main_window._measure_volumes_action.trigger)
         self.get_heights_button.clicked.connect(self.main_window._measure_heights_action.trigger)
+        self.clear_coverslip_height_button.clicked.connect(self.main_window._clear_coverslip_height_action.trigger)
         self.get_coverslip_height_button.clicked.connect(self.main_window._calibrate_coverslip_height_action.trigger)
         self.get_spherical_volumes.clicked.connect(self.main_window._compute_spherical_volumes_action.trigger)
         self.get_coverslip_heightmaps_button.clicked.connect(self.main_window._measure_coverslip_heightmaps_action.trigger)
+        self.outlier_mask_text.textChanged.connect(self.main_window._show_seg_overlay)
+        self.fit_coverslip_surface_button.clicked.connect(self.main_window._fit_coverslip_surface_action.trigger)
         return self.volumes_tab
 
     def get_tracking_tab(self):

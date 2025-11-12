@@ -1771,15 +1771,17 @@ class MainWidget(QMainWindow):
         else:
             peak_prominence = float(peak_prominence)
 
+        membrane_channel = self.left_toolbar.zstack_channel_dropdown.currentIndex()
+
         for frame in self._progress_bar(frames):
-            frame.coverslip_height = self.calibrate_coverslip_height(frame, prominence=peak_prominence)
+            frame.coverslip_height = self.calibrate_coverslip_height(frame, prominence=peak_prominence, membrane_channel=membrane_channel)
             if hasattr(frame, 'coverslip_heights'):
                 del frame.coverslip_heights  # overwrite heightmap if it exists
 
         self.left_toolbar.coverslip_height.setText(f'{frame.coverslip_height:.2f}')
         self._show_seg_overlay()
 
-    def calibrate_coverslip_height(self, frames, membrane_channel=2, prominence=None):
+    def calibrate_coverslip_height(self, frames, membrane_channel: int=2, prominence=None):
         """
         Identify the bottom of the sample from the specified frames.
 
@@ -1836,7 +1838,9 @@ class MainWidget(QMainWindow):
         else:
             peak_prominence = float(peak_prominence)
 
-        self.measure_heights(frames, peak_prominence)
+        membrane_channel = self.left_toolbar.zstack_channel_dropdown.currentIndex()
+
+        self.measure_heights(frames, peak_prominence, membrane_channel=membrane_channel)
         self._show_seg_overlay()
         self.left_toolbar.volume_button.setEnabled(True)
         self._export_heights_action.setEnabled(True)
@@ -1902,11 +1906,13 @@ class MainWidget(QMainWindow):
         else:
             peak_prominence = float(peak_prominence)
 
-        self.measure_coverslip_heightmaps(frames, peak_prominence)
+        membrane_channel = self.left_toolbar.zstack_channel_dropdown.currentIndex()
+
+        self.measure_coverslip_heightmaps(frames, peak_prominence, membrane_channel=membrane_channel)
         self._show_seg_overlay()
         self.left_toolbar.coverslip_height.setText('Heightmap')
 
-    def measure_coverslip_heightmaps(self, frames, peak_prominence:float=0.01, membrane_channel:int=2, sigma:float=None, min_region_size:int=None):
+    def measure_coverslip_heightmaps(self, frames, peak_prominence:float=0.01, membrane_channel:int=2, sigma:float=None, z_sigma:float=None, min_region_size:int=None):
         '''
         Identify the heightmap corresponding to the bottom of the coverslip by running get_heights on the inverted z stack.
         '''
@@ -1921,12 +1927,20 @@ class MainWidget(QMainWindow):
             self._print(f'No xy scale available for {frames[0].name}. Defaulting to 0.325.')
             scale = 0.325
         
+        if hasattr(frames[0], 'z_scale'):
+            z_scale=frames[0].z_scale
+        else:
+            self._print(f'No z scale available for {frames[0].name}. Defaulting to 1.')
+            z_scale = 1.0
+
         if sigma is None:
             sigma = 4 / scale
             self._print(f'Sigma not specified. Defaulting to {sigma:.2f} pixels.')
         if min_region_size is None:
             min_region_size = 200 / scale**2
             self._print(f"Min region size not specified. Defaulting to {min_region_size:.2f} pixels.")
+        if z_sigma is None:
+            z_sigma = 1 / z_scale
 
         for frame in self._progress_bar(frames):
             if not hasattr(frame, 'zstack'):
@@ -1937,7 +1951,7 @@ class MainWidget(QMainWindow):
                 else:
                     membrane = frame.zstack[..., membrane_channel]
 
-                frame.coverslip_heights = len(membrane) - get_heights(membrane[::-1], peak_prominence=peak_prominence, sigma=sigma, z_sigma=0, min_region_size=min_region_size)
+                frame.coverslip_heights = len(membrane) - get_heights(membrane[::-1], peak_prominence=peak_prominence, sigma=sigma, z_sigma=z_sigma, min_region_size=min_region_size) - 1
                 if hasattr(frame, 'coverslip_height'):
                     del frame.coverslip_height
                 frame.to_heightmap()
@@ -4074,13 +4088,17 @@ class MainWidget(QMainWindow):
 
         if self.frame.img.ndim == 2:  # single channel
             self.left_toolbar.grayscale_mode()
+            self.n_color_channels = 1
         elif self.frame.img.ndim == 3:  # RGB
             self.left_toolbar.RGB_mode()
-            self.left_toolbar.channels_validator.max_value = self.frame.img.shape[-1]  # set max value for channels prompt validator
+            self.n_color_channels = self.frame.img.shape[-1]
+            self.left_toolbar.channels_validator.max_value = self.n_color_channels  # set max value for channels prompt validator
             
         else:
             raise ValueError(f'{self.frame.name} has {self.frame.img.ndim} image dimensions, must be 2 (grayscale) or 3 (RGB).')
 
+        self.left_toolbar.update_zstack_dropdown_options(self.n_color_channels)
+        
         if len(self.stack.frames) > 1:
             self.frame_slider.setVisible(True)
         else:
@@ -4089,6 +4107,7 @@ class MainWidget(QMainWindow):
         self.frame_slider.setRange(0, len(self.stack.frames) - 1)
         self._autorange_LUT_sliders()
         self.change_current_frame(0, reset=True)  # call frame update explicitly (in case the slider value was already at 0)
+        self._update_voxel_size() #  in the case where no size metadata is loaded, use whatever scale is currently set in the UI
 
         # reset visual settings
         self.canvas.img_plot.autoRange()

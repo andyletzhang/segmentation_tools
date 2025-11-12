@@ -527,6 +527,12 @@ class LeftToolbar(QScrollArea):
         self.measure_coverslip_height_layout.addWidget(self.get_coverslip_height_button)
         self.measure_coverslip_height_layout.addWidget(self.get_coverslip_heightmaps_button)
 
+        zstack_channel_layout = QHBoxLayout()
+        zstack_channel_label = QLabel('Z-Stack Channel:', self)
+        self.zstack_channel_dropdown = QComboBox(self, placeholderText='None')
+        zstack_channel_layout.addWidget(zstack_channel_label)
+        zstack_channel_layout.addWidget(self.zstack_channel_dropdown)
+
         volumes_widget = CollapsibleWidget(header_text='Volumes', parent=self.tabbed_widget)
         volumes_border = bordered(volumes_widget)
 
@@ -539,6 +545,8 @@ class LeftToolbar(QScrollArea):
         volumes_widget.core_layout.addLayout(self.coverslip_height_label_layout)
         volumes_widget.core_layout.addLayout(self.measure_coverslip_height_layout)
 
+        volumes_widget.core_layout.addLayout(zstack_channel_layout)
+        
         volumes_widget.hide_content()
 
         volumes_layout.addWidget(self.volumes_frame_stack)
@@ -549,7 +557,6 @@ class LeftToolbar(QScrollArea):
         self.get_coverslip_height_button.clicked.connect(self.main_window._calibrate_coverslip_height_action.trigger)
         self.get_spherical_volumes.clicked.connect(self.main_window._compute_spherical_volumes_action.trigger)
         self.get_coverslip_heightmaps_button.clicked.connect(self.main_window._measure_coverslip_heightmaps_action.trigger)
-
         return self.volumes_tab
 
     def get_tracking_tab(self):
@@ -665,6 +672,12 @@ class LeftToolbar(QScrollArea):
         delete_all.clicked.connect(self.main_window.delete_particle)
 
         return tracking_tab
+
+    def update_zstack_dropdown_options(self, n_channels: int | None = None):
+        self.zstack_channel_dropdown.clear()
+        if n_channels is not None:
+            self.zstack_channel_dropdown.addItems(np.arange(n_channels).astype(str))
+            self.zstack_channel_dropdown.setCurrentIndex(0)
 
     def update_tracking_label(self, n_tracks: int):
         self.tracking_label.setText(f'{n_tracks} Tracks')

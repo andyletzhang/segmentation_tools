@@ -1837,10 +1837,10 @@ class HeightMap(SegmentedImage):
                 mesh_path = seg_path.replace('segmented', 'heights').replace('seg.npy', 'binarized.tif')
             self.heights, self.height_img = preprocessing.read_height_tif(mesh_path, zero_to_nan=zero_to_nan)
 
-            if NORI:
-                self.masks_3d = np.repeat(self.masks[np.newaxis], self.height_img.shape[0], axis=0)
-                self.masks_3d[~self.height_img] = 0
-                self.read_NORI()
+        if NORI:
+            self.masks_3d = np.repeat(self.masks[np.newaxis], self.height_img.shape[0], axis=0)
+            self.masks_3d[~self.height_img] = 0
+            self.read_NORI()
 
         self.zero_to_nan = zero_to_nan
 

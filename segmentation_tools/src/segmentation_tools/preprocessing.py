@@ -3,7 +3,7 @@ from multiprocessing import Pool
 
 import numpy as np
 from scipy import ndimage
-from skimage import io
+from tifffile import imread
 
 try:
     import cupy as xp
@@ -41,7 +41,7 @@ def remove_edge_masks_tile(membrane, masks, radius=2):
 
 
 def read_height_tif(file_path, zero_to_nan=True):
-    height_img = io.imread(file_path).astype(bool)  # binary image
+    height_img = imread(file_path).astype(bool)  # binary image
     top_surface = np.argmin(height_img, axis=0).astype(float)  # first zero in the height image at each pixel is the top surface
     if zero_to_nan:
         top_surface[top_surface == 0] = np.nan

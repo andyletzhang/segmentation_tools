@@ -506,9 +506,10 @@ class ChannelOrderDialog(QDialog):
     clearPreviewRequested = pyqtSignal()
     finished = pyqtSignal(list)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, n_channels=3):
         super().__init__(parent)
         self.setWindowTitle('Channel Order')
+        self.n_channels=n_channels
 
         # Layout and widgets
         layout = QVBoxLayout(self)
@@ -516,7 +517,7 @@ class ChannelOrderDialog(QDialog):
         layout.addWidget(self.label)
 
         self.line_edit = QLineEdit(self)
-        self.line_edit.setValidator(RangeStringValidator(max_value=2, parent=self))
+        self.line_edit.setValidator(RangeStringValidator(max_value=self.n_channels-1, parent=self))
         self.line_edit.setPlaceholderText('e.g. 1, 2, 0')
         self.line_edit.textChanged.connect(self._check_input)
 
@@ -538,7 +539,7 @@ class ChannelOrderDialog(QDialog):
     def _check_input(self):
         try:
             channel_order = self.get_input()
-            if len(channel_order) == 3:
+            if len(channel_order) == self.n_channels:
                 self.previewRequested.emit(channel_order)
         except ValueError:
             self.clearPreviewRequested.emit()
@@ -556,11 +557,11 @@ class ChannelOrderDialog(QDialog):
     def confirm_and_finish(self):
         try:
             channel_order = self.get_input()
-            if len(channel_order) == 3:
+            if len(channel_order) == self.n_channels:
                 self.finished.emit(channel_order)
                 self.accept()
             else:
-                QMessageBox.warning(self, 'Invalid Input', f'Expected 3 channels, got {len(channel_order)}.')
+                QMessageBox.warning(self, 'Invalid Input', f'Expected {self.n_channels} channels, got {len(channel_order)}.')
         except ValueError:
             QMessageBox.warning(self, 'Invalid Input', f'Invalid input: {self.line_edit.text()}')
             return None

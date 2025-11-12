@@ -1,6 +1,7 @@
 import numpy as np
 from scipy import ndimage
 from numba import jit
+from scipy.optimize import least_squares
 
 try:
     import cupy as cp
@@ -232,3 +233,47 @@ def get_coverslip_z(z_profile, scale=1, precision=0.125, prominence=0.01):
     bottom_slice=z_fine[find_peaks(z_gradient, prominence=scaled_prominence)[0][0]]
 
     return bottom_slice
+
+def fit_zernike_defocus(data):
+    """
+    Fit a 2D array (with NaNs allowed) using a 2nd-order Zernike defocus term.
+    Returns: center_x, center_y, coeff, offset
+    """
+    ny, nx = data.shape
+    yy, xx = np.indices(data.shape)
+
+    # mask valid points
+    mask = ~np.isnan(data)
+    x_valid = xx[mask]
+    y_valid = yy[mask]
+    z_valid = data[mask]
+
+    # set characteristic radius (use half-diagonal of array)
+    R = np.hypot(nx, ny) / 2.0
+
+    def residuals(params):
+        cx, cy, c, offset = params
+        r = np.sqrt((x_valid - cx)**2 + (y_valid - cy)**2) / R
+        basis = 2 * r**2 - 1
+        fit = c * basis + offset
+        return fit - z_valid
+
+    # initial guess: center in the middle, no defocus
+    x0 = [nx/2, ny/2, 0.0, np.nanmean(z_valid)]
+
+    result = least_squares(residuals, x0)
+    return result.x  # (center_x, center_y, coeff, offset)
+
+def zernike_defocus_surface(shape, cx, cy, coeff, offset):
+    yy, xx = np.indices(shape)
+    R = np.hypot(*shape) / 2.0
+    r_full = np.sqrt((xx - cx)**2 + (yy - cy)**2) / R
+    basis_full = 2 * r_full**2 - 1
+    fitted_surface = coeff * basis_full + offset
+
+    return fitted_surface
+
+def fit_bottom_surface(data):
+    center_x, center_y, coeff, offset = fit_zernike_defocus(data)
+    fitted_surface = zernike_defocus_surface(data.shape, center_x, center_y, coeff, offset)
+    return fitted_surface

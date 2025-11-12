@@ -280,7 +280,6 @@ class MainWidget(QMainWindow):
         view_actions = {
             'Reset View': (self._reset_view, None),
             'Show Grayscale': (self._toggle_grayscale, None),
-            'Invert Contrast': (self._toggle_inverted, 'I'),
             'Overlay Settings...': (self._open_overlay_settings, None),
             'Change Image LUTs...': (self._change_LUTs, None),
             'Change Overlay Colormap...': (self._change_overlay_colormap, None),
@@ -365,31 +364,23 @@ class MainWidget(QMainWindow):
         if 'LUTs' in config:
             self.canvas.img.LUTs = tuple(config['LUTs'])
         if 'overlay_settings' in config:
-            self.canvas.dark_overlay_settings = config['overlay_settings']
-        if 'inverted_overlay_settings' in config:
-            self.canvas.light_overlay_settings = config['inverted_overlay_settings']
-        if 'inverted' in config:
-            self.left_toolbar.inverted_checkbox.setChecked(config['inverted'])
+            self.canvas.overlay_settings = config['overlay_settings']
 
     def _dump_config(self, config_path=None):
         import yaml
         from platformdirs import user_config_dir
 
         config_path = Path(user_config_dir('segmentation_viewer')).joinpath('config.yaml')
-        inverted = self.left_toolbar.inverted_checkbox.isChecked()
 
         current_overlay_settings = {
             attr: getattr(self.canvas, attr)
             for attr in ['selected_cell_color', 'selected_cell_alpha', 'outlines_color', 'outlines_alpha', 'masks_alpha']
         }
         LUTs = list(self.canvas.img.LUTs)
-        overlay_settings = getattr(self.canvas, 'dark_overlay_settings', current_overlay_settings.copy())
-        inverted_overlay_settings = getattr(self.canvas, 'light_overlay_settings', current_overlay_settings.copy())
+        overlay_settings = getattr(self.canvas, 'overlay_settings', current_overlay_settings.copy())
 
         config = {
             'overlay_settings': overlay_settings,
-            'inverted_overlay_settings': inverted_overlay_settings,
-            'inverted': inverted,
             'LUTs': LUTs,
         }
         # create the config directory if it doesn't exist
@@ -407,17 +398,10 @@ class MainWidget(QMainWindow):
             self._apply_overlay_settings(self.overlay_dialog.get_settings())
 
     def _apply_overlay_settings(self, settings=None):
-        inverted = self.left_toolbar.inverted_checkbox.isChecked()
         if settings is None:
-            if inverted:
-                settings = self.canvas.light_overlay_settings
-            else:
-                settings = self.canvas.dark_overlay_settings
+            settings = self.canvas.overlay_settings
         else:
-            if inverted:
-                self.canvas.light_overlay_settings = settings
-            else:
-                self.canvas.dark_overlay_settings = settings
+            self.canvas.overlay_settings = settings
 
         redraw_masks = self.canvas.masks_alpha != settings['masks_alpha']
 
@@ -649,17 +633,6 @@ class MainWidget(QMainWindow):
         self.stat_LUT_type = ['frame', 'stack', 'custom'][selected]
 
         self._show_seg_overlay()
-
-    def _invert_toggled(self):
-        self._apply_overlay_settings()
-        self.canvas.img.refresh()
-
-    @property
-    def is_inverted(self):
-        if hasattr(self, 'left_toolbar'):
-            return self.left_toolbar.inverted_checkbox.isChecked()
-        else:
-            return False
 
     def _cell_stat_attrs(self, cell):
         """Return all common attributes which are meaningful cell-level metrics"""
@@ -3666,9 +3639,6 @@ class MainWidget(QMainWindow):
 
     def _toggle_grayscale(self):
         self.left_toolbar.show_grayscale_checkbox.toggle()
-
-    def _toggle_inverted(self):
-        self.left_toolbar.inverted_checkbox.toggle()
 
     def _show_grayscale_toggled(self, event=None):
         if event is None:

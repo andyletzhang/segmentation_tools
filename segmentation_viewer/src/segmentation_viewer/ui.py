@@ -76,11 +76,6 @@ class LeftToolbar(QScrollArea):
         layout.addLayout(self.RGB_checkbox_layout)
         layout.addSpacerItem(create_vertical_spacer(0.5))
 
-        # Invert checkbox
-        self.inverted_checkbox = QCheckBox('Invert [I]', widget)
-        layout.addWidget(self.inverted_checkbox)
-        layout.addItem(create_vertical_spacer())
-
         # Normalize section
         layout.addWidget(QLabel('Normalize by:', widget))
         layout.addWidget(self._create_normalize_widget())
@@ -710,7 +705,6 @@ class LeftToolbar(QScrollArea):
 
     def _connect_signals(self):
         # Normalize signals
-        self.inverted_checkbox.stateChanged.connect(self.main_window._invert_toggled)
         self.normalize_frame_button.toggled.connect(self.main_window._update_display)
         self.normalize_stack_button.toggled.connect(self.main_window._update_display)
         self.normalize_custom_button.toggled.connect(self.main_window._update_display)

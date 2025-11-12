@@ -1163,6 +1163,9 @@ class MainWidget(QMainWindow):
             self.canvas.draw_masks_bg(frame)
 
     def _print(self, msg, duration=2000):
+        # supress messages in progress mode
+        if self.is_iterating:
+            return
         self.statusBar().showMessage(msg, duration)
         print(msg)
 

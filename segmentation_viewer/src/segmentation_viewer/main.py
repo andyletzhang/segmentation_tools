@@ -362,7 +362,7 @@ class MainWidget(QMainWindow):
 
     def _set_config(self, config):
         if 'LUTs' in config:
-            self.canvas.img.LUTs = tuple(config['LUTs'])
+            self.canvas.img.LUTs = config['LUTs']
         if 'overlay_settings' in config:
             self.canvas.overlay_settings = config['overlay_settings']
 
@@ -376,7 +376,7 @@ class MainWidget(QMainWindow):
             attr: getattr(self.canvas, attr)
             for attr in ['selected_cell_color', 'selected_cell_alpha', 'outlines_color', 'outlines_alpha', 'masks_alpha']
         }
-        LUTs = list(self.canvas.img.LUTs)
+        LUTs = self.canvas.img.LUTs
         overlay_settings = getattr(self.canvas, 'overlay_settings', current_overlay_settings.copy())
 
         config = {
@@ -2101,7 +2101,7 @@ class MainWidget(QMainWindow):
         if self.is_grayscale: # reshape grayscale value
             return np.array([img[y, x]])
 
-        hidden_channels = np.where(~np.array(self.left_toolbar.RGB_visible))[0]
+        hidden_channels = np.where(~np.array(self.left_toolbar.visible_channels))[0]
         pixel_value = list(img[y, x])
         for channel in hidden_channels:
             pixel_value[channel] = None
@@ -2327,8 +2327,8 @@ class MainWidget(QMainWindow):
         self.canvas.update_display(img_data=img_data, seg_data=seg_data)
         mark_time('canvas update', start_time)
 
-    def _RGB_checks_toggled(self):
-        self.canvas.toggle_RGB_checks(self.left_toolbar.RGB_visible)
+    def _channel_checks_toggled(self):
+        self.canvas.toggle_channel_checks(self.left_toolbar.visible_channels)
 
     def _refresh_segmentation(self, replace_masks=False):
         """Redraw the outlines and masks overlays."""
@@ -2462,10 +2462,9 @@ class MainWidget(QMainWindow):
         first_frame = self.stack.frames[0]
         if hasattr(first_frame, 'zstack'):
             shape = first_frame.zstack.shape
-            is_grayscale = len(shape) == 3
         else:
             shape = first_frame.img.shape
-            is_grayscale = len(shape) == 2
+        is_grayscale = shape[-1] == 1
 
         img_size = np.prod(shape)
         downsample_factor = img_size // int(1e6)
@@ -2489,9 +2488,6 @@ class MainWidget(QMainWindow):
                 img = frame.img
                 img = img[::downsample_factor]
                 xy_axes=(0,1)
-            
-            if is_grayscale:
-                img=img[...,np.newaxis]
 
             for color_channel in color_channels:
                 img_channel = img[..., color_channel]
@@ -2945,13 +2941,6 @@ class MainWidget(QMainWindow):
     @property
     def is_grayscale(self):
         return self.left_toolbar.is_grayscale
-
-    @is_grayscale.setter
-    def is_grayscale(self, value):
-        if value:
-            self.left_toolbar.grayscale_mode()
-        else:
-            self.left_toolbar.RGB_mode()
 
     # --------------Segmentation functions----------------
     def add_cell(self, enclosed_pixels: np.ndarray, new_mask_n: int | None = None, frame: int | None = None):
@@ -3422,16 +3411,16 @@ class MainWidget(QMainWindow):
         self.left_toolbar.tabbed_widget.blockSignals(False)
         overlay_color = self.FUCCI_dropdown
 
-        # set RGB mode
+        # set RGB mode TODO: loosen this to n channels
         if overlay_color == 0:
-            self.left_toolbar.RGB_visible = True
+            self.left_toolbar.visible_channels = True
         else:
             if overlay_color == 3:
-                self.left_toolbar.RGB_visible = [True, True, False]
+                self.left_toolbar.visible_channels = [True, True, False]
             elif overlay_color == 2:
-                self.left_toolbar.RGB_visible = [True, False, False]
+                self.left_toolbar.visible_channels = [True, False, False]
             elif overlay_color == 1:
-                self.left_toolbar.RGB_visible = [False, True, False]
+                self.left_toolbar.visible_channels = [False, True, False]
 
             # set overlay mode
             self.outlines_visible = True
@@ -3477,7 +3466,7 @@ class MainWidget(QMainWindow):
         self.canvas.clear_overlay('tracking')
         self.canvas.clear_overlay('mitosis')
         self.seg_overlay_attr.setCurrentIndex(0)  # clear attribute overlay
-        self.left_toolbar.RGB_visible = True
+        self.left_toolbar.visible_channels = True
         if not self.is_grayscale:
             self.left_toolbar.show_grayscale_checkbox.setChecked(False)
         self.canvas.clear_overlay('selection')  # remove any selection overlays (highlighting, outlines)
@@ -3551,41 +3540,40 @@ class MainWidget(QMainWindow):
                 if event.key() == Qt.Key.Key_R:
                     if self.FUCCI_dropdown == 2 and self.FUCCI_mode:
                         self.FUCCI_dropdown = 0
-                        self.left_toolbar.RGB_visible = True
+                        self.left_toolbar.visible_channels = True
                     else:
                         self.left_toolbar.tabbed_widget.setCurrentIndex(1)
                         self.FUCCI_dropdown = 2
-                        self.left_toolbar.RGB_visible = [True, False, False]
+                        self.left_toolbar.visible_channels = [True, False, False]
                     return
 
                 elif event.key() == Qt.Key.Key_G:
                     if self.FUCCI_dropdown == 1 and self.FUCCI_mode:
                         self.FUCCI_dropdown = 0
-                        self.left_toolbar.RGB_visible = True
+                        self.left_toolbar.visible_channels = True
                     else:
                         self.left_toolbar.tabbed_widget.setCurrentIndex(1)
                         self.FUCCI_dropdown = 1
-                        self.left_toolbar.RGB_visible = [False, True, False]
+                        self.left_toolbar.visible_channels = [False, True, False]
                     return
 
                 elif event.key() == Qt.Key.Key_A:
                     if self.FUCCI_dropdown == 3 and self.FUCCI_mode:
                         self.FUCCI_dropdown = 0
-                        self.left_toolbar.RGB_visible = True
+                        self.left_toolbar.visible_channels = True
                     else:
                         self.left_toolbar.tabbed_widget.setCurrentIndex(1)
                         self.FUCCI_dropdown = 3
-                        self.left_toolbar.RGB_visible = [True, True, False]
+                        self.left_toolbar.visible_channels = [True, True, False]
                     return
 
         # r-g-b toggles
         if not self.is_grayscale:
-            if event.key() == Qt.Key.Key_R:
-                self.left_toolbar.RGB_checkboxes[0].toggle()
-            elif event.key() == Qt.Key.Key_G:
-                self.left_toolbar.RGB_checkboxes[1].toggle()
-            elif event.key() == Qt.Key.Key_B:
-                self.left_toolbar.RGB_checkboxes[2].toggle()
+            if event.key() == Qt.Key.Key_G:
+                self.left_toolbar.show_grayscale_checkbox.toggle()
+            for channel_n in range(self.n_color_channels):
+                if event.key() == getattr(Qt.Key, f'Key_{channel_n}'):
+                    self.left_toolbar.channel_checkboxes[channel_n].toggle()
 
         # segmentation overlay
         if event.key() == Qt.Key.Key_X:
@@ -3632,7 +3620,7 @@ class MainWidget(QMainWindow):
     def _reset_view(self):
         """Reset the view to the original image data."""
         self.FUCCI_dropdown = 0
-        self.left_toolbar.RGB_visible = True
+        self.left_toolbar.visible_channels = True
         self.canvas.img_plot.autoRange()
         if not self.is_grayscale:
             self.left_toolbar.show_grayscale_checkbox.setChecked(False)
@@ -3672,7 +3660,7 @@ class MainWidget(QMainWindow):
             self.reorder_channels(channel_order)
 
         # Prompt the user for the channel order
-        self.reorder_dialog = ChannelOrderDialog(self)
+        self.reorder_dialog = ChannelOrderDialog(self, n_channels=self.n_color_channels)
         self.reorder_dialog.previewRequested.connect(preview_reorder)
         self.reorder_dialog.clearPreviewRequested.connect(clear_preview)
         self.reorder_dialog.finished.connect(finish_reordering)
@@ -3680,8 +3668,8 @@ class MainWidget(QMainWindow):
         self.reorder_dialog.exec()
 
     def reorder_channels(self, channel_order):
-        if len(channel_order) != 3:
-            raise ValueError('Channel order must have exactly three elements.')
+        if len(channel_order) != self.n_color_channels:
+            raise ValueError(f'Channel order must have exactly {self.n_color_channels} elements.')
 
         for frame in self._progress_bar(self.stack.frames, desc='Reordering channels'):
             frame.img = frame.img[..., channel_order]
@@ -3701,14 +3689,14 @@ class MainWidget(QMainWindow):
         initial_LUTs = self.canvas.img.LUTs
 
         def apply_LUTs(new_LUTs):
-            self.canvas.img.LUTs = new_LUTs
+            self.canvas.img.LUTs[:len(new_LUTs)] = new_LUTs
             self.canvas.img.update_LUTs()
 
         def revert_LUTs():
             self.canvas.img.LUTs = initial_LUTs
             self.canvas.img.update_LUTs()
 
-        dialog = LookupTableDialog(self, options=LUT_options, initial_LUTs=initial_LUTs)
+        dialog = LookupTableDialog(self.n_color_channels, parent=self, options=LUT_options, initial_LUTs=initial_LUTs)
         dialog.valueChanged.connect(apply_LUTs)
         dialog.rejected.connect(revert_LUTs)
         dialog.exec()
@@ -4046,6 +4034,8 @@ class MainWidget(QMainWindow):
         self.undo_stack.clear()
         self.open_dir = Path(self.stack.name).parent
 
+        self._set_color_channels(self.frame.img.shape[-1])
+
         if hasattr(self.frame, 'zstack'):
             self.is_zstack = True
             self.zstack_slider.setVisible(True)
@@ -4056,18 +4046,6 @@ class MainWidget(QMainWindow):
             self.is_zstack = False
             self.zstack_slider.setVisible(False)
 
-        if self.frame.img.ndim == 2:  # single channel
-            self.left_toolbar.grayscale_mode()
-            self.n_color_channels = 1
-        elif self.frame.img.ndim == 3:  # RGB
-            self.left_toolbar.RGB_mode()
-            self.n_color_channels = self.frame.img.shape[-1]
-            self.left_toolbar.channels_validator.max_value = self.n_color_channels  # set max value for channels prompt validator
-            
-        else:
-            raise ValueError(f'{self.frame.name} has {self.frame.img.ndim} image dimensions, must be 2 (grayscale) or 3 (RGB).')
-
-        self.left_toolbar.update_zstack_dropdown_options(self.n_color_channels)
         
         if len(self.stack.frames) > 1:
             self.frame_slider.setVisible(True)
@@ -4086,6 +4064,12 @@ class MainWidget(QMainWindow):
 
         self._precompute_bounds()
         self.canvas.draw_masks_parallel()
+
+    def _set_color_channels(self, n_color_channels:int):
+        self.n_color_channels = n_color_channels
+        self.canvas.img.initialize_channels(self.n_color_channels)
+
+        self.left_toolbar.set_color_channels(self.n_color_channels)
 
     def _open_files(self):
         files, _ = QFileDialog.getOpenFileNames(
@@ -4154,11 +4138,6 @@ class MainWidget(QMainWindow):
                 if imgs is None:
                     return False
                 for v, img in enumerate(self._progress_bar(imgs, desc=f'Processing {file_path.stem}')):
-                    if img.shape[-1] == 2:  # pad to 3 color channels
-                        img = np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
-                    elif img.shape[-1] == 1:  # single channel
-                        img = img[..., 0]  # drop the last dimension
-
                     if len(img) > 1:  # z-stack
                         frames.append(segmentation_from_zstack(img, name=file_path.with_name(file_path.stem + f'-{v}_seg.npy')))
                     else:  # single slice
@@ -4266,16 +4245,10 @@ class MainWidget(QMainWindow):
         if len(imgs) == 0:  # no images loaded
             return
 
+        self._set_color_channels(imgs[0][0].shape[-1])
+
         # TODO: check if the number of images matches the number of frames in the stack
         for img, frame in zip(imgs, self.stack.frames):
-            if img.shape[-1] == 1:  # single channel
-                img = img[..., 0]  # drop the last dimension
-                self.left_toolbar.grayscale_mode()
-            else:  # RGB
-                if img.shape[-1] == 2:  # pad to 3 color channels
-                    img = np.stack([img[..., 0], img[..., 1], np.zeros_like(img[..., 0])], axis=-1)
-                self.left_toolbar.RGB_mode()
-
             frame.img = img[0]
             if len(img) > 1:  # z-stack
                 self.zstack_number = 0  # if any z-stack images are loaded, reset the z-stack number (a little redundant)

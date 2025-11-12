@@ -477,6 +477,10 @@ class CollapsibleWidget(QWidget):
         self.core_layout.addWidget(self.collapsing_widget)
         self.setLayout(self.core_layout)
 
+    def setSpacing(self, spacing):
+        self.collapsing_layout.setSpacing(spacing)
+        self.core_layout.setSpacing(spacing)
+
     def show_content(self):
         self.toggle_hidden.setChecked(True)
 
@@ -570,7 +574,7 @@ class ChannelOrderDialog(QDialog):
 class LookupTableDialog(QDialog):
     valueChanged = pyqtSignal(list)
 
-    def __init__(self, parent=None, options=[], initial_LUTs=[]):
+    def __init__(self, n_channels:int = 3, parent=None, options=[], initial_LUTs=[]):
         super().__init__(parent)
         self.setWindowTitle('Edit LUTs')
 
@@ -581,21 +585,15 @@ class LookupTableDialog(QDialog):
         self.label = QLabel('Enter lookup tables:', self)
         layout.addWidget(self.label)
 
-        red_label = QLabel('R:')
-        green_label = QLabel('G:')
-        blue_label = QLabel('B:')
-        self.red_dropdown = QComboBox(self)
-        self.green_dropdown = QComboBox(self)
-        self.blue_dropdown = QComboBox(self)
-
-        for dropdown, current_value in zip([self.red_dropdown, self.green_dropdown, self.blue_dropdown], initial_LUTs):
+        self.dropdowns = []
+        for i in range(n_channels):
+            label = QLabel(f'C{i}:')
+            dropdown = QComboBox(self)
+            self.dropdowns.append(dropdown)
             dropdown.addItems(options)
-            dropdown.setCurrentText(current_value)
+            dropdown.setCurrentText(initial_LUTs[i])
             dropdown.currentIndexChanged.connect(self.send_preview)
-
-        dropdown_layout.addRow(red_label, self.red_dropdown)
-        dropdown_layout.addRow(green_label, self.green_dropdown)
-        dropdown_layout.addRow(blue_label, self.blue_dropdown)
+            dropdown_layout.addRow(label, dropdown)
 
         submit_layout = QHBoxLayout()
         self.button_confirm = QPushButton('Confirm', self)
@@ -615,7 +613,7 @@ class LookupTableDialog(QDialog):
         self.valueChanged.emit(self.get_input())
 
     def get_input(self):
-        return [self.red_dropdown.currentText(), self.green_dropdown.currentText(), self.blue_dropdown.currentText()]
+        return [dropdown.currentText() for dropdown in self.dropdowns]
 
 
 class FrameStackDialog(QDialog):

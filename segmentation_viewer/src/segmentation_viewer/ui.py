@@ -58,7 +58,8 @@ class LeftToolbar(QScrollArea):
         self.command_line_button = self._create_command_line_button()
         self.save_widget = self._create_save_widget()
 
-        self.RGB_mode()
+        self.set_color_channels(3)  # default to 3 channels
+
         # Add all components
         for widget in (self.lut_widget, self.voxel_size_widget, self.tabbed_menu, self.command_line_button, self.save_widget):
             main_layout.addWidget(widget)
@@ -67,27 +68,28 @@ class LeftToolbar(QScrollArea):
         return self
 
     def _create_lut_widget(self):
-        widget = QWidget(objectName='bordered')
-        layout = QVBoxLayout(widget)
-        layout.setSpacing(0)
+        widget = CollapsibleWidget(header_text='Levels', parent=self)
+        widget_bordered = bordered(widget)
 
-        # RGB checkboxes
-        self.RGB_checkbox_layout = QVBoxLayout()
-        layout.addLayout(self.RGB_checkbox_layout)
-        layout.addSpacerItem(create_vertical_spacer(0.5))
+        widget.setSpacing(0)
 
-        # Normalize section
-        layout.addWidget(QLabel('Normalize by:', widget))
-        layout.addWidget(self._create_normalize_widget())
+        # Channel checkboxes
+        self.channel_checkbox_layout = QVBoxLayout()
+        widget.addLayout(self.channel_checkbox_layout)
+        widget.addSpacerItem(create_vertical_spacer(0.5))
 
         # Sliders
         self.slider_layout = QVBoxLayout()
-        layout.addLayout(self.slider_layout)
+        widget.addLayout(self.slider_layout)
+
+        # Normalize section
+        widget.core_layout.addWidget(QLabel('Normalize by:', widget))
+        widget.core_layout.addWidget(self._create_normalize_widget())
 
         # Segmentation overlay
-        layout.addWidget(self._create_overlay_checkboxes())
+        widget.core_layout.addWidget(self._create_overlay_checkboxes())
 
-        return widget
+        return widget_bordered
 
     def _create_normalize_widget(self):
         widget = QWidget()
@@ -202,33 +204,39 @@ class LeftToolbar(QScrollArea):
             self.tabbed_widget.addTab(widget, name)
 
         return self.tabbed_widget
+    
+    def set_color_channels(self, n_color_channels: int):
+        self.clear_channel_checkboxes()
+        self.clear_LUT_sliders()
+        self.add_LUT_sliders(self.slider_layout, n_color_channels)
+
+        if n_color_channels == 1:  # single channel
+            self.grayscale_mode()
+        else:  # multiple channels
+            self.add_channel_checkboxes(self.channel_checkbox_layout, n_color_channels)
+            self.multichannel_mode()
+        self.update_zstack_dropdown_options(n_color_channels)
+        self.channels_validator.max_value = n_color_channels  # set max value for channels prompt validator
 
     def grayscale_mode(self):
-        """Hide RGB GUI elements when a grayscale image is loaded."""
+        """Hide multichannel GUI elements when a grayscale image is loaded."""
         self.is_grayscale = True
-        self.clear_LUT_sliders()
-        self.clear_RGB_checkboxes()
-        self.add_grayscale_sliders(self.slider_layout)
         self.segmentation_channels_widget.hide()
         self.segmentation_channels_input.setText('') # clear segmentation channels input
 
-    def RGB_mode(self):
-        """Show RGB GUI elements when an RGB image is loaded."""
+    def multichannel_mode(self):
+        """Show multichannel GUI elements when an multichannel image is loaded."""
         self.is_grayscale = False
-        self.clear_LUT_sliders()
-        self.clear_RGB_checkboxes()
-        self.add_RGB_checkboxes(self.RGB_checkbox_layout)
-        self.add_RGB_sliders(self.slider_layout)
         self.segmentation_channels_widget.show()
         self.show_grayscale_checkbox.setChecked(False)
         self.main_window._show_grayscale_toggled(False)
 
-    def add_RGB_sliders(self, layout):
+    def add_LUT_sliders(self, layout, n_sliders: int=1):
         self.LUT_range_sliders = []
         self.LUT_range_labels = []
 
-        for label in ['R ', 'G ', 'B ']:
-            slider_layout, slider, range_labels = labeled_LUT_slider(label, parent=self.lut_widget, digit_width=self.digit_width)
+        for slider_number in range(n_sliders):
+            slider_layout, slider, range_labels = labeled_LUT_slider(f'C{slider_number}', parent=self.lut_widget, digit_width=self.digit_width)
             layout.addLayout(slider_layout)
             self.LUT_range_sliders.append(slider)
             self.LUT_range_labels.append(range_labels)
@@ -246,19 +254,8 @@ class LeftToolbar(QScrollArea):
             labels[0].setText(str(slider.value()[0]))
             labels[1].setText(str(slider.value()[1]))
 
-    def add_grayscale_sliders(self, layout):
-        self.LUT_range_sliders = []
-        self.LUT_range_labels = []
-
-        slider_layout, slider, range_labels = labeled_LUT_slider(parent=self)
-        layout.addLayout(slider_layout)
-        self.LUT_range_sliders.append(slider)
-        self.LUT_range_labels.append(range_labels)
-
-        slider.valueChanged.connect(self.LUT_slider_changed)
-
-    def RGB_checks_toggled(self):
-        self.main_window._RGB_checks_toggled()
+    def channel_checks_toggled(self):
+        self.main_window._channel_checks_toggled()
 
     def add_channel_layout(self, channel_layout):
         channels_label = QLabel('Segmentation Channels:', self)
@@ -751,23 +748,23 @@ class LeftToolbar(QScrollArea):
         except AttributeError:
             pass
 
-    def clear_RGB_checkboxes(self):
+    def clear_channel_checkboxes(self):
         try:
-            clear_layout(self.RGB_checkbox_layout)
-            for checkbox in self.RGB_checkboxes:
+            clear_layout(self.channel_checkbox_layout)
+            for checkbox in self.channel_checkboxes:
                 checkbox.deleteLater()
-            self.RGB_checkboxes.clear()
+            self.channel_checkboxes.clear()
         except AttributeError:
             pass
-
-    def add_RGB_checkboxes(self, layout):
+    
+    def add_channel_checkboxes(self, layout, n_checkboxes: int=3):
         color_channels_layout = QHBoxLayout()
         color_channels_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         color_channels_layout.setSpacing(25)
-        self.RGB_checkboxes = [QCheckBox(s, parent=self.lut_widget) for s in ['R', 'G', 'B']]
-        for checkbox in self.RGB_checkboxes:
+        self.channel_checkboxes = [QCheckBox(f"C{n}", parent=self.lut_widget) for n in np.arange(n_checkboxes)]
+        for checkbox in self.channel_checkboxes:
             checkbox.setChecked(True)
-            color_channels_layout.addWidget(checkbox)
+            color_channels_layout.addWidget(checkbox) # TODO: maybe a grid layout for many channels
 
         self.show_grayscale_checkbox = QCheckBox('Grayscale')
         self.show_grayscale_checkbox.setChecked(False)
@@ -777,24 +774,22 @@ class LeftToolbar(QScrollArea):
         layout.addSpacerItem(create_vertical_spacer())
         layout.addWidget(self.show_grayscale_checkbox)
 
-        for checkbox in self.RGB_checkboxes:
-            checkbox.stateChanged.connect(self.RGB_checks_toggled)
+        for checkbox in self.channel_checkboxes:
+            checkbox.stateChanged.connect(self.channel_checks_toggled)
         self.show_grayscale_checkbox.stateChanged.connect(self.main_window._show_grayscale_toggled)
 
     @property
-    def RGB_visible(self):
+    def visible_channels(self):
         if self.is_grayscale:
             return None
         else:
-            return [checkbox.isChecked() for checkbox in self.RGB_checkboxes]
+            return [checkbox.isChecked() for checkbox in self.channel_checkboxes]
 
-    @RGB_visible.setter
-    def RGB_visible(self, RGB):
-        if isinstance(RGB, bool):
-            RGB = [RGB] * 3
-        elif len(RGB) != 3:
-            raise ValueError('RGB must be a bool or boolean array of length 3.')
-        for checkbox, state in zip(self.RGB_checkboxes, RGB):
+    @visible_channels.setter
+    def visible_channels(self, channels):
+        if isinstance(channels, bool):
+            channels = [channels] * len(self.channel_checkboxes)
+        for checkbox, state in zip(self.channel_checkboxes, channels):
             checkbox.setChecked(state)
 
     @property
@@ -824,7 +819,7 @@ class LeftToolbar(QScrollArea):
     def _visual_settings(self):
         # retrieve the current visual settings
         out = {
-            'RGB': self.RGB_visible,
+            'visible_channels': self.visible_channels,
             'normalize_type': self.normalize_type,
             'masks': self.masks_checkbox.isChecked(),
             'outlines': self.outlines_checkbox.isChecked(),
@@ -834,8 +829,8 @@ class LeftToolbar(QScrollArea):
 
     @_visual_settings.setter
     def _visual_settings(self, settings):
-        if settings['RGB'] is not None:  # RGB
-            self.RGB_visible = settings['RGB']
+        if settings['visible_channels'] is not None:  # RGB
+            self.visible_channels = settings['visible_channels']
         self.normalize_type = settings['normalize_type']
         self.masks_checkbox.setChecked(settings['masks'])
         self.outlines_checkbox.setChecked(settings['outlines'])

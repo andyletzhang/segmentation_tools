@@ -6,8 +6,8 @@ import fastremap
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import QPointF, Qt
-from PyQt6.QtGui import QBrush, QColor, QCursor, QImage, QPainter, QPainterPath, QPen, QPolygonF
-from PyQt6.QtWidgets import QGraphicsPathItem, QGraphicsPolygonItem, QGraphicsScene, QHBoxLayout, QWidget
+from PyQt6.QtGui import QBrush, QColor, QCursor, QPainter, QPainterPath, QPen, QPolygonF
+from PyQt6.QtWidgets import QGraphicsPathItem, QGraphicsPolygonItem, QHBoxLayout, QWidget
 from segmentation_tools.shape_operations import get_bounding_box, get_enclosed_pixels, get_mask_boundary
 
 from .workers import MaskProcessor
@@ -55,7 +55,7 @@ class PyQtGraphCanvas(QWidget):
         self.seg_data = self.img_data.copy()
 
         # Plot the data
-        self.img = RGB_ImageItem(img_data=self.img_data, plot=self.img_plot, parent=self)
+        self.img = MultiChannelImageItem(img_data=self.img_data, plot=self.img_plot, parent=self)
         self.seg = pg.ImageItem(self.seg_data)
         self.img_outline_overlay = pg.ImageItem()
         self.seg_stat_overlay = pg.ImageItem()
@@ -152,8 +152,8 @@ class PyQtGraphCanvas(QWidget):
         for layer, overlay in zip(self.mask_overlay, self.main_window.frame.stored_mask_overlay):
             layer.setImage(overlay)
 
-    def toggle_RGB_checks(self, RGB_checks):
-        self.img.toggle_RGB_checks(RGB_checks)
+    def toggle_channel_checks(self, channel_checks):
+        self.img.toggle_channel_checks(channel_checks)
 
     def random_cell_color(self, n=0):
         random_colors = self.cell_cmap(self.random_color_ID(n))
@@ -506,10 +506,6 @@ class PyQtGraphCanvas(QWidget):
         """Get the exact cursor position."""
         return self.get_plot_coords(pixels=False)
 
-    @property
-    def is_inverted(self):
-        return self.main_window.is_inverted
-
     def update_display(self, img_data=None, seg_data=None):
         execution_times = {}
         start_time = time.time()
@@ -648,23 +644,16 @@ class SegPlot(pg.PlotWidget):
         return [item for item in self.items() if isinstance(item, pg.ImageItem) and item.image is not None]
 
 
-class RGB_ImageItem:
+class MultiChannelImageItem:
     def __init__(self, plot: pg.PlotWidget, img_data=None, parent=None):
         self.canvas = parent
         if img_data is None:
             img_data = np.zeros((512, 512, 3), dtype=np.uint8)
 
-        self.scene = QGraphicsScene()
         self.img_data = img_data
-        self.red = pg.ImageItem(self.img_data[..., 0])
-        self.green = pg.ImageItem(self.img_data[..., 1])
-        self.blue = pg.ImageItem(self.img_data[..., 2])
-        self.channels = [self.red, self.green, self.blue]
-
-        # Add items to the view
-        for item in self.channels:
-            self.scene.addItem(item)
-            item.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+        self.plot = plot
+        self.channels = []
+        self.initialize_channels()
 
         # default LUTs
         self.LUT_options = {
@@ -676,85 +665,52 @@ class RGB_ImageItem:
             'Cyans': (0, 255, 255),
             'Magentas': (255, 0, 255),
         }
-        self.LUTs = ('Reds', 'Greens', 'Grays')
-        self.setLookupTable('RGB')
+        self.LUTs = ['Reds', 'Greens', 'Grays', 'Magentas', 'Yellows', 'Cyans', 'Blues']
+        self.setLookupTable('multichannel')
 
-        self.img_item = pg.ImageItem(self.image(), levels=(0, 255))
-        plot.addItem(self.img_item)
         self.show_grayscale = False
         self.update_LUTs()
 
-    def toggle_RGB_checks(self, RGB_checks):
-        for i, check in enumerate(RGB_checks):
+    def initialize_channels(self, n_channels: int|None=None):
+        for item in self.channels:
+            self.plot.removeItem(item)
+
+        if n_channels is None:
+            n_channels = self.img_data.shape[-1]
+        self.n_channels = n_channels
+
+        self.channels = []
+        for _ in range(n_channels):
+            channel = pg.ImageItem()
+            channel.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+            self.plot.addItem(channel)
+            self.channels.append(channel)
+
+        # ensure the images are underneath all other plot items
+        for item in self.channels:
+            item.setZValue(100)
+
+    def toggle_channel_checks(self, channel_checks):
+        for i, check in enumerate(channel_checks):
             self.channels[i].setVisible(check)
-        self.refresh()
-
-    def image(self):
-        """Get the rendered image from the specified plot."""
-        start=time.time()
-
-        width, height = self.red.image.shape
-        output_img = QImage(width, height, QImage.Format.Format_RGB32)
-        output_img.fill(0)
-        painter = QPainter(output_img)
-        mark_time('check0', start)
-        self.scene.render(painter) # takes most of the time
-        mark_time('check1', start)
-        painter.end()
-        ptr = output_img.bits()
-
-        ptr.setsize(output_img.sizeInBytes())
-        composite_array = np.array(ptr).reshape((height, width, 4))  # Format_RGB32 includes alpha
-        rgb_array = composite_array[..., :3][..., ::-1]
-
-        mark_time('check2', start)
-
-        if self.canvas.is_inverted:
-            rgb_array = inverted_contrast(rgb_array)
-
-        mark_time('check3', start)
-        # add alpha channel
-        alpha = np.ones((height, width, 1), dtype=np.uint8) * 255
-        rgb_array = np.concatenate((rgb_array, alpha), axis=-1)
-
-        mark_time('check4', start)
-        return rgb_array
-
-    def refresh(self):
-        """Re-render the image item."""
-        start = time.time()
-        self.img_item.setImage(self.image(), autoLevels=False)
-        mark_time('setImage refresh time', start)
 
     def setImage(self, img_data):
         self.img_data = img_data
-        if img_data.ndim == 2:
-            self.red.setImage(self.img_data, autoLevels=False)
-            self.green.clear()
-            self.blue.clear()
-            self.setLookupTable('gray')
-        else:  # RGB image
-            if self.img_data.shape[-1] == 2:  # two channels--assume RG and convert to RGB
-                self.img_data = np.concatenate((self.img_data, np.zeros((*self.img_data.shape[:-1], 1), dtype=np.uint8)), axis=-1)
-            self.red.setImage(self.img_data[..., 0], autoLevels=False)
-            self.green.setImage(self.img_data[..., 1], autoLevels=False)
-            self.blue.setImage(self.img_data[..., 2], autoLevels=False)
-        self.scene.setSceneRect(self.scene.itemsBoundingRect())
-        self.refresh()
+        if img_data.shape[-1] != self.n_channels:
+            raise ValueError(f'Image data has {img_data.shape[-1]} channels, but MultiChannelImageItem was initialized with {self.n_channels} channels.')
+        for i in range(self.n_channels):
+            self.channels[i].setImage(self.img_data[..., i], autoLevels=False)
 
     def update_LUTs(self):
         if self.show_grayscale:
             self.setLookupTable('gray')
         else:
-            self.setLookupTable('RGB')
-        self.refresh()
+            self.setLookupTable('multichannel')
 
     def setLevels(self, levels, refresh=True):
         """Update the levels of the image items based on the sliders."""
         for level, item in zip(levels, self.channels):
             item.setLevels(level)
-        if refresh:
-            self.refresh()
 
     def getLevels(self):
         """Get the levels of the image items."""
@@ -770,17 +726,20 @@ class RGB_ImageItem:
         """Set the lookup table for the image items."""
         if lut_style == 'gray':
             luts = self.gray_lut()
-        elif lut_style == 'RGB':
-            luts = self.RGB_lut()
+        elif lut_style == 'multichannel':
+            luts = self.multichannel_lut()
 
-        for item, lut in zip([self.red, self.green, self.blue], luts):
+        for item, lut in zip(self.channels, luts):
             item.setLookupTable(lut)
 
     def gray_lut(self):
-        return [self.create_lut(QColor(255, 255, 255))] * 3
+        while True:
+            yield self.create_lut(QColor(255, 255, 255))
 
-    def RGB_lut(self):
-        return [self.create_lut(QColor(*self.LUT_options[lut])) for lut in self.LUTs]
+    def multichannel_lut(self):
+        while True:
+            for lut in self.LUTs: # cycle through the defined LUTs in specified order
+                yield self.create_lut(QColor(*self.LUT_options[lut]))
 
     def set_grayscale(self, grayscale):
         self.show_grayscale = grayscale

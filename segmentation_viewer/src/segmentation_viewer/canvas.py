@@ -527,7 +527,7 @@ class PyQtGraphCanvas(QWidget):
         execution_times['self.seg_data = seg_data.copy()'] = time.time() - start_time
 
         start_time = time.time()
-        self.img.setImage(self.img_data)
+        self.img.setImage(self.image_transform(self.img_data))
         execution_times['self.img.setImage(self.img_data)'] = time.time() - start_time
 
         start_time = time.time()

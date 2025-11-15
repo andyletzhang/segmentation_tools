@@ -45,7 +45,10 @@ def masks_to_outlines(masks):
     out = np.zeros(masks.shape, dtype=bool)
     for i, pix in enumerate(outpix):
         x,y=pix.T
-        out[y,x] = True
+        try:
+            out[y,x] = True
+        except IndexError:
+            pass
     return out
 
 def masks_to_rois(masks):

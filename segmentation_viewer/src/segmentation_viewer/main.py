@@ -1055,6 +1055,8 @@ class MainWidget(QMainWindow):
 
         for frame in self._progress_bar(frames, desc='Segmenting frames'):
             img = frame.img[..., channels] # segment with the specified channels
+            img = np.squeeze(img, axis=-1)  # remove last dim if grayscale
+
             masks = self.cellpose_model.eval(img, diameter=diameter)[0]
             self.replace_segmentation(frame, masks)
  
@@ -1889,10 +1891,7 @@ class MainWidget(QMainWindow):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
             else:
-                if self.is_grayscale:
-                    membrane = frame.zstack
-                else:
-                    membrane = frame.zstack[..., membrane_channel]  # TODO: allow user to specify membrane channel
+                membrane = frame.zstack[..., membrane_channel]
                 frame.heights = get_heights(membrane, peak_prominence=peak_prominence, sigma=sigma, z_sigma=z_sigma, min_region_size=min_region_size)
                 frame.to_heightmap()
 
@@ -1957,10 +1956,7 @@ class MainWidget(QMainWindow):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
             else:
-                if self.is_grayscale:
-                    membrane = frame.zstack
-                else:
-                    membrane = frame.zstack[..., membrane_channel]
+                membrane = frame.zstack[..., membrane_channel]
 
                 heightmap = get_heights(membrane[::index], peak_prominence=peak_prominence, sigma=sigma, z_sigma=z_sigma, min_region_size=min_region_size)
                 if direction=='up':
@@ -2187,7 +2183,7 @@ class MainWidget(QMainWindow):
             return None, None, None
 
         if self.is_grayscale: # reshape grayscale value
-            return np.array([img[y, x]])
+            return np.array([img[y, x, 0]])
 
         hidden_channels = np.where(~np.array(self.left_toolbar.visible_channels))[0]
         pixel_value = list(img[y, x])
@@ -2431,15 +2427,10 @@ class MainWidget(QMainWindow):
         self._update_ROIs_label()
 
     def _autorange_LUT_sliders(self):
-        if self.is_grayscale:
-            n_colors = 1
-        else:
-            n_colors = 3
-
         if self.is_zstack:
-            all_imgs = np.array([frame.zstack for frame in self.stack.frames]).reshape(-1, n_colors)
+            all_imgs = np.array([frame.zstack for frame in self.stack.frames]).reshape(-1, self.n_color_channels)
         else:
-            all_imgs = np.array([frame.img for frame in self.stack.frames]).reshape(-1, n_colors)
+            all_imgs = np.array([frame.img for frame in self.stack.frames]).reshape(-1, self.n_color_channels)
 
         if len(all_imgs) > 1e6:
             # downsample to speed up calculation
@@ -2552,7 +2543,6 @@ class MainWidget(QMainWindow):
             shape = first_frame.zstack.shape
         else:
             shape = first_frame.img.shape
-        is_grayscale = shape[-1] == 1
 
         img_size = np.prod(shape)
         downsample_factor = img_size // int(1e6)
@@ -2560,12 +2550,8 @@ class MainWidget(QMainWindow):
         if downsample_factor == 0:
             downsample_factor = 1
 
-        if is_grayscale:
-            color_channels=[0]
-            all_img_data=[[]]
-        else:
-            color_channels=np.arange(shape[-1])
-            all_img_data = [[] for _ in color_channels]
+        color_channels=np.arange(shape[-1])
+        all_img_data = [[] for _ in color_channels]
             
         for frame in self.stack.frames:
             if hasattr(frame, 'zstack'):

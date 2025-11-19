@@ -590,8 +590,8 @@ class TimeStack(SegmentedStack):
         # preliminary search radius for the first pass at tracking. This doesn't have to be perfect, just in the right ballpark (too high better than too low).
         # shifts in the FOV which I've observed are up to ~16 pixels large. Any tracking that wants to accomodate for these must be >16.
         max_search_range = int(
-            np.nanmean([np.sqrt(np.quantile(frame.cell_areas(scaled=False), 0.9)) for frame in self.frames]) * 2 / 3
-        )  # 2/3 a large cell: overshoot the largest tracking range by a bit.
+            np.nanmean([np.sqrt(np.nanquantile(frame.cell_areas(scaled=False), 0.9)) for frame in self.frames]) * 2 / 3
+        )  # 2/3 a large cell: overshoot the largest tracking tprange by a bit.
 
         # FIRST PASS: large search range
         t_firstpass = tp.link(
@@ -622,12 +622,12 @@ class TimeStack(SegmentedStack):
             ).ngroup()  # renumber particle tracks with filtered tracks ommitted from count
         drift_finalpass = tp.compute_drift(t_final)
         self.tracked_centroids = tp.subtract_drift(t_final, drift_finalpass).reset_index(drop=True)
-        self.drift = drift_firstpass + drift_finalpass
+        stack_drift = drift_firstpass + drift_finalpass
+        self.drift = pd.concat(
+            [pd.DataFrame({'frame': [0], 'y': [0], 'x': [0]}).set_index('frame'), stack_drift]
+        )  # add a row for the first frame (no drift)
         for frame, drift in zip(self.frames, self.drift.values):
             frame.drift = drift
-        self.drift = pd.concat(
-            [pd.DataFrame({'frame': [0], 'y': [0], 'x': [0]}).set_index('frame'), self.drift]
-        )  # add a row for the first frame (no drift)
         self.tracking_range = search_range
         return self.tracked_centroids
 

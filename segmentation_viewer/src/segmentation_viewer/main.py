@@ -1982,11 +1982,17 @@ class MainWidget(QMainWindow):
         else:
             frames = self.frame
 
-        outlier_mask = self.left_toolbar.outlier_mask_text.text()
-        if outlier_mask == '':
-            outlier_mask = None
+        xy_downsample = self.left_toolbar.xy_downsample.text()
+        z_upsample = self.left_toolbar.z_upsample.text()
+        if z_upsample == '':
+            z_upsample = 8
         else:
-            outlier_mask = float(outlier_mask)
+            z_upsample = int(z_upsample)
+
+        if xy_downsample == '':
+            xy_downsample = 32
+        else:
+            xy_downsample = int(xy_downsample)
 
         peak_prominence = self.left_toolbar.coverslip_prominence.text()
         if peak_prominence == '':
@@ -1996,30 +2002,21 @@ class MainWidget(QMainWindow):
 
         membrane_channel = self.left_toolbar.zstack_channel_dropdown.currentIndex()
 
-        self.fit_coverslip_surface(frames, outlier_mask=outlier_mask, peak_prominence=peak_prominence, membrane_channel=membrane_channel)
+        self.fit_coverslip_surface(frames, membrane_channel=membrane_channel, xy_downsample=xy_downsample, z_upsample=z_upsample)
         self._show_seg_overlay()
 
-    def fit_coverslip_surface(self, frames, outlier_mask:float=None, peak_prominence:float=0.01, membrane_channel:int=2):
-        from segmentation_tools.heightmap import get_fitted_surface
+    def fit_coverslip_surface(self, frames, membrane_channel:int=2, xy_downsample: int=32, z_upsample: int=8):
+        from segmentation_tools.heightmap import fit_zstack_surface
 
         if isinstance(frames, SegmentedImage):
             frames = [frames]
 
         for frame in self._progress_bar(frames):
-            if not hasattr(frame, 'coverslip_heights'):
-                if hasattr(frame, 'zstack'):
-                    self.measure_coverslip_heightmaps(frame, peak_prominence=peak_prominence, membrane_channel=membrane_channel, direction='down')
-                else:
-                    raise ValueError(f'No coverslip heightmap or z-stack available to fit surface for {frame.name}.')
+            if not hasattr(frame, 'zstack'):
+                raise ValueError(f'No coverslip heightmap or z-stack available to fit surface for {frame.name}.')
 
-            coverslip_heights=frame.coverslip_heights.copy().astype(float)
-            if outlier_mask is not None:
-                median_height=np.nanmedian(coverslip_heights)
-                std_height=np.nanstd(coverslip_heights)
-                outliers=(coverslip_heights < median_height - outlier_mask*std_height) | (coverslip_heights > median_height + outlier_mask*std_height)
-                coverslip_heights[outliers]=np.nan
-            frame.coverslip_heights = get_fitted_surface(coverslip_heights)
-                
+            zstack = frame.zstack[..., membrane_channel]
+            frame.coverslip_heights = fit_zstack_surface(zstack, xy_downsample=xy_downsample, z_upsample=z_upsample)
 
     def _compute_spherical_volumes(self):
         if not self.file_loaded:
@@ -2088,6 +2085,7 @@ class MainWidget(QMainWindow):
             self.left_toolbar.get_coverslip_height_button.setEnabled(True)
             self.left_toolbar.get_heights_button.setEnabled(True)
             self.left_toolbar.peak_prominence.setEnabled(True)
+            self.left_toolbar.fit_coverslip_surface_button.setEnabled(True)
         else:
             self.frame.img = self.frame.img
             self.zstack_slider.setVisible(False)
@@ -2095,6 +2093,7 @@ class MainWidget(QMainWindow):
             self.left_toolbar.get_coverslip_height_button.setEnabled(False)
             self.left_toolbar.get_heights_button.setEnabled(False)
             self.left_toolbar.peak_prominence.setEnabled(False)
+            self.left_toolbar.fit_coverslip_surface_button.setEnabled(False)
 
         mark_time('checkpoint 2', start_time)
 

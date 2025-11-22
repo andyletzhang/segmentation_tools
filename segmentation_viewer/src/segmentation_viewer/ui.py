@@ -516,23 +516,34 @@ class LeftToolbar(QScrollArea):
         coverslip_height_label = QLabel('Coverslip Height (μm):', self)
         self.coverslip_height = QLabel('None', self)
         self.coverslip_height.setFixedWidth(45)
-        self.clear_coverslip_height_button = QPushButton('Clear', self, objectName='deleteButton')
-        self.get_coverslip_height_button = QPushButton('Calibrate', self)
+        self.clear_coverslip_height_button = QPushButton('Clear Coverslip', self, objectName='deleteButton')
+        self.get_coverslip_height_button = QPushButton('Coverslip Height', self)
         self.get_coverslip_heightmaps_button = QPushButton('Coverslip Heightmap', self)
 
-        self.outlier_mask_label = QLabel('Outlier Mask:', self)
-        self.outlier_mask_text = QLineEdit(self, placeholderText='None')
-        self.outlier_mask_text.setValidator(QDoubleValidator(bottom=0))  # non-negative floats only
-        self.outlier_mask_text.setFixedWidth(45)
+        coverslip_resampling_label = QLabel('Coverslip Resampling:', self)
+        xy_ds_label = QLabel('XY: 1/', self)
+        z_us_label = QLabel('Z:', self)
+        self.xy_downsample = QLineEdit(self, placeholderText='32')
+        self.z_upsample = QLineEdit(self, placeholderText='8')
+        self.xy_downsample.setValidator(QIntValidator(bottom=1))  # positive integers only
+        self.z_upsample.setValidator(QIntValidator(bottom=1))  # positive integers
+        self.xy_downsample.setFixedWidth(30)
+        self.z_upsample.setFixedWidth(30)
+
+        resampling_layout = QHBoxLayout()
+        resampling_layout.addWidget(coverslip_resampling_label)
+        resampling_layout.addWidget(xy_ds_label)
+        resampling_layout.addWidget(self.xy_downsample)
+        resampling_layout.addWidget(z_us_label)
+        resampling_layout.addWidget(self.z_upsample)
+
         self.fit_coverslip_surface_button = QPushButton('Fit Coverslip', self)
         self.coverslip_height_label_layout.addWidget(coverslip_height_label)
         self.coverslip_height_label_layout.addWidget(self.coverslip_height)
-        self.coverslip_height_label_layout.addWidget(self.clear_coverslip_height_button)
         self.measure_coverslip_height_layout1.addWidget(self.get_coverslip_height_button)
         self.measure_coverslip_height_layout1.addWidget(self.get_coverslip_heightmaps_button)
-        self.measure_coverslip_height_layout2.addWidget(self.outlier_mask_label)
-        self.measure_coverslip_height_layout2.addWidget(self.outlier_mask_text)
         self.measure_coverslip_height_layout2.addWidget(self.fit_coverslip_surface_button, stretch=2)
+        self.measure_coverslip_height_layout2.addWidget(self.clear_coverslip_height_button)
 
         zstack_channel_layout = QHBoxLayout()
         zstack_channel_label = QLabel('Z-Stack Channel:', self)
@@ -545,13 +556,14 @@ class LeftToolbar(QScrollArea):
 
         volumes_widget.addLayout(self.peak_prominence_layout)
         volumes_widget.addLayout(self.coverslip_prominence_layout)
+        volumes_widget.addLayout(resampling_layout)
         volumes_widget.addWidget(self.get_spherical_volumes)
+        volumes_widget.addLayout(self.measure_coverslip_height_layout1)
         volumes_widget.core_layout.addLayout(self.get_heights_layout)
 
         volumes_widget.core_layout.addSpacerItem(create_vertical_spacer(1))
         volumes_widget.core_layout.addLayout(self.coverslip_height_label_layout)
         volumes_widget.core_layout.addLayout(self.measure_coverslip_height_layout2)
-        volumes_widget.core_layout.addLayout(self.measure_coverslip_height_layout1)
 
         volumes_widget.core_layout.addLayout(zstack_channel_layout)
         
@@ -566,7 +578,6 @@ class LeftToolbar(QScrollArea):
         self.get_coverslip_height_button.clicked.connect(self.main_window._calibrate_coverslip_height_action.trigger)
         self.get_spherical_volumes.clicked.connect(self.main_window._compute_spherical_volumes_action.trigger)
         self.get_coverslip_heightmaps_button.clicked.connect(self.main_window._measure_coverslip_heightmaps_action.trigger)
-        self.outlier_mask_text.textChanged.connect(self.main_window._show_seg_overlay)
         self.fit_coverslip_surface_button.clicked.connect(self.main_window._fit_coverslip_surface_action.trigger)
         return self.volumes_tab
 

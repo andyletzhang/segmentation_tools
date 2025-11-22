@@ -1050,14 +1050,22 @@ class MainWidget(QMainWindow):
         if not hasattr(self, 'cellpose_model'):
             from cellpose import models
 
-            pretrained_model = 'cpsam'
-            self.cellpose_model = models.CellposeModel(gpu=True, pretrained_model=pretrained_model)
+            self.cellpose_model = models.CellposeModel(gpu=True, pretrained_model=self.pretrained_model)
 
         for frame in self._progress_bar(frames, desc='Segmenting frames'):
-            img = frame.img[..., channels] # segment with the specified channels
-            img = np.squeeze(img, axis=-1)  # remove last dim if grayscale
+            img = frame.img[..., channels].copy() # segment with the specified channels
+            if self.left_toolbar.apply_LUTs_checkbox.isChecked():
+                normalize=False
+                levels=np.array(self.canvas.img.getLevels())[channels]
+                for channel, level in enumerate(levels):
+                    img[..., channel] = np.clip((img[..., channel]-level[0])/(level[1]-level[0]), 0, 1)*65535
+            else:
+                normalize=True
 
-            masks = self.cellpose_model.eval(img, diameter=diameter)[0]
+            if img.shape[-1] == 1:
+                img = np.squeeze(img, axis=-1)  # remove last dim if grayscale
+
+            masks = self.cellpose_model.eval(img, diameter=diameter, normalize=normalize)[0]
             self.replace_segmentation(frame, masks)
  
             if frame == self.frame:

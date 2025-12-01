@@ -25,11 +25,15 @@ class ND2:
             out = np.array([img() for img in array.flatten()])
             if out[0].ndim == 3: # color image
                 out=out.transpose(0, 2, 3, 1) # Move the channel axis to the end
+            else:
+                out=out[..., np.newaxis] # add channel axis
             out = out.reshape(*dim_shape, *out[0].shape) # Reshape T, P, Z dimensions
         elif callable(array):
             out = array()
             if out.ndim == 3: # color image
                 out = out.transpose(1, 2, 0) # Move the channel axis to the end
+            else:
+                out = out[..., np.newaxis] # add channel axis
         else:
             raise ValueError(f'Invalid input type: {type(array)}')
         return out
@@ -191,7 +195,9 @@ def load_seg_npy(file_path, load_img=False, mend=False, max_gap_size=300):
 
     if not load_img:
         del data['img']
-
+    elif data['img'].ndim == 2:
+        data['img'] = data['img'][..., np.newaxis]
+        
     if mend:
         from segmentation_tools.preprocessing import mend_gaps
 
@@ -206,18 +212,24 @@ def load_seg_npy(file_path, load_img=False, mend=False, max_gap_size=300):
 
 
 def segmentation_from_img(img, name, **kwargs):
-    shape = img.shape[:2]
+    shape = img.shape[:2] # resolution
+
+    # generate empty masks and outlines
     outlines = np.zeros(shape, dtype=bool)
     masks = np.zeros(shape, dtype=np.uint16)
+
     data = {'name': name, 'img': img, 'masks': masks, 'outlines': outlines}
     seg = SegmentedImage(data, **kwargs)
     return seg
 
 
 def segmentation_from_zstack(zstack, name, **kwargs):
-    shape = zstack.shape[1:3]
+    shape = zstack.shape[1:3] # resolution
+
+    # generate empty masks and outlines
     outlines = np.zeros(shape, dtype=bool)
     masks = np.zeros(shape, dtype=np.uint16)
+    
     data = {'name': name, 'zstack': zstack, 'img': zstack[0], 'masks': masks, 'outlines': outlines}
     seg = SegmentedImage(data, **kwargs)
     return seg

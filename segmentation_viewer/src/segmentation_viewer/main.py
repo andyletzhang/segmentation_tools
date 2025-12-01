@@ -778,12 +778,6 @@ class MainWidget(QMainWindow):
                         self.left_toolbar.z_size = 1.0
 
                     array_values = self.frame.scaled_heights
-
-                    outlier_mask=self.left_toolbar.outlier_mask_text.text()
-                    if outlier_mask:
-                        threshold = np.nanstd(array_values)*float(outlier_mask)
-                        median_height = np.nanmedian(array_values)
-                        array_values[(array_values < median_height - threshold) | (array_values > median_height + threshold)] = np.nan
                     
                 else:
                     array_values = getattr(self.frame, plot_attr)

@@ -1170,8 +1170,11 @@ class MainWidget(QMainWindow):
         # supress messages in progress mode
         if self.is_iterating:
             return
+
+        timestamp = time.strftime('%H:%M:%S', time.localtime())
+
         self.statusBar().showMessage(msg, duration)
-        print(msg)
+        print(f'[{timestamp}] {msg}') # include timestamp in console
 
     def get_tracked_FUCCI(self):
         """

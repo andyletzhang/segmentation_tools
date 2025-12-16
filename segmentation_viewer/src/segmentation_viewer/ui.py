@@ -761,12 +761,6 @@ class LeftToolbar(QScrollArea):
         self.main_window.outlines_visible = self.outlines_checkbox.isChecked()
 
     def tab_switched(self, index):
-        # save visual settings for the previous tab
-        self.saved_visual_settings[self.current_tab] = self._visual_settings
-
-        # load visual settings for the new tab
-        self.current_tab = index
-        self._visual_settings = self.saved_visual_settings[index]
         self.main_window._tab_switched(index)
 
     def clear_LUT_sliders(self):

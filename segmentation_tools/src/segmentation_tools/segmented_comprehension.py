@@ -52,7 +52,7 @@ class Cell:
     @outline.setter
     def outline(self, outline):
         self._outline = outline
-        
+
     @property
     def scale(self):
         """Get scale from parent or return None."""
@@ -64,11 +64,10 @@ class Cell:
     @property
     def area_pixels(self):
         area = 0.5 * np.abs(
-            np.dot(self.outline.T[0], np.roll(self.outline.T[1], 1)) - 
-            np.dot(self.outline.T[1], np.roll(self.outline.T[0], 1))
+            np.dot(self.outline.T[0], np.roll(self.outline.T[1], 1)) - np.dot(self.outline.T[1], np.roll(self.outline.T[0], 1))
         )
         return area
-        
+
     @property
     def area(self):
         """Area in scaled units."""
@@ -76,7 +75,7 @@ class Cell:
         if pixels is None or self.scale is None:
             return None
         return pixels * self.scale**2
-    
+
     @property
     def perimeter_pixels(self):
         if len(self.outline) == 0:
@@ -84,7 +83,7 @@ class Cell:
         else:
             perimeter = np.sum(np.linalg.norm(np.diff(self.outline, axis=0, append=[self.outline[0]]).T, axis=0))
             return perimeter
-            
+
     @property
     def perimeter(self):
         """Perimeter in scaled units."""
@@ -133,7 +132,7 @@ class Cell:
         if self.parent() is not None:
             return self.parent().masks == self.n + 1
         else:
-            raise ValueError("Cannot pull cell mask without parent masks object!")
+            raise ValueError('Cannot pull cell mask without parent masks object!')
 
     def sort_vertices(self):
         """
@@ -142,7 +141,7 @@ class Cell:
         could replace this with a sort_vertices which pulls them by outline now that I have that.
         only calculable for cells with reconstructed vertices ('good cells').
         """
-        
+
         zeroed_coords = self.vertices - self.centroid[::-1]  # zero vertices to the centroid
         angles = np.arctan2(zeroed_coords[:, 0], zeroed_coords[:, 1])  # get polar angles
         vertex_order = np.argsort(angles)  # sort polar angles
@@ -892,7 +891,9 @@ class TimeStack(SegmentedStack):
                 for attribute, value in zip(attributes, values[n]):
                     setattr(cell, attribute, value)
 
-    def get_tracking_row(self, frame_or_cell: Union[int, Cell], cell_number: Optional[int] = None, particle_number: Optional[int] = None):
+    def get_tracking_row(
+        self, frame_or_cell: Union[int, Cell], cell_number: Optional[int] = None, particle_number: Optional[int] = None
+    ):
         """
         Retrieve the tracking data for a given cell at a given frame.
 
@@ -906,14 +907,14 @@ class TimeStack(SegmentedStack):
         """
         if not hasattr(self, 'tracked_centroids'):
             raise ValueError('No tracking data available.')
-            
+
         if isinstance(frame_or_cell, Cell):
-            cell=frame_or_cell
+            cell = frame_or_cell
             frame_number = cell.frame
             cell_number = cell.n
         elif isinstance(frame_or_cell, int):
             frame_number = frame_or_cell
-        
+
         if cell_number is None and particle_number is None:
             raise ValueError('Either cell_number or particle_number must be provided.')
         t = self.tracked_centroids
@@ -1232,7 +1233,9 @@ class SegmentedImage:
         elif isinstance(data, dict):  # already passed a dictionary
             pass
         else:
-            raise ValueError(f'data must be a path to a seg.npy file or a dictionary of data from a seg.npy file, not {type(data)}.')
+            raise ValueError(
+                f'data must be a path to a seg.npy file or a dictionary of data from a seg.npy file, not {type(data)}.'
+            )
 
         if 'masks' not in data.keys():
             raise ValueError('Failed to instantiate SegmentedImage: segmented data must contain masks.')
@@ -1290,9 +1293,7 @@ class SegmentedImage:
             fastremap.renumber(self.masks, in_place=True)
 
         # Instantiate Cell objects for each cell labeled in the image
-        self.cells = np.array(
-            [Cell(n, self.outlines_list[n], parent=self) for n in range(self.n_cells)]
-        )
+        self.cells = np.array([Cell(n, self.outlines_list[n], parent=self) for n in range(self.n_cells)])
 
         # assign cell cycle to cell objects
         if hasattr(self, 'cell_cycles'):
@@ -1511,17 +1512,17 @@ class SegmentedImage:
     def add_cell(self, cell: Cell, mask: np.ndarray):
         """adds a cell to the image."""
         if cell.n < self.n_cells:  # need to renumber existing cells
-            for later_cell in self.cells[cell.n:]:
+            for later_cell in self.cells[cell.n :]:
                 later_cell.n += 1
             self.masks[self.masks > cell.n] += 1
         else:
             cell.n = self.n_cells
 
-        if len(self.cells)==0:
+        if len(self.cells) == 0:
             self.cells = np.array([cell])
         else:
             self.cells = np.insert(self.cells, cell.n, cell)
-        
+
         self.n_cells += 1
         self.masks[mask] = cell.n + 1
         self.outlines[cell.outline[:, 1], cell.outline[:, 0]] = True
@@ -1859,9 +1860,12 @@ class HeightMap(SegmentedImage):
         elif hasattr(self, 'coverslip_height'):  # scalar offset for the coverslip
             scaled -= self.coverslip_height
 
+        scaled *= self.z_scale
+
         if self.zero_to_nan:
-            scaled[scaled < 0] = np.nan
-        return scaled * self.z_scale
+            scaled[scaled < -2] = np.nan
+            scaled[scaled < 0] = 0
+        return scaled
 
     def read_NORI(self, file_path=None, mask_nan_z=True):
         from skimage import io

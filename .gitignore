@@ -52,3 +52,4 @@ Thumbs.db
 ###########
 .ipynb_checkpoints/
 __pycache__/
+cellpose_models/

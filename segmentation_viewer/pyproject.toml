@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "segmentation_viewer"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
     "PyQt6",
     "PyQt6-QScintilla",
@@ -17,7 +17,7 @@ dependencies = [
     "requests",
     "platformdirs",
     "opencv-python-headless",
-    "segmentation_tools", # You may need to manually install this since it's local.
+    "segmentation_tools", # You may need to manually install this since it's currently local.
 ]
 
 [project.scripts]

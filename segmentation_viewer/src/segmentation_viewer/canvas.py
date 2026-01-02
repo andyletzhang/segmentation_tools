@@ -16,9 +16,11 @@ debug_execution_times = False
 
 N_CORES = cpu_count()
 
+
 def mark_time(str, start_time):
     if debug_execution_times:
-        print(f"{str} time: {time.time() - start_time:.3f}s")
+        print(f'{str} time: {time.time() - start_time:.3f}s')
+
 
 class PyQtGraphCanvas(QWidget):
     def __init__(self, parent=None, cell_n_colors=10, cell_cmap='tab10'):
@@ -62,7 +64,7 @@ class PyQtGraphCanvas(QWidget):
         self.cb = pg.ColorBarItem(interactive=False, orientation='horizontal', width=15)
         self.update_stat_overlay_lut('viridis')
         self.update_img_outline_lut()
-        self.seg.setLookupTable(transparent_binary_lut((1,1,1), alpha=1))
+        self.seg.setLookupTable(transparent_binary_lut((1, 1, 1), alpha=1))
         self.cb.setFixedWidth(100)
         self.cb.setImageItem(self.seg_stat_overlay)
         self.cb.setVisible(False)
@@ -136,11 +138,10 @@ class PyQtGraphCanvas(QWidget):
         """Update outlines overlays to match the current frame."""
         self.seg_data = self.image_transform(self.main_window.frame.outlines)
         self.seg.setImage(self.seg_data, levels=(0, 1))
-        self.img_outline_overlay.setImage(self.seg_data, levels=(0,1))
+        self.img_outline_overlay.setImage(self.seg_data, levels=(0, 1))
 
     def overlay_outlines(self):
         self.img_outline_overlay.setVisible(self.main_window.outlines_visible)
-
 
     def overlay_masks(self):
         for layer in self.mask_overlay:
@@ -539,7 +540,7 @@ class PyQtGraphCanvas(QWidget):
 
         start_time = time.time()
         self.seg.setImage(self.seg_data, levels=(0, 1))
-        self.img_outline_overlay.setImage(self.seg_data, levels=(0,1))
+        self.img_outline_overlay.setImage(self.seg_data, levels=(0, 1))
         execution_times['self.seg.setImage(self.seg_data)'] = time.time() - start_time
 
         start_time = time.time()
@@ -579,6 +580,7 @@ class PyQtGraphCanvas(QWidget):
         if hasattr(self, 'mask_processor'):
             self.mask_processor.abort_all_tasks()
 
+
 def transparent_binary_lut(color, alpha):
     from matplotlib.colors import to_rgb
 
@@ -586,6 +588,7 @@ def transparent_binary_lut(color, alpha):
     lut = np.zeros((2, 4), dtype=np.uint8)
     lut[1] = (color * 255).astype(np.uint8)
     return lut
+
 
 # util functions
 def img_item_to_RGBA(img: pg.ImageItem) -> np.ndarray:
@@ -678,7 +681,7 @@ class MultiChannelImageItem:
         self.show_grayscale = False
         self.update_LUTs()
 
-    def initialize_channels(self, n_channels: int|None=None):
+    def initialize_channels(self, n_channels: int | None = None):
         for item in self.channels:
             self.plot.removeItem(item)
 
@@ -704,7 +707,9 @@ class MultiChannelImageItem:
     def setImage(self, img_data):
         self.img_data = img_data
         if img_data.shape[-1] != self.n_channels:
-            raise ValueError(f'Image data has {img_data.shape[-1]} channels, but MultiChannelImageItem was initialized with {self.n_channels} channels.')
+            raise ValueError(
+                f'Image data has {img_data.shape[-1]} channels, but MultiChannelImageItem was initialized with {self.n_channels} channels.'
+            )
         for i in range(self.n_channels):
             self.channels[i].setImage(self.img_data[..., i], autoLevels=False)
 
@@ -745,7 +750,7 @@ class MultiChannelImageItem:
 
     def multichannel_lut(self):
         while True:
-            for lut in self.LUTs: # cycle through the defined LUTs in specified order
+            for lut in self.LUTs:  # cycle through the defined LUTs in specified order
                 yield self.create_lut(QColor(*self.LUT_options[lut]))
 
     def set_grayscale(self, grayscale):

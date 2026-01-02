@@ -503,7 +503,7 @@ class MainWidget(QMainWindow):
         right_scroll_area.setWidget(particle_stat_layout)
         right_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         right_scroll_area.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred)
-        right_scroll_area.setMinimumWidth(250)
+        right_scroll_area.setMinimumWidth(280)
 
         # ----connections-----
         self.stat_tabs.currentChanged.connect(self._stat_tab_switched)

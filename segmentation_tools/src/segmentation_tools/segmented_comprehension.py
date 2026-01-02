@@ -1517,7 +1517,11 @@ class SegmentedImage:
         else:
             cell.n = self.n_cells
 
-        self.cells = np.insert(self.cells, cell.n, cell)
+        if len(self.cells)==0:
+            self.cells = np.array([cell])
+        else:
+            self.cells = np.insert(self.cells, cell.n, cell)
+        
         self.n_cells += 1
         self.masks[mask] = cell.n + 1
         self.outlines[cell.outline[:, 1], cell.outline[:, 0]] = True

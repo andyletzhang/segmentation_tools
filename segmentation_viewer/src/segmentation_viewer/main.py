@@ -933,7 +933,7 @@ class MainWidget(QMainWindow):
         gap_size : int
             The maximum gap size to mend. If None, the default gap size (based on mean cell area) is used.
         """
-        for frame in self._progress_bar(frames):
+        for frame in self._progress_bar(frames, desc='Mending gaps'):
             mended = frame.mend_gaps(gap_size)
             if mended and hasattr(frame, 'stored_mask_overlay'):
                 del frame.stored_mask_overlay
@@ -975,7 +975,7 @@ class MainWidget(QMainWindow):
         edge_cells : list of list of ints
             The cell IDs which were removed from each frame.
         """
-        edge_cells = self.stack.remove_edge_cells(self._progress_bar(frames), margin=margin)
+        edge_cells = self.stack.remove_edge_cells(self._progress_bar(frames, desc='Removing edge masks'), margin=margin)
         for deleted_cells, frame in zip(edge_cells, frames):
             self._print(f'Removed {len(deleted_cells)} edge cells from frame {frame.frame_number}')
             if hasattr(frame, 'stored_mask_overlay'):
@@ -1103,7 +1103,7 @@ class MainWidget(QMainWindow):
 
         self._refresh_segmentation(replace_masks=True)
 
-    def _progress_bar(self, iterable, desc: str = None, length: int | None = None, leave: bool = True):
+    def _progress_bar(self, iterable, desc: str = '', length: int | None = None, leave: bool = True):
         if length is None:
             length = len(iterable)
 
@@ -1115,7 +1115,10 @@ class MainWidget(QMainWindow):
             return iterable
         else:
             # Initialize tqdm progress bar
-            tqdm_bar = tqdm(iterable, desc=desc, total=length, leave=leave)
+            timestamp_desc=f'[{time.strftime("%H:%M:%S", time.localtime())}]'
+            if desc:
+                timestamp_desc = timestamp_desc + ' ' + desc
+            tqdm_bar = tqdm(iterable, desc=timestamp_desc, total=length, leave=leave)
 
             # Initialize QProgressBar
             qprogress_bar = QProgressBar()
@@ -1223,7 +1226,7 @@ class MainWidget(QMainWindow):
 
         if not self.file_loaded:
             return
-        for frame in self._progress_bar(self.stack.frames):
+        for frame in self._progress_bar(self.stack.frames, desc='Measuring red/green intensities'):
             frame.get_red_green_intensities(percentile, sigma)
 
     def _propagate_FUCCI_toggled(self, state):
@@ -1742,7 +1745,7 @@ class MainWidget(QMainWindow):
         frames : list of Frame
             The frames to measure volumes for.
         """
-        for frame in self._progress_bar(frames):
+        for frame in self._progress_bar(frames, desc='Measuring Cell Volumes'):
             if not hasattr(frame, 'heights'):
                 if hasattr(frame, 'zstack'):
                     peak_prominence = self.left_toolbar.peak_prominence.text()
@@ -1770,7 +1773,7 @@ class MainWidget(QMainWindow):
         else:
             frames = [self.frame]
 
-        for frame in self._progress_bar(frames):
+        for frame in self._progress_bar(frames, desc='Clearing coverslip heights'):
             if hasattr(frame, 'coverslip_height'):
                 del frame.coverslip_height
             if hasattr(frame, 'coverslip_heights'):
@@ -1799,7 +1802,7 @@ class MainWidget(QMainWindow):
 
         membrane_channel = self.left_toolbar.zstack_channel_dropdown.currentIndex()
 
-        for frame in self._progress_bar(frames):
+        for frame in self._progress_bar(frames, desc='Getting coverslip heights'):
             frame.coverslip_height = self.calibrate_coverslip_height(frame, prominence=peak_prominence, membrane_channel=membrane_channel)
             if hasattr(frame, 'coverslip_heights'):
                 del frame.coverslip_heights  # overwrite heightmap if it exists
@@ -1907,7 +1910,7 @@ class MainWidget(QMainWindow):
         if z_sigma is None:
             z_sigma = 1 / z_scale
 
-        for frame in self._progress_bar(frames):
+        for frame in self._progress_bar(frames, desc='Measuring Heights'):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
             else:
@@ -1972,7 +1975,7 @@ class MainWidget(QMainWindow):
         else:
             raise ValueError("Direction must be 'up' or 'down'.")
 
-        for frame in self._progress_bar(frames):
+        for frame in self._progress_bar(frames, desc='Measuring Coverslip Heightmaps'):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
             else:
@@ -2023,7 +2026,7 @@ class MainWidget(QMainWindow):
         if isinstance(frames, SegmentedImage):
             frames = [frames]
 
-        for frame in self._progress_bar(frames):
+        for frame in self._progress_bar(frames, desc='Fitting Coverslip Surfaces'):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No coverslip heightmap or z-stack available to fit surface for {frame.name}.')
 
@@ -2061,7 +2064,7 @@ class MainWidget(QMainWindow):
             self._print('No xy scale specified. Defaulting to 0.1625.')
             scale=0.1625
 
-        for frame in self._progress_bar(frames):
+        for frame in self._progress_bar(frames, desc='Measuring Spherical Cell Volumes'):
             frame.scale=scale
             frame.get_spherical_volumes()
 
@@ -3259,7 +3262,7 @@ class MainWidget(QMainWindow):
         else:
             frames_to_save = [self.stack.frames[self.frame_number]]
 
-        for frame in self._progress_bar(frames_to_save):
+        for frame in self._progress_bar(frames_to_save, desc='Saving stack'):
             self.save_frame(frame)  # save the frame to the same file path
 
         self._print(f'Saved segmentation to {self.stack.name}')
@@ -3272,7 +3275,7 @@ class MainWidget(QMainWindow):
             folder_path = QFileDialog.getExistingDirectory(self, 'Save stack to folder...', directory=self.save_dir)
             if folder_path == '':
                 return
-            for frame in self._progress_bar(self.stack.frames):
+            for frame in self._progress_bar(self.stack.frames, desc='Saving stack'):
                 file_path = os.path.join(folder_path, os.path.basename(frame.name))
                 self.save_frame(frame, file_path=file_path)
         else:
@@ -3335,7 +3338,7 @@ class MainWidget(QMainWindow):
         if roi_path == '':
             return
 
-        for index, frame in enumerate(self._progress_bar(frames)):
+        for index, frame in enumerate(self._progress_bar(frames, desc='Saving ROIs')):
             rois = masks_to_rois(frame.masks)
             if len(frames) > 1:
                 frame_export_path = roi_path.replace('.zip', f'-{index}.zip')

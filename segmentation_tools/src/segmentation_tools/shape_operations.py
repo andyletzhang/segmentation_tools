@@ -41,7 +41,30 @@ def split_cell(outline: np.ndarray, curve: np.ndarray, min_area_threshold: int=0
         return []
 
     # Sort polygons by size and return
-    return sorted([enclosed_pixels_polygon(poly) for poly in polygons], key=len, reverse=True)
+    sorted_polys = sorted([enclosed_pixels_polygon(poly) for poly in polygons], key=len, reverse=True)
+
+    sorted_polys = remove_duplicate_coords(sorted_polys)
+    return sorted_polys
+
+def remove_duplicate_coords(shapes: list[np.ndarray]) -> list[np.ndarray]:
+    """Remove duplicate coordinates across shapes, keeping first appearance."""
+    seen = set()
+    result = []
+    
+    for shape in shapes:
+        # Filter out coordinates that have already been seen
+        unique_coords = []
+        for coord in shape:
+            coord_tuple = tuple(coord)
+            if coord_tuple not in seen:
+                seen.add(coord_tuple)
+                unique_coords.append(coord)
+        
+        # Only include shapes that still have coordinates
+        if unique_coords:
+            result.append(np.array(unique_coords, dtype=np.int32))
+    
+    return result
 
 def geoms_to_polygons(geoms) -> list[Polygon]:
     polygons=[]
@@ -95,7 +118,7 @@ def merge_small_polygons(polygons: list[Polygon], min_area_threshold: int) -> li
         idx = large_polygons.index(best_match)
         large_polygons[idx] = unary_union([best_match, small_poly])
     
-    return large_polygons
+    return geoms_to_polygons(large_polygons)
 
 def coords_to_mask(coords: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
     mask = np.zeros(shape, dtype=bool)

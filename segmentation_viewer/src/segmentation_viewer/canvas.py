@@ -471,7 +471,7 @@ class PyQtGraphCanvas(QWidget):
         img = self.draw_plot(plot='seg')
         img.save(filename, compress_level=0, format='png')
 
-    def draw_plot(self, plot: str = 'img'):
+    def draw_plot(self, plot: str = 'img', background: str = 'black'):
         """Take a screenshot of the image plot."""
         if plot == 'img':
             plot = self.img_plot
@@ -484,6 +484,11 @@ class PyQtGraphCanvas(QWidget):
         images = plot.get_image_items()
         # RGBA composition
         RGBA_images = []
+        if background == 'black':
+            bg = np.zeros((*image_shape, 4), dtype=np.uint8)
+            bg[..., -1] = 255
+            RGBA_images.append(bg)
+
         for img in reversed(images):
             if not img.isVisible():  # only draw enabled layers
                 continue
@@ -494,7 +499,9 @@ class PyQtGraphCanvas(QWidget):
             RGBA_images.append(self.inverse_image_transform(img_rgba))  # remove visual transformation
         if len(RGBA_images) == 0:
             return None
-        return composite_images_pillow(RGBA_images)
+
+        output = composite_images_pillow(RGBA_images).convert('RGB')
+        return output
 
     @property
     def cursor_pixels(self):

@@ -109,7 +109,22 @@ class MainWidget(QMainWindow):
         self.undo_stack = QueuedUndoStack(self)
         self.pretrained_model = 'cpsam'
         self.progress_widget = None
-        self.globals_dict = {'main': self, 'np': np, 'pd': pd, 'progress':self._progress_bar, 'history': self.undo_stack}
+        
+        # Create a property-like object for 'cell' that returns the selected cell
+        class CellAccessor:
+            def __init__(self, main_widget):
+                self.main_widget = main_widget
+            
+            def __repr__(self):
+                return repr(self.main_widget.selected_cell)
+            
+            def __getattr__(self, name):
+                if self.main_widget.selected_cell is None:
+                    return None
+                return getattr(self.main_widget.selected_cell, name)
+            
+        self.globals_dict = {'main': self, 'np': np, 'pd': pd, 'progress': self._progress_bar, 'history': self.undo_stack, 'cell': CellAccessor(self)}
+
         self.stat_quantile=(1,99)
         self._quantile=(1,99)
 

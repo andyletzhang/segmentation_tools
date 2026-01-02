@@ -2043,8 +2043,8 @@ class MainWidget(QMainWindow):
             frames = [self.frame]
 
         if self.left_toolbar.xy_size is None:
-            self._print('No xy scale specified. Defaulting to 0.1625.')
-            self.left_toolbar.xy_size = 0.1625
+            self._print('No xy scale specified. Defaulting to 0.325.')
+            self.left_toolbar.xy_size = 0.325
 
         self.get_spherical_volumes(frames, scale=self.left_toolbar.xy_size)
 
@@ -2061,8 +2061,8 @@ class MainWidget(QMainWindow):
             The frames to compute spherical volumes for
         """
         if scale is None:
-            self._print('No xy scale specified. Defaulting to 0.1625.')
-            scale=0.1625
+            self._print('No xy scale specified. Defaulting to 0.325.')
+            scale=0.325
 
         for frame in self._progress_bar(frames, desc='Measuring Spherical Cell Volumes'):
             frame.scale=scale

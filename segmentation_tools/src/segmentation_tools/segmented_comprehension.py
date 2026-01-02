@@ -604,7 +604,7 @@ class TimeStack(SegmentedStack):
 
         if search_range is None:  # get a search range by evaluating the velocity distribution.
             # This is a simplified copy of the get_velocities() method.
-            v = t_corrected[['x', 'y', 'frame']].groupby(t_corrected['particle']).apply(np.diff, axis=0)
+            v = t_corrected[['x', 'y', 'frame']].groupby(t_corrected['particle']).apply(np.diff, axis=0, include_groups=False)
             v_arr = np.concatenate(v.values)[:, :3]
             velocities = np.linalg.norm(v_arr[:, :2], axis=1) / v_arr[:, 2]  # get magnitude of velocity normalized by time
 
@@ -959,7 +959,7 @@ class TimeStack(SegmentedStack):
         velocities_df = self.tracked_centroids.copy().sort_values(['particle', 'frame'])
 
         # Calculate displacements
-        v = self.tracked_centroids[['x', 'y', 'frame', 'particle']].groupby('particle').apply(np.diff, axis=0, append=np.nan)
+        v = self.tracked_centroids[['x', 'y', 'frame', 'particle']].groupby('particle').apply(np.diff, axis=0, append=np.nan, include_groups=False)
         velocities_df[['dx', 'dy', 'dt']] = np.concatenate(v.values)[:, :3]
         velocities_df[['dx', 'dy']] = velocities_df[['dx', 'dy']].div(velocities_df['dt'], axis=0)
 

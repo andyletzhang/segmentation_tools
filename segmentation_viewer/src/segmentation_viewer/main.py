@@ -1909,8 +1909,8 @@ class MainWidget(QMainWindow):
                     membrane = frame.zstack[..., membrane_channel]
                     membrane_resampled = resample_zstack(membrane, xy_downsample=1, z_upsample=z_upsample)
 
-                frame.upsampled_zstack = membrane_resampled
-                frame.zstack_sampling = z_upsample
+                    frame.upsampled_zstack = membrane_resampled
+                    frame.zstack_sampling = z_upsample
 
                 frame.heights = get_heights(
                     membrane_resampled, peak_prominence=peak_prominence, sigma=sigma, z_sigma=z_sigma, min_region_size=min_region_size

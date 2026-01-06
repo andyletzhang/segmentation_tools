@@ -142,6 +142,7 @@ class PyQtGraphCanvas(QWidget):
 
     def overlay_outlines(self):
         self.img_outline_overlay.setVisible(self.main_window.outlines_visible)
+        self.seg.setVisible(self.main_window.outlines_visible)
 
     def overlay_masks(self):
         for layer in self.mask_overlay:

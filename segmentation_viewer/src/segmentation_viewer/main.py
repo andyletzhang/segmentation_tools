@@ -953,7 +953,7 @@ class MainWidget(QMainWindow):
         """
         edge_cells = self.stack.remove_edge_cells(self._progress_bar(frames, desc='Removing edge masks'), margin=margin)
         for deleted_cells, frame in zip(edge_cells, frames):
-            self._print(f'Removed {len(deleted_cells)} edge cells from frame {frame.frame_number}')
+            # self._print(f'Removed {len(deleted_cells)} edge cells from frame {frame.frame_number}')
             if hasattr(frame, 'stored_mask_overlay'):
                 del frame.stored_mask_overlay
         self.canvas.draw_masks_parallel(frames)
@@ -1835,14 +1835,19 @@ class MainWidget(QMainWindow):
             frames = self.frame
 
         peak_prominence = self.left_toolbar.peak_prominence.text()
+        z_upsample = self.left_toolbar.zstack_upsample.text()
         if peak_prominence == '':
             peak_prominence = 0.01
         else:
             peak_prominence = float(peak_prominence)
+        if z_upsample == '':
+            z_upsample = 1
+        else:
+            z_upsample = int(z_upsample)
 
         membrane_channel = self.left_toolbar.zstack_channel_dropdown.currentIndex()
 
-        self.measure_heights(frames, peak_prominence, membrane_channel=membrane_channel)
+        self.measure_heights(frames, peak_prominence, membrane_channel=membrane_channel, z_upsample=z_upsample)
         self._show_seg_overlay()
         self.left_toolbar.volume_button.setEnabled(True)
         self._export_heights_action.setEnabled(True)
@@ -1853,6 +1858,7 @@ class MainWidget(QMainWindow):
         peak_prominence: float = 0.01,
         membrane_channel: int = 2,
         sigma: float | None = None,
+        z_upsample: int = 1,
         z_sigma: float = None,
         min_region_size: int = None,
     ):
@@ -1867,7 +1873,7 @@ class MainWidget(QMainWindow):
             The minimum prominence of a peak to be considered the top of a cell. Defaults to 0.01.
             If the height map is very noisy, consider increasing this value. If cell membranes are not being detected, consider decreasing it.
         """
-        from segmentation_tools.heightmap import get_heights
+        from segmentation_tools.heightmap import get_heights, resample_zstack
 
         if isinstance(frames, SegmentedImage):
             frames = [frames]
@@ -1891,14 +1897,25 @@ class MainWidget(QMainWindow):
         if z_sigma is None:
             z_sigma = 1 / z_scale
 
+        z_sigma *= z_upsample
+
         for frame in self._progress_bar(frames, desc='Measuring Heights'):
             if not hasattr(frame, 'zstack'):
                 raise ValueError(f'No z-stack available to measure heights for {frame.name}.')
             else:
-                membrane = frame.zstack[..., membrane_channel]
+                if hasattr(frame, 'upsampled_zstack') and frame.zstack_sampling%z_upsample==0:
+                    membrane_resampled=frame.upsampled_zstack[::frame.zstack_sampling//z_upsample]
+                else:
+                    membrane = frame.zstack[..., membrane_channel]
+                    membrane_resampled = resample_zstack(membrane, xy_downsample=1, z_upsample=z_upsample)
+
+                frame.upsampled_zstack = membrane_resampled
+                frame.zstack_sampling = z_upsample
+
                 frame.heights = get_heights(
-                    membrane, peak_prominence=peak_prominence, sigma=sigma, z_sigma=z_sigma, min_region_size=min_region_size
+                    membrane_resampled, peak_prominence=peak_prominence, sigma=sigma, z_sigma=z_sigma, min_region_size=min_region_size
                 )
+                frame.heights = frame.heights / z_upsample
                 frame.to_heightmap()
 
     def _measure_coverslip_heightmaps(self):
@@ -1995,8 +2012,8 @@ class MainWidget(QMainWindow):
         else:
             frames = self.frame
 
-        xy_downsample = self.left_toolbar.xy_downsample.text()
-        z_upsample = self.left_toolbar.z_upsample.text()
+        xy_downsample = self.left_toolbar.cs_xy_downsample.text()
+        z_upsample = self.left_toolbar.cs_z_upsample.text()
         if z_upsample == '':
             z_upsample = 8
         else:

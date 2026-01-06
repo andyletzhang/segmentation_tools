@@ -520,22 +520,30 @@ class LeftToolbar(QScrollArea):
         self.get_coverslip_height_button = QPushButton('Coverslip Height', self)
         self.get_coverslip_heightmaps_button = QPushButton('Coverslip Heightmap', self)
 
+        zstack_resampling_label = QLabel('Heightmap Z Resampling:', self)
+        self.zstack_upsample = QLineEdit(self, placeholderText='1')
+        self.zstack_upsample.setValidator(QIntValidator(bottom=1))  # positive integers
+        self.zstack_upsample.setFixedWidth(30)
+        zstack_resampling_layout = QHBoxLayout()
+        zstack_resampling_layout.addWidget(zstack_resampling_label)
+        zstack_resampling_layout.addWidget(self.zstack_upsample)
+
         coverslip_resampling_label = QLabel('Coverslip Resampling:', self)
         xy_ds_label = QLabel('XY: 1/', self)
         z_us_label = QLabel('Z:', self)
-        self.xy_downsample = QLineEdit(self, placeholderText='32')
-        self.z_upsample = QLineEdit(self, placeholderText='8')
-        self.xy_downsample.setValidator(QIntValidator(bottom=1))  # positive integers only
-        self.z_upsample.setValidator(QIntValidator(bottom=1))  # positive integers
-        self.xy_downsample.setFixedWidth(30)
-        self.z_upsample.setFixedWidth(30)
+        self.cs_xy_downsample = QLineEdit(self, placeholderText='32')
+        self.cs_z_upsample = QLineEdit(self, placeholderText='8')
+        self.cs_xy_downsample.setValidator(QIntValidator(bottom=1))  # positive integers only
+        self.cs_z_upsample.setValidator(QIntValidator(bottom=1))  # positive integers
+        self.cs_xy_downsample.setFixedWidth(30)
+        self.cs_z_upsample.setFixedWidth(30)
 
-        resampling_layout = QHBoxLayout()
-        resampling_layout.addWidget(coverslip_resampling_label)
-        resampling_layout.addWidget(xy_ds_label)
-        resampling_layout.addWidget(self.xy_downsample)
-        resampling_layout.addWidget(z_us_label)
-        resampling_layout.addWidget(self.z_upsample)
+        cs_resampling_layout = QHBoxLayout()
+        cs_resampling_layout.addWidget(coverslip_resampling_label)
+        cs_resampling_layout.addWidget(xy_ds_label)
+        cs_resampling_layout.addWidget(self.cs_xy_downsample)
+        cs_resampling_layout.addWidget(z_us_label)
+        cs_resampling_layout.addWidget(self.cs_z_upsample)
 
         self.fit_coverslip_surface_button = QPushButton('Fit Coverslip', self)
         self.coverslip_height_label_layout.addWidget(coverslip_height_label)
@@ -554,11 +562,12 @@ class LeftToolbar(QScrollArea):
         volumes_widget = CollapsibleWidget(header_text='Volumes', parent=self.tabbed_widget)
         volumes_border = bordered(volumes_widget)
 
-        volumes_widget.addLayout(self.peak_prominence_layout)
-        volumes_widget.addLayout(self.coverslip_prominence_layout)
-        volumes_widget.addLayout(resampling_layout)
+        volumes_widget.addLayout(zstack_resampling_layout)
+        volumes_widget.addLayout(cs_resampling_layout)
         volumes_widget.addWidget(self.get_spherical_volumes)
         volumes_widget.addLayout(self.measure_coverslip_height_layout1)
+        volumes_widget.core_layout.addLayout(self.peak_prominence_layout)
+        volumes_widget.core_layout.addLayout(self.coverslip_prominence_layout)
         volumes_widget.core_layout.addLayout(self.get_heights_layout)
 
         volumes_widget.core_layout.addSpacerItem(create_vertical_spacer(1))

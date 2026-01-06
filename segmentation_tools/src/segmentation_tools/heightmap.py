@@ -68,7 +68,25 @@ if HAS_GPU:
         data[data < 0] = 0
         data[data > 1] = 1
         return data
+        
+    def resample_zstack_gpu(zstack: np.ndarray, xy_downsample: int, z_upsample: int):
+        zstack_cp = cp.array(zstack)
 
+        coords = np.meshgrid(
+            np.arange(0, zstack_cp.shape[0], step=1/z_upsample),
+            np.arange(0, zstack_cp.shape[1], step=xy_downsample),
+            np.arange(0, zstack_cp.shape[2], step=xy_downsample),
+            indexing='ij'
+        )
+        zstack_interp = cp_ndimage.map_coordinates(
+            zstack_cp, 
+            cp.array(coords), 
+            order=3,
+            prefilter=True,
+            mode='nearest'
+        ).get()
+
+        return zstack_interp
 
 # Fallback for CPU execution
 @jit(nopython=True)
@@ -303,6 +321,17 @@ def get_fitted_surface(data):
 
 
 def resample_zstack(zstack: np.ndarray, xy_downsample: int, z_upsample: int):
+    if xy_downsample==1 and z_upsample==1:
+        return zstack
+        
+    if HAS_GPU:
+        zstack_resampled = resample_zstack_gpu(zstack, xy_downsample, z_upsample)
+    else:
+        zstack_resampled = resample_zstack_cpu(zstack, xy_downsample, z_upsample)
+
+    return zstack_resampled
+    
+def resample_zstack_cpu(zstack: np.ndarray, xy_downsample: int=1, z_upsample: int=1):
     zstack_ds = downscale_local_mean(zstack, (1, xy_downsample, xy_downsample)).astype(zstack.dtype)
     zstack_ds_upsampled = np.zeros(
         (zstack_ds.shape[0] * z_upsample, zstack_ds.shape[1], zstack_ds.shape[2]), dtype=zstack_ds.dtype
@@ -312,7 +341,6 @@ def resample_zstack(zstack: np.ndarray, xy_downsample: int, z_upsample: int):
             interpolator = CubicSpline(np.arange(0, zstack_ds.shape[0]), zstack_ds[:, i, j], axis=0)
             zstack_ds_upsampled[:, i, j] = interpolator(np.arange(0, len(zstack), step=1 / z_upsample))
     return zstack_ds_upsampled
-
 
 def fit_zstack_surface(zstack: np.ndarray, xy_downsample: int = 32, z_upsample: int = 8):
     zstack_resampled = resample_zstack(zstack, xy_downsample, z_upsample)

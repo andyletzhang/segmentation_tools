@@ -2672,7 +2672,7 @@ class MainWidget(QMainWindow):
 
         # highlight cell
         self.canvas.add_cell_highlight(
-            self.selected_cell_n, alpha=self.canvas.selected_cell_alpha, color=self.canvas.selected_cell_color
+            self.selected_cell_n, alpha=self.canvas.selected_cell_alpha, color=self.canvas.selected_cell_color, seg_alpha=np.sqrt(self.canvas.selected_cell_alpha)
         )
 
         # show cell attributes in right toolbar

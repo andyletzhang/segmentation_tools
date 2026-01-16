@@ -2,7 +2,7 @@ import numpy as np
 from numba import jit
 from scipy import ndimage
 from scipy.interpolate import CubicSpline
-from scipy.optimize import least_squares
+from scipy.optimize import least_squares, curve_fit
 from skimage.transform import downscale_local_mean
 
 try:
@@ -319,6 +319,38 @@ def get_fitted_surface(data):
     fitted_surface = zernike_defocus_surface(data.shape, center_x, center_y, coeff, offset)
     return fitted_surface
 
+def tilted_sphere(xy_tuple, A, x0, y0, B, C, D):
+    x, y = xy_tuple
+    # Paraboloid term: A*(x-x0)^2 + A*(y-y0)^2
+    sphere_term = A * ((x - x0)**2 + (y - y0)**2)
+    # Plane term: B*x + C*y + D
+    plane_term = B * x + C * y + D
+    return sphere_term + plane_term
+
+def fit_tilted_sphere(surface):
+    # initial guess parameters
+    p0 = [
+        -0.01,           # A: Initial curvature guess (gentle bowl)
+        surface.shape[1] / 2,         # x0: Center X
+        surface.shape[0] / 2,         # y0: Center Y
+        0,              # B: Slope X (no tilt)
+        0,              # C: Slope Y
+        np.mean(surface) # D: Offset
+    ]
+
+    x = np.arange(surface.shape[1])
+    y = np.arange(surface.shape[0])
+    X, Y = np.meshgrid(x, y)
+
+    popt, pcov = curve_fit(tilted_sphere, (X.ravel(), Y.ravel()), surface.ravel(), p0=p0)
+    return popt
+
+def make_tilt_sphere_surface(shape, curvature, center_x, center_y, slope_x, slope_y, offset):
+    yy, xx = np.indices(shape)
+    surface = (curvature * ((xx - center_x)**2 + (yy - center_y)**2) +
+               slope_x * xx + slope_y * yy + offset)
+
+    return surface
 
 def resample_zstack(zstack: np.ndarray, xy_downsample: int, z_upsample: int):
     if xy_downsample==1 and z_upsample==1:
@@ -342,9 +374,11 @@ def resample_zstack_cpu(zstack: np.ndarray, xy_downsample: int=1, z_upsample: in
             zstack_ds_upsampled[:, i, j] = interpolator(np.arange(0, len(zstack), step=1 / z_upsample))
     return zstack_ds_upsampled
 
-def fit_zstack_surface(zstack: np.ndarray, xy_downsample: int = 32, z_upsample: int = 8):
+def fit_zstack_zernike_surface(zstack: np.ndarray, xy_downsample: int = 32, z_upsample: int = 8, z_scale=1, xy_scale=0.325):
     zstack_resampled = resample_zstack(zstack, xy_downsample, z_upsample)
-    zstack_blurred_resampled = ndimage.gaussian_filter(zstack_resampled.astype(np.float64), sigma=(z_upsample, 0, 0))
+    sigma=42/xy_downsample/xy_scale
+    z_sigma=z_upsample/z_scale
+    zstack_blurred_resampled = ndimage.gaussian_filter(zstack_resampled.astype(np.float64), sigma=(z_sigma, sigma, sigma))
     zstack_gradient = np.gradient(zstack_blurred_resampled, axis=0)
     surface = np.argmin(zstack_gradient, axis=0)
     cx, cy, coeff, offset = fit_zernike_defocus(surface)
@@ -353,4 +387,18 @@ def fit_zstack_surface(zstack: np.ndarray, xy_downsample: int = 32, z_upsample: 
     params = np.array([cx * xy_downsample, cy * xy_downsample, coeff / z_upsample, offset / z_upsample])
 
     fitted_surface = zernike_defocus_surface(zstack.shape[1:], *params)
+    return fitted_surface
+
+def fit_zstack_surface(zstack: np.ndarray, xy_downsample: int = 16, z_upsample: int = 8, z_scale=1, xy_scale=0.65, surface_upscale: int = 1):
+    zstack_resampled = resample_zstack(zstack, xy_downsample, z_upsample)
+    sigma=42/xy_downsample/xy_scale
+    z_sigma=z_upsample/z_scale
+    zstack_blurred_resampled = ndimage.gaussian_filter(zstack_resampled.astype(np.float64), sigma=(z_sigma, sigma, sigma))
+    zstack_gradient = np.gradient(zstack_blurred_resampled, axis=0)
+    surface = np.argmin(zstack_gradient, axis=0)
+    curvature, cx, cy, mx, my, b = fit_tilted_sphere(surface)
+    params = np.array([curvature / z_upsample / (xy_downsample*surface_upscale)**2, cx * xy_downsample * surface_upscale, cy * xy_downsample * surface_upscale, mx / z_upsample / (xy_downsample*surface_upscale), my / z_upsample / (xy_downsample*surface_upscale), b / z_upsample])
+    shape = (zstack.shape[1]*surface_upscale, zstack.shape[2]*surface_upscale) if surface_upscale>1 else zstack.shape[1:3]
+    fitted_surface = make_tilt_sphere_surface(shape, *params)
+
     return fitted_surface

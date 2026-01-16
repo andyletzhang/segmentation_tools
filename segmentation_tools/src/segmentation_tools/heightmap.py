@@ -72,15 +72,17 @@ if HAS_GPU:
     def resample_zstack_gpu(zstack: np.ndarray, xy_downsample: int, z_upsample: int):
         zstack_cp = cp.array(zstack)
 
-        coords = np.meshgrid(
-            np.arange(0, zstack_cp.shape[0], step=1/z_upsample),
-            np.arange(0, zstack_cp.shape[1], step=xy_downsample),
-            np.arange(0, zstack_cp.shape[2], step=xy_downsample),
-            indexing='ij'
-        )
+        z_range = cp.arange(0, zstack_cp.shape[0], step=1/z_upsample)
+        y_range = cp.arange(0, zstack_cp.shape[1], step=xy_downsample)
+        x_range = cp.arange(0, zstack_cp.shape[2], step=xy_downsample)
+
+        z_grid, y_grid, x_grid = cp.meshgrid(z_range, y_range, x_range, indexing='ij')
+
+        coords_gpu = cp.stack([z_grid, y_grid, x_grid], axis=0)
+
         zstack_interp = cp_ndimage.map_coordinates(
             zstack_cp, 
-            cp.array(coords), 
+            coords_gpu, 
             order=3,
             prefilter=True,
             mode='nearest'

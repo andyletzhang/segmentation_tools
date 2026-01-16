@@ -10,7 +10,7 @@ dependencies = [
     "PyQt6-QScintilla",
     "PyOpenGL",
     "shapely",
-    "numpy<2",
+    "numpy",
     "cellpose>3",
     "superqt",
     "pyqtgraph",

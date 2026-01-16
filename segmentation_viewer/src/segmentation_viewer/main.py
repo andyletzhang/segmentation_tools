@@ -1856,7 +1856,7 @@ class MainWidget(QMainWindow):
         self,
         frames,
         peak_prominence: float = 0.01,
-        membrane_channel: int = 2,
+        membrane_channel: int = 0,
         sigma: float | None = None,
         z_upsample: int = 1,
         z_sigma: float = None,
@@ -2024,18 +2024,12 @@ class MainWidget(QMainWindow):
         else:
             xy_downsample = int(xy_downsample)
 
-        peak_prominence = self.left_toolbar.coverslip_prominence.text()
-        if peak_prominence == '':
-            peak_prominence = 0.01
-        else:
-            peak_prominence = float(peak_prominence)
-
         membrane_channel = self.left_toolbar.zstack_channel_dropdown.currentIndex()
 
         self.fit_coverslip_surface(frames, membrane_channel=membrane_channel, xy_downsample=xy_downsample, z_upsample=z_upsample)
         self._show_seg_overlay()
 
-    def fit_coverslip_surface(self, frames, membrane_channel: int = 2, xy_downsample: int = 32, z_upsample: int = 8):
+    def fit_coverslip_surface(self, frames, membrane_channel: int = 0, xy_downsample: int = 32, z_upsample: int = 8, z_scale: float = 1, xy_scale: float = 0.325):
         from segmentation_tools.heightmap import fit_zstack_surface
 
         if isinstance(frames, SegmentedImage):

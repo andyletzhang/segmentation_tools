@@ -1233,6 +1233,24 @@ class MainWidget(QMainWindow):
             frame.set_cell_attrs(['red', 'green'], np.array([[False, False] for _ in range(frame.n_cells)]).T)
         self._FUCCI_overlay()
 
+    def _measure_FUCCI_cellpose_frame(self):
+        if not self.file_loaded:
+            return
+        red_threshold, green_threshold = (
+            self.left_toolbar.red_cp_threshold,
+            self.left_toolbar.green_cp_threshold,
+        )
+        self.measure_FUCCI_cellpose([self.frame], red_threshold=red_threshold, green_threshold=green_threshold)
+
+    def _measure_FUCCI_cellpose_stack(self):
+        if not self.file_loaded:
+            return
+        red_threshold, green_threshold = (
+            self.left_toolbar.red_cp_threshold,
+            self.left_toolbar.green_cp_threshold,
+        )
+        self.measure_FUCCI_cellpose(self.stack.frames, red_threshold=red_threshold, green_threshold=green_threshold)
+
     def _measure_FUCCI_frame(self):
         if not self.file_loaded:
             return
@@ -1293,6 +1311,19 @@ class MainWidget(QMainWindow):
 
         self.left_toolbar.red_threshold = self.frame.red_fluor_threshold
         self.left_toolbar.green_threshold = self.frame.green_fluor_threshold
+        self.FUCCI_dropdown = 3
+        self._FUCCI_overlay()
+
+    def measure_FUCCI_cellpose(self, frames, red_threshold=None, green_threshold=None):
+        for frame in self._progress_bar(frames, desc='Measuring FUCCI'):
+            if self.is_zstack:
+                frame.img = frame.zstack[self.zstack_number]
+            frame.measure_FUCCI_cellpose(
+                red_threshold=red_threshold,
+                green_threshold=green_threshold,
+            )
+            self._get_red_green(frame)
+            
         self.FUCCI_dropdown = 3
         self._FUCCI_overlay()
 

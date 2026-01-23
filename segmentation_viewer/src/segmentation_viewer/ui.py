@@ -354,6 +354,36 @@ class LeftToolbar(QScrollArea):
         FUCCI_tab_layout.setSpacing(10)
         FUCCI_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
+        old_fucci_widget = CollapsibleWidget(header_text='Old FUCCI Classification', parent=self.tabbed_widget)
+        old_fucci_border = bordered(old_fucci_widget)
+
+        measure_FUCCI_cp_widget = QWidget(objectName='bordered')
+        measure_FUCCI_cp_layout = QVBoxLayout(measure_FUCCI_cp_widget)
+        measure_cp_frame_button = QPushButton('Measure Frame', self)
+        measure_cp_stack_button = QPushButton('Measure Stack', self)
+        cp_red_threshold_label = QLabel('Red Threshold:', self)
+        self.cp_red_threshold_input = QLineEdit(self, placeholderText='1')
+        self.cp_red_threshold_input.setFixedWidth(60)
+        self.cp_red_threshold_input.setValidator(QDoubleValidator(bottom=0))  # non-negative floats only
+        cp_red_threshold_layout = QHBoxLayout()
+        cp_red_threshold_layout.addWidget(cp_red_threshold_label)
+        cp_red_threshold_layout.addWidget(self.cp_red_threshold_input)
+        measure_FUCCI_cp_layout.addLayout(cp_red_threshold_layout)
+
+        cp_green_threshold_label = QLabel('Green Threshold:', self)
+        self.cp_green_threshold_input = QLineEdit(self, placeholderText='1')
+        self.cp_green_threshold_input.setFixedWidth(60)
+        self.cp_green_threshold_input.setValidator(QDoubleValidator(bottom=0))  # non-negative floats only
+        cp_green_threshold_layout = QHBoxLayout()
+        cp_green_threshold_layout.addWidget(cp_green_threshold_label)
+        cp_green_threshold_layout.addWidget(self.cp_green_threshold_input)
+        measure_FUCCI_cp_layout.addLayout(cp_green_threshold_layout)
+
+        fucci_cp_button_layout = QHBoxLayout()
+        fucci_cp_button_layout.addWidget(measure_cp_frame_button)
+        fucci_cp_button_layout.addWidget(measure_cp_stack_button)
+        measure_FUCCI_cp_layout.addLayout(fucci_cp_button_layout)
+
         get_intensities_button = QPushButton('Get Cell Red/Green Intensities', self)
         get_tracked_FUCCI_button = QPushButton('FUCCI from tracks', self)
         measure_FUCCI_widget = QWidget(objectName='bordered')
@@ -418,11 +448,17 @@ class LeftToolbar(QScrollArea):
         annotate_FUCCI_layout.addSpacerItem(create_vertical_spacer())
         annotate_FUCCI_layout.addLayout(clear_FUCCI_layout)
 
-        FUCCI_tab_layout.addWidget(get_intensities_button)
-        FUCCI_tab_layout.addWidget(get_tracked_FUCCI_button)
-        FUCCI_tab_layout.addWidget(measure_FUCCI_widget)
+        old_fucci_widget.addWidget(get_intensities_button)
+        old_fucci_widget.addWidget(get_tracked_FUCCI_button)
+        old_fucci_widget.addWidget(measure_FUCCI_widget)
+        old_fucci_widget.hide_content()
+
+        FUCCI_tab_layout.addWidget(measure_FUCCI_cp_widget)
+        FUCCI_tab_layout.addWidget(old_fucci_border)
         FUCCI_tab_layout.addWidget(annotate_FUCCI_widget)
 
+        measure_cp_frame_button.clicked.connect(self.main_window._measure_FUCCI_cellpose_frame)
+        measure_cp_stack_button.clicked.connect(self.main_window._measure_FUCCI_cellpose_stack)
         get_intensities_button.clicked.connect(self.main_window.cell_red_green_intensities)
         get_tracked_FUCCI_button.clicked.connect(self.main_window.get_tracked_FUCCI)
         self.FUCCI_dropdown.currentIndexChanged.connect(self.main_window._FUCCI_overlay_changed)
@@ -433,6 +469,22 @@ class LeftToolbar(QScrollArea):
         clear_stack_button.clicked.connect(self.main_window._clear_FUCCI_stack_action.trigger)
 
         return FUCCI_tab
+
+    @property
+    def red_cp_threshold(self):
+        red_cp_threshold_text = self.cp_red_threshold_input.text()
+        if red_cp_threshold_text == '':
+            return 1.0
+        else:
+            return float(red_cp_threshold_text)
+
+    @property
+    def green_cp_threshold(self):
+        green_cp_threshold_text = self.cp_green_threshold_input.text()
+        if green_cp_threshold_text == '':
+            return 1.0
+        else:
+            return float(green_cp_threshold_text)
 
     @property
     def red_threshold(self):

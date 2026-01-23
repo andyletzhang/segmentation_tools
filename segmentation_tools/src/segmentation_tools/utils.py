@@ -16,6 +16,9 @@ def outlines_list(masks):
     import cv2
     from scipy.ndimage import find_objects
 
+    if masks.dtype == bool:
+        masks = masks.astype(np.uint8)
+        
     outpix = []
     boundaries = find_objects(masks)
     for (y,x), n in zip(boundaries, np.unique(masks)[1:]):

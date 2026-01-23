@@ -1080,7 +1080,7 @@ class TimeStack(SegmentedStack):
                         cell.cycle_stage = 3
 
     def get_interpretable_FUCCI(self, zero_remainder=True, impute_zeros=True):
-        from .FUCCI_linking import (
+        from .fucci import (
             correct_daughter_G1,
             correct_mother_G2,
             get_problematic_IDs,
@@ -1349,6 +1349,7 @@ class SegmentedImage:
             'heights',
             'coverslip_heights',
             'coverslip_height',
+            'nuclear_masks',
             'OPD',
         ]  # if any of these exist, export them as well
         write_attrs = set(write_attrs + optional_attrs)  # add optional attrs to write_attrs
@@ -1624,6 +1625,74 @@ class SegmentedImage:
         for cell, cycle_stage in zip(self.cells, cc_stage_number):
             cell.cycle_stage = cycle_stage
         return cc_stage_number
+
+    def measure_FUCCI_cellpose(self, red_channel=0, green_channel=1, red_threshold=1, green_threshold=1):
+        from cellpose import models
+        from .fucci import get_fucci_percentages, points_to_masks, bg_subtract_nuclei
+
+        if hasattr(self, 'red_percentages_cp') and hasattr(self, 'green_percentages_cp'):
+            cc_stages = np.zeros(self.n_cells, dtype=int)
+            cc_stages[self.green_percentages_cp > green_threshold] = 1  # G1 or G2
+            cc_stages[self.red_percentages_cp > red_threshold] += 2  # S or G2
+
+            for cell in self.cells:
+                cell.cycle_stage = cc_stages[cell.n]
+            self.cell_cycles = cc_stages
+            return self.cell_cycles
+
+        # Classify nuclei
+        if not hasattr(self, 'img'):
+            self.load_img()
+        blur_sigma=round(0.65/self.scale)
+
+        red=self.img[:, :, red_channel]
+        green=self.img[:, :, green_channel]
+        if not hasattr(self, 'nuclear_masks'):
+            cp_model = models.CellposeModel(gpu=True)
+            nuclear_masks = cp_model.eval(self.img[...,[red_channel, green_channel]])[0]
+            self.nuclear_masks = nuclear_masks
+        else:
+            nuclear_masks = self.nuclear_masks
+        red_subtracted, green_subtracted = bg_subtract_nuclei(
+            red,
+            green,
+            nuclear_masks,
+            blur_sigma=blur_sigma,
+        )
+        
+        red_percentage, green_percentage = get_fucci_percentages(
+            red_subtracted,
+            green_subtracted,
+            nuclear_masks,
+            red_threshold,
+            green_threshold,
+        )
+
+        # Assign nuclei to masks
+        nuclei_centroids = np.array(ndimage.center_of_mass(np.ones(nuclear_masks.shape), labels=nuclear_masks, index=np.arange(1, nuclear_masks.max()+1)))
+
+        matches = points_to_masks(self.masks, nuclei_centroids)[0]
+
+        cc_stages = np.zeros(nuclear_masks.max(), dtype=int)
+        cc_stages[green_percentage > green_threshold] = 1  # G1 or G2
+        cc_stages[red_percentage > red_threshold] += 2  # S or G2
+
+        for n, cell in enumerate(self.cells):
+            if n in matches[:,1]:
+                nucleus_idx = matches[matches[:,1]==n][0,0]
+                cell.cycle_stage = cc_stages[nucleus_idx]
+                cell.red_percentage = red_percentage[nucleus_idx]
+                cell.green_percentage = green_percentage[nucleus_idx]
+            else:
+                cell.cycle_stage = 0
+                cell.red_percentage = 0
+                cell.green_percentage = 0
+        
+        self.red_percentages_cp = np.array(self.get_cell_attrs('red_percentage', fill_value=0))
+        self.green_percentages_cp = np.array(self.get_cell_attrs('green_percentage', fill_value=0))
+
+        self.cell_cycles = np.array([cell.cycle_stage for cell in self.cells])
+        return self.cell_cycles
 
     # -------------Metrics---------------
     # generalized methods for getting and setting cell attributes

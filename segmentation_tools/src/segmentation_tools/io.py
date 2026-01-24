@@ -2,9 +2,10 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 from nd2 import ND2File
-from tifffile import TiffFile
+from tifffile import TiffFile, imwrite
 
-from segmentation_tools.segmented_comprehension import SegmentedImage
+from .segmented_comprehension import SegmentedImage
+from .utils import masks_to_outlines
 
 
 class ND2:
@@ -13,7 +14,7 @@ class ND2:
         self.nd2 = ND2File(path)
         self.array = read_nd2(self.nd2)
         self.shape = read_nd2_shape(self.nd2, order='TPZYXC')
-    
+
     @property
     def ndim(self):
         return len(self.shape)
@@ -23,17 +24,17 @@ class ND2:
         if isinstance(array, np.ndarray):
             dim_shape = array.shape
             out = np.array([img() for img in array.flatten()])
-            if out[0].ndim == 3: # color image
-                out=out.transpose(0, 2, 3, 1) # Move the channel axis to the end
+            if out[0].ndim == 3:  # color image
+                out = out.transpose(0, 2, 3, 1)  # Move the channel axis to the end
             else:
-                out=out[..., np.newaxis] # add channel axis
-            out = out.reshape(*dim_shape, *out[0].shape) # Reshape T, P, Z dimensions
+                out = out[..., np.newaxis]  # add channel axis
+            out = out.reshape(*dim_shape, *out[0].shape)  # Reshape T, P, Z dimensions
         elif callable(array):
             out = array()
-            if out.ndim == 3: # color image
-                out = out.transpose(1, 2, 0) # Move the channel axis to the end
+            if out.ndim == 3:  # color image
+                out = out.transpose(1, 2, 0)  # Move the channel axis to the end
             else:
-                out = out[..., np.newaxis] # add channel axis
+                out = out[..., np.newaxis]  # add channel axis
         else:
             raise ValueError(f'Invalid input type: {type(array)}')
         return out
@@ -156,7 +157,7 @@ def read_tif(tif_file: TiffFile) -> np.ndarray:
 
 def read_nd2_shape(nd2_file: ND2File, order: str = 'TPZCYX') -> tuple:
     # Read metadata to get the shape (T, Z, C)
-    default_order='TPZCYX'
+    default_order = 'TPZCYX'
     shape = [1, 1, 1, 1]
     for n, axis in enumerate(['T', 'P', 'Z', 'C']):
         if axis in nd2_file.sizes:
@@ -197,7 +198,7 @@ def load_seg_npy(file_path, load_img=False, mend=False, max_gap_size=300):
         del data['img']
     elif data['img'].ndim == 2:
         data['img'] = data['img'][..., np.newaxis]
-        
+
     if mend:
         from segmentation_tools.preprocessing import mend_gaps
 
@@ -212,7 +213,7 @@ def load_seg_npy(file_path, load_img=False, mend=False, max_gap_size=300):
 
 
 def segmentation_from_img(img, name, **kwargs):
-    shape = img.shape[:2] # resolution
+    shape = img.shape[:2]  # resolution
 
     # generate empty masks and outlines
     outlines = np.zeros(shape, dtype=bool)
@@ -224,12 +225,12 @@ def segmentation_from_img(img, name, **kwargs):
 
 
 def segmentation_from_zstack(zstack, name, **kwargs):
-    shape = zstack.shape[1:3] # resolution
+    shape = zstack.shape[1:3]  # resolution
 
     # generate empty masks and outlines
     outlines = np.zeros(shape, dtype=bool)
     masks = np.zeros(shape, dtype=np.uint16)
-    
+
     data = {'name': name, 'zstack': zstack, 'img': zstack[0], 'masks': masks, 'outlines': outlines}
     seg = SegmentedImage(data, **kwargs)
     return seg
@@ -280,3 +281,12 @@ def convert_GUI_seg(seg, multiprocess=False, remove_edge_masks=True, mend=False,
         np.save(out_path, out_dict)
 
     return out_dict
+
+
+def export_to_cellpose(img, masks, file_name):
+    outlines = masks[masks_to_outlines(masks)]
+    tif_name = file_name.replace('_seg.npy', '.tif')
+    export = {'outlines': outlines, 'masks': masks, 'filename': tif_name}
+
+    imwrite(tif_name, img)
+    np.save(file_name, export, allow_pickle=True)

@@ -79,7 +79,6 @@ class MainWidget(QMainWindow):
         self.mitosis_mode = 0
         self.bounds_processor = BoundsProcessor(self, n_cores=1)
         self.undo_stack = QueuedUndoStack(self)
-        self.pretrained_model = 'cpsam'
         self.progress_widget = None
 
         # Create a property-like object for 'cell' that returns the selected cell
@@ -150,6 +149,7 @@ class MainWidget(QMainWindow):
         self.globals_dict['canvas'] = self.canvas
         self.right_toolbar = self._get_right_toolbar()
         self.left_toolbar = LeftToolbar(self)
+        self.nuclear_cellpose_model = 'cpsam'
 
         self.cell_roi = CellMaskPolygons(parent=self.canvas)
         self.cell_roi.last_handle_pos = None
@@ -187,6 +187,18 @@ class MainWidget(QMainWindow):
         # click event
         self.canvas.img_plot.scene().sigMouseClicked.connect(self._on_click)
         self.canvas.seg_plot.scene().sigMouseClicked.connect(self._on_click)
+
+    @property
+    def pretrained_model(self) -> str:
+        if not hasattr(self, '_pretrained_model'):
+            self._pretrained_model = 'cpsam'
+        return self._pretrained_model
+    
+    @pretrained_model.setter
+    def pretrained_model(self, model_name: str):
+        self._pretrained_model = model_name
+        if hasattr(self, 'cellpose_model'):
+            del self.cellpose_model  # reset the model to be reloaded with new name
 
     @property
     def quantile(self) -> tuple[float, float]:
@@ -1321,6 +1333,7 @@ class MainWidget(QMainWindow):
             frame.measure_FUCCI_cellpose(
                 red_threshold=red_threshold,
                 green_threshold=green_threshold,
+                pretrained_model=self.nuclear_cellpose_model,
             )
             self._get_red_green(frame)
             

@@ -3786,7 +3786,7 @@ class MainWidget(QMainWindow):
             """Preview the current image with the given channel order."""
             new_img = self.frame.img[..., channel_order]
             new_levels = [saved_levels[i] for i in channel_order]
-            self.canvas.img.setImage(new_img)
+            self.canvas.img.setImage(self.canvas.image_transform(new_img))
             self.canvas.img.setLevels(new_levels)
 
         def clear_preview():

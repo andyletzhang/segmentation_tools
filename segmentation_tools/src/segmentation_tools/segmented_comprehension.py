@@ -1626,7 +1626,7 @@ class SegmentedImage:
             cell.cycle_stage = cycle_stage
         return cc_stage_number
 
-    def measure_FUCCI_cellpose(self, red_channel=0, green_channel=1, red_threshold=1, green_threshold=1):
+    def measure_FUCCI_cellpose(self, red_channel=0, green_channel=1, red_threshold=1, green_threshold=1, pretrained_model='cpsam'):
         from cellpose import models
         from .fucci import get_fucci_percentages, points_to_masks, bg_subtract_nuclei
 
@@ -1648,7 +1648,7 @@ class SegmentedImage:
         red=self.img[:, :, red_channel]
         green=self.img[:, :, green_channel]
         if not hasattr(self, 'nuclear_masks'):
-            cp_model = models.CellposeModel(gpu=True)
+            cp_model = models.CellposeModel(gpu=True, pretrained_model=pretrained_model)
             nuclear_masks = cp_model.eval(self.img[...,[red_channel, green_channel]])[0]
             self.nuclear_masks = nuclear_masks
         else:

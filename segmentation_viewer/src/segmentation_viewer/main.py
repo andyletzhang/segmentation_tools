@@ -1634,6 +1634,77 @@ class MainWidget(QMainWindow):
                 self.canvas.clear_overlay('tracking')
             return
 
+    def _draw_tracks(self):
+        if not self.file_loaded:
+            return
+
+        def get_segments_by_frame(data):
+            # Sort to ensure time continuity
+            data = data.sort_values(['particle', 'frame'])
+
+            # Shift columns to get next coordinates in the same row
+            data[['next_x', 'next_y', 'next_frame', 'next_particle']] = data[['x', 'y', 'frame', 'particle']].shift(-1)
+
+            # Filter: We only want rows where the particle ID didn't change 
+            # and the frames are consecutive
+            valid_mask = (
+                (data['particle'] == data['next_particle']) & 
+                (data['next_frame'] == data['frame'] + 1)
+            )
+            segments = data[valid_mask].copy()
+            
+            return segments
+        
+        for track in self.drawn_tracks:
+            self.canvas.seg_plot.removeItem(track)
+        self.drawn_tracks = []
+        
+        if not hasattr(self.stack, 'tracked_centroids'):
+            return
+            
+        t = self.stack.tracked_centroids.copy()
+
+        if self.left_toolbar.show_tracks_combobox.currentText() == 'None':
+            return
+        elif self.left_toolbar.show_tracks_combobox.currentText() == 'Selected':
+            if self.selected_particle_n is None:
+                return
+            t = t[t.particle == self.selected_particle_n]
+
+        if hasattr(self.stack, 'drift'):
+            for frame in self.stack.drift.index:
+                t.loc[t.frame==frame, ['x', 'y']] += self.stack.drift.loc[frame][['x', 'y']]
+
+        data = get_segments_by_frame(t)
+        # Get standard matplotlib colormap
+        cmap = pg.colormap.get('plasma')
+        
+        max_frame = max(data['frame'].max(), 1)
+
+        unique_frames = data['frame'].unique()
+        if self.left_toolbar.track_head_only_button.isChecked():
+            unique_frames = unique_frames[unique_frames<self.frame_number]
+        elif self.left_toolbar.track_tail_only_button.isChecked():
+            unique_frames = unique_frames[unique_frames>=self.frame_number]
+
+        for frame in unique_frames:
+            frame_data = data[data['frame'] == frame]
+            
+            if frame_data.empty:
+                continue
+            n_segments = len(frame_data)
+            # interleaved coordinates
+            coords = np.empty((n_segments * 3, 2))
+            coords[0::3] = frame_data[['y', 'x']].values
+            coords[1::3] = frame_data[['next_y', 'next_x']].values
+            coords[2::3] = np.nan  # NaN to break the line between segments
+
+            color = cmap.mapToQColor(frame/max_frame)
+
+            curve = pg.PlotCurveItem(coords[:, 0], coords[:, 1], pen=pg.mkPen(color=color, width=3), connect='finite')
+            self.canvas.seg_plot.addItem(curve)
+            self.drawn_tracks.append(curve)
+
     def _highlight_mitoses(self):
         if not hasattr(self.stack, 'mitoses'):
             return
@@ -2220,6 +2291,9 @@ class MainWidget(QMainWindow):
         self.time_series_frame_marker.setPos(self.frame_number)
         self.status_frame_number.setText(f'Frame: {frame_number}/{len(self.stack.frames) - 1}')
 
+        # draw tracks if necessary
+        self._draw_tracks()
+
         mark_time('Total', start_time)
 
     @property
@@ -2318,6 +2392,7 @@ class MainWidget(QMainWindow):
         self._update_tracking_overlay()
         self._recolor_tracks()
         self.canvas.draw_masks()
+        self._draw_tracks()
         self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(True)
         self.left_toolbar.also_save_tracking.setChecked(True)
 
@@ -2712,6 +2787,10 @@ class MainWidget(QMainWindow):
         self.canvas.add_cell_highlight(
             self.selected_cell_n, alpha=self.canvas.selected_cell_alpha, color=self.canvas.selected_cell_color, seg_alpha=np.sqrt(self.canvas.selected_cell_alpha)
         )
+
+        # draw tracks if necessary
+        if self.left_toolbar.show_tracks_combobox.currentText() == 'Selected':
+            self._draw_tracks()
 
         # show cell attributes in right toolbar
         if len(self.selected_cell.outline) > 0:
@@ -4218,6 +4297,7 @@ class MainWidget(QMainWindow):
 
         self._precompute_bounds()
         self.canvas.draw_masks_parallel()
+        self._draw_tracks()
 
     def _set_color_channels(self, n_color_channels: int):
         self.n_color_channels = n_color_channels

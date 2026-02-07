@@ -670,6 +670,22 @@ class LeftToolbar(QScrollArea):
         self.highlight_track_ends_button = QCheckBox('Highlight Track Ends', self)
         self.highlight_mitoses_button = QCheckBox('Highlight Mitoses', self)
 
+        self.show_tracks_label = QLabel('Show Tracks:', self)
+        self.show_tracks_combobox = QComboBox(self)
+        self.show_tracks_combobox.addItems(['None', 'Selected', 'All'])
+        show_tracks_layout = QHBoxLayout()
+        show_tracks_layout.addWidget(self.show_tracks_label)
+        show_tracks_layout.addWidget(self.show_tracks_combobox)
+
+        track_radio_layout = QHBoxLayout()
+        self.track_complete_button = QRadioButton('Complete', self)
+        self.track_head_only_button = QRadioButton('Head Only', self)
+        self.track_tail_only_button = QRadioButton('Tail Only', self)
+        self.track_complete_button.setChecked(True)
+        track_radio_layout.addWidget(self.track_complete_button)
+        track_radio_layout.addWidget(self.track_head_only_button)
+        track_radio_layout.addWidget(self.track_tail_only_button)
+
         split_particle_button = QPushButton('Split Particle', self)
         delete_particle_label = QLabel('Delete Particle:', self)
         delete_particle_layout = QHBoxLayout()
@@ -722,6 +738,8 @@ class LeftToolbar(QScrollArea):
         track_centroids_widget.header_layout.addSpacerItem(QSpacerItem(5, 0))
         track_centroids_widget.core_layout.addWidget(self.track_centroids_button)
         track_centroids_widget.core_layout.addWidget(self.highlight_track_ends_button)
+        track_centroids_widget.core_layout.addLayout(show_tracks_layout)
+        track_centroids_widget.core_layout.addLayout(track_radio_layout)
         track_centroids_widget.core_layout.addLayout(io_menu)
         track_centroids_widget.core_layout.addWidget(clear_tracking_button)
         track_centroids_widget.addLayout(self.tracking_range_layout)
@@ -753,6 +771,10 @@ class LeftToolbar(QScrollArea):
         delete_head.clicked.connect(self.main_window.delete_particle_head)
         delete_tail.clicked.connect(self.main_window.delete_particle_tail)
         delete_all.clicked.connect(self.main_window.delete_particle)
+        self.show_tracks_combobox.currentIndexChanged.connect(self.main_window._draw_tracks)
+        self.track_complete_button.toggled.connect(self.main_window._draw_tracks)
+        self.track_head_only_button.toggled.connect(self.main_window._draw_tracks)
+        self.track_tail_only_button.toggled.connect(self.main_window._draw_tracks)
 
         return tracking_tab
 

@@ -575,7 +575,7 @@ class TimeStack(SegmentedStack):
         super().__init__(**kwargs)
 
     # -------------Particle Tracking-------------
-    def track_centroids(self, memory=0, v_quantile=0.97, filter_stubs=False, search_range=None, **kwargs):
+    def track_centroids(self, memory=0, v_quantile=0.97, filter_stubs=False, search_range=None, subtract_drift=False, **kwargs):
         """
         uses the trackpy package to track cell centroids.
         This works in two stages:
@@ -619,14 +619,19 @@ class TimeStack(SegmentedStack):
             t_final['particle'] = t_final.groupby(
                 'particle'
             ).ngroup()  # renumber particle tracks with filtered tracks ommitted from count
-        drift_finalpass = tp.compute_drift(t_final)
-        self.tracked_centroids = tp.subtract_drift(t_final, drift_finalpass).reset_index(drop=True)
-        stack_drift = drift_firstpass + drift_finalpass
-        self.drift = pd.concat(
-            [pd.DataFrame({'frame': [0], 'y': [0], 'x': [0]}).set_index('frame'), stack_drift]
-        )  # add a row for the first frame (no drift)
-        for frame, drift in zip(self.frames, self.drift.values):
-            frame.drift = drift
+
+        if subtract_drift:
+            drift_finalpass = tp.compute_drift(t_final)
+            stack_drift = drift_firstpass + drift_finalpass
+            self.tracked_centroids = tp.subtract_drift(t_final, drift_finalpass).reset_index(drop=True)
+            self.drift = pd.concat(
+                [pd.DataFrame({'frame': [0], 'y': [0], 'x': [0]}).set_index('frame'), stack_drift]
+            )  # add a row for the first frame (no drift)
+            for frame, drift in zip(self.frames, self.drift.values):
+                frame.drift = drift
+        else:
+            self.tracked_centroids = tp.subtract_drift(t_final, -drift_firstpass).reset_index(drop=True)
+
         self.tracking_range = search_range
         return self.tracked_centroids
 

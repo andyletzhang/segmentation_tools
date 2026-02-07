@@ -403,12 +403,12 @@ def hist_median(
         alpha=alpha,
         **kwargs,
     )
-    median = np.nanmedian(v)
 
     if median:
-        bin_idx = np.digitize(median, bins) - 1  # find which bin the median is in
+        med = np.nanmedian(v)
+        bin_idx = np.digitize(med, bins) - 1  # find which bin the median is in
         ax.plot(
-            [median, median],
+            [med, med],
             [0, n[bin_idx]],
             color=patch[0].get_edgecolor(),
             zorder=zorder,
@@ -434,13 +434,13 @@ def pdf_median(v, ax=None, bins=30, range=(0, 6000), linewidth=1.4, alpha=1, fil
         ax = plt.gca()
     x = np.linspace(*range, bins)
     pdf = probability_density(v, bins=bins, range=range)
-    median = np.nanmedian(v)
     (line,) = ax.plot(x, pdf, linewidth=linewidth, alpha=alpha, **kwargs)
     if fill_under:
         ax.fill_between(x, pdf, alpha=alpha / 3, color=line.get_color())
 
     if median:
-        median_height = pdf[np.argmin(np.abs(x - median))]
-        ax.plot([median, median], [0, median_height], color=line.get_color(), linestyle='--')
+        med = np.nanmedian(v)
+        median_height = pdf[np.argmin(np.abs(x - med))]
+        ax.plot([med, med], [0, median_height], color=line.get_color(), linestyle='--')
 
     return x, pdf

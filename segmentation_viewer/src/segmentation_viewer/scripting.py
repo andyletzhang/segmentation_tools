@@ -18,6 +18,23 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+class MacroManager:
+    """Singleton-like manager to handle recording state."""
+    _script_window = None
+    _is_recording = False
+
+    @classmethod
+    def set_window(cls, window):
+        cls._script_window = window
+
+    @classmethod
+    def toggle_recording(cls, state: bool):
+        cls._is_recording = state
+
+    @classmethod
+    def emit_code(cls, code_line):
+        if cls._is_recording and cls._script_window:
+            cls._script_window.append_macro_line(code_line)
 
 class ExecutionInterrupted(Exception):
     """Custom exception to stop script execution."""
@@ -43,6 +60,7 @@ class ScriptWindow(QMainWindow):
     def __init__(self, parent=None, local_env=None, global_env=None):
         super().__init__()
         self.main_window = parent
+        MacroManager.set_window(self)
         icon_path = importlib.resources.files('segmentation_viewer.assets').joinpath('script_editor.ico')
         self.setWindowIcon(QIcon(str(icon_path)))
         self.setWindowTitle('Script Editor')
@@ -76,11 +94,18 @@ class ScriptWindow(QMainWindow):
         layout.addWidget(self.text_edit)
 
         run_interrupt_layout = QHBoxLayout()
+        self.record_btn = QPushButton("Record", self)
+        self.record_btn.setFixedWidth(60)
+        self.record_btn.setCheckable(True)
+        self.record_btn.clicked.connect(self.toggle_recording)
+        self.record_btn.setStyleSheet("QPushButton:checked { background-color: #ffcccc; color: red; border: 1px solid red; }")
+
         self.execute_button = QPushButton('Run', self)
         self.execute_button.clicked.connect(self.execute_script)
         self.interrupt_button = QPushButton('Interrupt', self)
         self.execute_button.setShortcut('Ctrl+Return')
         self.interrupt_button.clicked.connect(self.interrupt_execution)
+        run_interrupt_layout.addWidget(self.record_btn)
         run_interrupt_layout.addStretch()
         run_interrupt_layout.addWidget(self.execute_button)
         run_interrupt_layout.addWidget(self.interrupt_button)
@@ -91,6 +116,28 @@ class ScriptWindow(QMainWindow):
         self.text_edit.setMouseTracking(True)
         self.text_edit.mouseMoveEvent = self.mouseMoveEvent
 
+    def toggle_recording(self, checked):
+        MacroManager.toggle_recording(checked)
+        self.record_btn.setChecked(checked)
+        if checked:
+            self.record_btn.setText("Stop")
+        else:
+            self.record_btn.setText("Record")
+
+    def append_macro_line(self, line):
+        # Add a newline if the file isn't empty and doesn't end with one
+        current_text = self.text_edit.text()
+        if current_text and not current_text.endswith('\n'):
+            line = '\n' + line
+        else:
+            line = line
+
+        # Append the text and a newline
+        self.text_edit.append(line + '\n')
+        
+        # Scroll to bottom
+        self.text_edit.SendScintilla(QsciScintilla.SCI_SCROLLTOEND)
+    
     def mouseMoveEvent(self, event):
         """Show a tooltip with the docstring of the word under the mouse."""
         pos = event.pos()
@@ -294,6 +341,9 @@ class ScriptWindow(QMainWindow):
                 QMessageBox.critical(self, 'Error', f'Failed to save script:\n{e}')
 
     def execute_script(self):
+        # turn off recording if it's on, since we're executing the script, not recording a macro
+        self.toggle_recording(False)
+        
         self.is_executing = True
         self.execution_interrupted = False  # Reset flag before execution
 

@@ -1,7 +1,9 @@
 import importlib.resources
+import inspect
 import os
 import sys
 import time
+from functools import wraps
 from multiprocessing import cpu_count
 from pathlib import Path
 
@@ -44,11 +46,10 @@ from .canvas import CellMaskPolygons, CellSplitLines, PyQtGraphCanvas
 from .command_line import CommandLineWindow
 from .io import ExportWizard
 from .qt import CustomComboBox, FrameStackDialog, QueuedUndoStack, SubstackDialog, UndoHistoryWindow, labeled_LUT_slider
-from .scripting import ScriptWindow
+from .scripting import ScriptWindow, MacroManager
 from .ui import LeftToolbar, calculate_range_params, clear_layout
 from .utils import create_html_table, load_stylesheet
 from .workers import BoundsProcessor
-
 
 debug_execution_times = False
 N_CORES = cpu_count()
@@ -57,6 +58,40 @@ N_CORES = cpu_count()
 def mark_time(str, start_time):
     if debug_execution_times:
         print(f'{str} time: {time.time() - start_time:.3f}s')
+
+def recordable(func):
+    """Decorator to log function calls to the script window."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # 1. Execute the actual function first
+        result = func(*args, **kwargs)
+
+        # 2. If recording, inspect arguments and format the code
+        if MacroManager._is_recording:
+            try:
+                # Get the function signature
+                sig = inspect.signature(func)
+                # Bind the provided args/kwargs to the signature
+                bound = sig.bind(*args, **kwargs)
+                bound.apply_defaults()
+                
+                # Build the argument string (e.g. "threshold=0.5, method='otsu'")
+                arg_list = []
+                for name, value in bound.arguments.items():
+                    if name == 'self': 
+                        continue  # Don't record 'self'
+                    # repr(value) ensures strings get quotes, numbers don't, etc.
+                    arg_list.append(f"{name}={repr(value)}")
+                
+                # Format the final line
+                code_line = f"{func.__name__}({', '.join(arg_list)})"
+                MacroManager.emit_code(code_line)
+                
+            except Exception as e:
+                print(f"Macro Recording Error: {e}")
+
+        return result
+    return wrapper
 
 
 class MainWidget(QMainWindow):
@@ -80,6 +115,7 @@ class MainWidget(QMainWindow):
         self.bounds_processor = BoundsProcessor(self, n_cores=1)
         self.undo_stack = QueuedUndoStack(self)
         self.progress_widget = None
+        self.drawn_tracks = []
 
         # Create a property-like object for 'cell' that returns the selected cell
         class CellAccessor:
@@ -457,7 +493,7 @@ class MainWidget(QMainWindow):
         self.stat_LUT_type = 'frame'
         self.stat_LUT_layout = QVBoxLayout()
         self.stat_LUT_layout.setContentsMargins(0, 0, 0, 0)
-        self.get_stat_LUT_slider()
+        self._get_stat_LUT_slider()
 
         cell_ID_widget = QWidget(objectName='bordered')
         self.cell_ID_layout = QFormLayout(cell_ID_widget)
@@ -508,7 +544,7 @@ class MainWidget(QMainWindow):
         self.stat_custom_button.toggled.connect(self._update_stat_LUT)
         return right_scroll_area
 
-    def get_stat_LUT_slider(self, mode='int'):
+    def _get_stat_LUT_slider(self, mode='int'):
         clear_layout(self.stat_LUT_layout)
         slider_layout, self.stat_LUT_slider, self.stat_range_labels = labeled_LUT_slider(
             default_range=(0, 255), parent=None, digit_width=8, mode=mode
@@ -755,7 +791,7 @@ class MainWidget(QMainWindow):
                 mode = 'int'
             else:
                 mode = 'float'
-            self.get_stat_LUT_slider(mode=mode)
+            self._get_stat_LUT_slider(mode=mode)
             self.stat_LUT_slider.blockSignals(True)
             self.stat_LUT_slider.rescale(min_val, max_val, step)
             self.stat_LUT_slider.blockSignals(False)
@@ -910,6 +946,7 @@ class MainWidget(QMainWindow):
         self.mend_gaps(frames, gap_size)
         self._refresh_segmentation()
 
+    @recordable
     def mend_gaps(self, frames, gap_size=None):
         """
         Mend gaps in/between the masks of the specified frames.
@@ -947,6 +984,7 @@ class MainWidget(QMainWindow):
         self._refresh_segmentation()
         self.masks_visible = True
 
+    @recordable
     def remove_edge_masks(self, frames, margin=1):
         """
         Remove masks bordering the edge of the image in the specified frames.
@@ -1030,6 +1068,7 @@ class MainWidget(QMainWindow):
         self.masks_visible = True
         self._FUCCI_overlay()
 
+    @recordable
     def segment(self, frames, diameter=None, channels=None):
         """
         Performs segmentation on the specified frames using Cellpose.
@@ -1070,6 +1109,7 @@ class MainWidget(QMainWindow):
                 self._refresh_segmentation(replace_masks=True)
                 self._update_ROIs_label()
 
+    @recordable
     def clear_masks(self):
         """
         Clear the segmentation masks for the current frame.
@@ -1178,6 +1218,7 @@ class MainWidget(QMainWindow):
         self.statusBar().showMessage(msg, duration)
         print(f'[{timestamp}] {msg}')  # include timestamp in console
 
+    @recordable
     def get_tracked_FUCCI(self):
         """
         Get cell cycle classification by tracking particles through time.
@@ -1196,6 +1237,7 @@ class MainWidget(QMainWindow):
 
         self._FUCCI_overlay()
 
+    @recordable
     def cell_red_green_intensities(self, event=None, percentile=90, sigma=4):
         """
         Measure red and green channel intensities for each cell in the current frame.
@@ -1237,6 +1279,7 @@ class MainWidget(QMainWindow):
             return
         self.clear_FUCCI(self.stack.frames)
 
+    @recordable
     def clear_FUCCI(self, frames):
         """
         Clear the FUCCI labels for the specified frames.
@@ -1287,6 +1330,7 @@ class MainWidget(QMainWindow):
             self.stack.frames, red_threshold=red_threshold, green_threshold=green_threshold, percent_threshold=percent_threshold
         )
 
+    @recordable
     def measure_FUCCI(self, frames, red_threshold=None, green_threshold=None, orange_brightness=1, percent_threshold=0.15):
         """
         Measure the FUCCI labels for the specified frames by snapshot thresholding.
@@ -1326,6 +1370,7 @@ class MainWidget(QMainWindow):
         self.FUCCI_dropdown = 3
         self._FUCCI_overlay()
 
+    @recordable
     def measure_FUCCI_cellpose(self, frames, red_threshold=None, green_threshold=None):
         for frame in self._progress_bar(frames, desc='Measuring FUCCI'):
             if self.is_zstack:
@@ -1454,7 +1499,8 @@ class MainWidget(QMainWindow):
         self.frame.outlines[cell.mask] = False
         self.canvas.update_outlines()
 
-    def clear_tracking(self):
+    @recordable
+    def clear_tracking(self, event=None):
         """
         Clear all tracking data for the stack.
         """
@@ -1568,6 +1614,7 @@ class MainWidget(QMainWindow):
         self.get_mitoses(distance_threshold=distance_threshold, score_cutoff=score_cutoff, weights=weights)
         self._update_tracking_overlay()
 
+    @recordable
     def get_mitoses(self, event=None, **kwargs):
         """
         Identify mitoses for the stack using the specified parameters.
@@ -1784,6 +1831,7 @@ class MainWidget(QMainWindow):
             else:  # scroll up = previous frame
                 self.change_current_frame(max(self.frame_number - 1, 0))
 
+    @recordable
     def update_zstack_number(self, zstack_number):
         """
         Move in z to the specified z-stack slice.
@@ -1821,6 +1869,7 @@ class MainWidget(QMainWindow):
         # update the display if necessary
         self._refresh_right_toolbar('volume')
 
+    @recordable
     def measure_volumes(self, frames):
         """
         Measure the volumes of the specified frames.
@@ -1898,6 +1947,7 @@ class MainWidget(QMainWindow):
         self.left_toolbar.coverslip_height.setText(f'{frame.coverslip_height:.2f}')
         self._show_seg_overlay()
 
+    @recordable
     def calibrate_coverslip_height(self, frames, membrane_channel: int = 2, prominence=None):
         """
         Identify the bottom of the sample from the specified frames.
@@ -1967,6 +2017,7 @@ class MainWidget(QMainWindow):
         self.left_toolbar.volume_button.setEnabled(True)
         self._export_heights_action.setEnabled(True)
 
+    @recordable
     def measure_heights(
         self,
         frames,
@@ -2053,6 +2104,7 @@ class MainWidget(QMainWindow):
         self._show_seg_overlay()
         self.left_toolbar.coverslip_height.setText('Heightmap')
 
+    @recordable
     def measure_coverslip_heightmaps(
         self,
         frames,
@@ -2144,6 +2196,7 @@ class MainWidget(QMainWindow):
         self.fit_coverslip_surface(frames, membrane_channel=membrane_channel, xy_downsample=xy_downsample, z_upsample=z_upsample)
         self._show_seg_overlay()
 
+    @recordable
     def fit_coverslip_surface(self, frames, membrane_channel: int = 0, xy_downsample: int = 32, z_upsample: int = 8, z_scale: float = 1, xy_scale: float = 0.325):
         from segmentation_tools.heightmap import fit_zstack_surface
 
@@ -2174,6 +2227,7 @@ class MainWidget(QMainWindow):
 
         self._refresh_right_toolbar('volume')
 
+    @recordable
     def get_spherical_volumes(self, frames, scale=None):
         """
         Compute the volumes of cells if their areas are treated as circular cross-sections of spheres.
@@ -2192,6 +2246,7 @@ class MainWidget(QMainWindow):
             frame.scale = scale
             frame.get_spherical_volumes()
 
+    @recordable
     def change_current_frame(self, frame_number, reset=False):
         """
         Change the current frame to the specified frame number.
@@ -2396,6 +2451,7 @@ class MainWidget(QMainWindow):
         self.left_toolbar.propagate_FUCCI_checkbox.setEnabled(True)
         self.left_toolbar.also_save_tracking.setChecked(True)
 
+    @recordable
     def track_centroids(self, **kwargs):
         """
         Track centroids for the current stack using trackpy.
@@ -3319,6 +3375,7 @@ class MainWidget(QMainWindow):
         self.generate_outlines(frames)
         self._print('Generated outlines.')
 
+    @recordable
     def generate_outlines(self, frames: list[SegmentedImage]):
         """
         Generate cell outlines for a list of frames.
@@ -3335,6 +3392,7 @@ class MainWidget(QMainWindow):
                 cell.outline = outline
                 cell.get_centroid()
 
+    @recordable
     def save_tracking(self, event=None, file_path=None):
         """
         Save the tracking data to a CSV file.
@@ -3426,6 +3484,7 @@ class MainWidget(QMainWindow):
         if self.left_toolbar.also_save_tracking.isChecked():
             self.save_tracking(file_path=folder_path + '/tracking.csv')
 
+    @recordable
     def save_frame(self, frame, file_path=None):
         """
         Save a frame to a .seg.npy file.
@@ -3523,6 +3582,7 @@ class MainWidget(QMainWindow):
 
         return df
 
+    @recordable
     def export_csv(self, file_path, columns='all', csv_df=None):
         """
         Export all cell-level attributes to a CSV file.
@@ -3571,6 +3631,7 @@ class MainWidget(QMainWindow):
         self._print(f'Saved heights to {save_path}')
         self.save_dir = Path(save_path).parent
 
+    @recordable
     def export_heights(self, frames, file_path):
         heights = []
         coverslip_heights = []
@@ -3898,6 +3959,7 @@ class MainWidget(QMainWindow):
 
         self.reorder_dialog.exec()
 
+    @recordable
     def reorder_channels(self, channel_order):
         if len(channel_order) != self.n_color_channels:
             raise ValueError(f'Channel order must have exactly {self.n_color_channels} elements.')
@@ -3946,6 +4008,7 @@ class MainWidget(QMainWindow):
                 del frame.stored_mask_overlay
         self.canvas.draw_masks_parallel()
 
+    @recordable
     def rotate_clockwise(self):
         """
         Rotate the stack 90 degrees clockwise.
@@ -3955,6 +4018,7 @@ class MainWidget(QMainWindow):
         self._update_display()
         self.canvas.img_plot.autoRange()
 
+    @recordable
     def rotate_counterclockwise(self):
         """
         Rotate the stack 90 degrees counterclockwise.
@@ -4045,6 +4109,7 @@ class MainWidget(QMainWindow):
         self.canvas.save_seg_plot(file_path)
         self._print(f'Saved segmentation plot to {file_path}')
 
+    @recordable
     def save_screenshot(self, file_path):
         """
         Take a screenshot of the main window and save it to a file.
@@ -4118,6 +4183,7 @@ class MainWidget(QMainWindow):
         self.save_dir = Path(file_path).parent
         self._print(f'Saved video as {selected_filter} to {file_path}')
 
+    @recordable
     def export_window_video(self, file_path: str, screenshot: str = 'window', fps: int = 10, format_settings: dict = None):
         """
         Save the stack with its current visual settings as a video.
@@ -4163,6 +4229,7 @@ class MainWidget(QMainWindow):
         os.rmdir(temp_dir)
         self.canvas.show_crosshairs()
 
+    @recordable
     def export_plot_video(self, format_settings, out_path=None, fps=10, plot='img'):
         pass
 
@@ -4229,6 +4296,7 @@ class MainWidget(QMainWindow):
         for item in items:
             item.setEnabled(value)
 
+    @recordable
     def open_stack(self, files: str | list, image_shape: dict | None = None):
         """
         Open a stack of images or segmentation files.
@@ -4384,6 +4452,7 @@ class MainWidget(QMainWindow):
             self._print(f'ERROR: File {files[0]} is not a seg.npy or tiff file, cannot be loaded.')
             return False
 
+    @recordable
     def delete_frame(self, event=None, frame_number=None):
         """
         Delete a frame from the stack.
@@ -4407,6 +4476,7 @@ class MainWidget(QMainWindow):
         self.frame_slider.setRange(0, len(self.stack.frames) - 1)
         self.change_current_frame(min(frame_number, len(self.stack.frames) - 1))
 
+    @recordable
     def make_substack(self, event=None, substack_frames=None):
         """
         Create a substack from the current stack.
@@ -4435,6 +4505,7 @@ class MainWidget(QMainWindow):
 
     # def import_masks(self):
 
+    @recordable
     def import_images(self, event=None, files=None, image_shape=None):
         """
         Import images to the current stack.

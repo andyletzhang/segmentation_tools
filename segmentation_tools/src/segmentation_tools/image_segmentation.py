@@ -2,12 +2,8 @@ from pathlib import Path
 
 import numpy as np
 from cellpose import models, utils
-from nd2 import ND2File
 from skimage import io
 from tqdm.notebook import tqdm
-
-from segmentation_tools.heightmap import get_coverslip_z, get_heights
-from segmentation_tools.io import read_nd2
 
 from . import preprocessing
 

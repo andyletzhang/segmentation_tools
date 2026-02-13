@@ -51,6 +51,16 @@ from .ui import LeftToolbar, calculate_range_params, clear_layout
 from .utils import create_html_table, load_stylesheet
 from .workers import BoundsProcessor
 
+try:
+    import cupy as cp
+    cp.array([0]) # claim context for cupy
+    import torch
+    GPU_AVAILABLE = True
+except ImportError:
+    cp = None
+    torch = None
+    GPU_AVAILABLE = False
+
 debug_execution_times = False
 N_CORES = cpu_count()
 
@@ -1108,6 +1118,10 @@ class MainWidget(QMainWindow):
             if frame == self.frame:
                 self._refresh_segmentation(replace_masks=True)
                 self._update_ROIs_label()
+
+        if GPU_AVAILABLE:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     @recordable
     def clear_masks(self):

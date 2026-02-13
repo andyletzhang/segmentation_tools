@@ -1,3 +1,4 @@
+import gc
 import numpy as np
 from numba import jit
 from scipy import ndimage
@@ -9,6 +10,7 @@ try:
     import cupy as cp
     from cupyx.scipy import ndimage as cp_ndimage
     from numba import cuda
+    import torch
 
     HAS_GPU = True
 except ImportError:
@@ -16,7 +18,34 @@ except ImportError:
     print('GPU acceleration not available. Falling back to CPU.')
 
 if HAS_GPU:
-
+    def deep_clean_gpu():
+        # 1. Release Python object references (Crucial!)
+        # If a Python variable still points to a GPU array, the VRAM cannot be freed.
+        gc.collect()
+        
+        # 2. Clear PyTorch Cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+        
+        # 3. Clear CuPy Memory Pools
+        if cp.cuda.is_available():
+            pool = cp.get_default_memory_pool()
+            pool.free_all_blocks()
+            
+            pinned_pool = cp.get_default_pinned_memory_pool()
+            pinned_pool.free_all_blocks()
+            
+            # 4. Clear CuPy Kernel/FFT Caches (The hidden creeper)
+            # Repeatedly compiling kernels for slightly different array sizes can bloat memory.
+            cp.fft.config.get_plan_cache().clear()
+            
+            # Clear the memoization cache for compiled kernels
+            # (Note: This is an internal CuPy registry that can grow over time)
+            try:
+                cp._default_memory_pool.free_all_blocks()
+            except:
+                pass
     @cuda.jit
     def find_peaks_gpu(zstack_derivative, heights, prominence):
         x, y = cuda.grid(2)
@@ -36,58 +65,233 @@ if HAS_GPU:
                         last_peak = i
             heights[x, y] = last_peak
 
-    def process_zstack_gpu(zstack, prominence=0.004, sigma=6, z_sigma=0):
-        # Move data to GPU
-        zstack_gpu = cp.asarray(zstack, dtype=cp.float32)
-        zstack_gpu = normalize_gpu(zstack_gpu)
-        zstack_gpu = cp_ndimage.gaussian_filter(zstack_gpu, sigma=(z_sigma, sigma, sigma))
-
-        # Calculate derivative
-        derivative_gpu = cp.gradient(zstack_gpu, axis=0)
-
-        # Prepare output array
-        heights_gpu = cp.zeros((derivative_gpu.shape[1], derivative_gpu.shape[2]), dtype=cp.int64)
-
-        # Set up grid for CUDA kernel
-        threadsperblock = (16, 16)
-        blockspergrid_x = (derivative_gpu.shape[1] + threadsperblock[0] - 1) // threadsperblock[0]
-        blockspergrid_y = (derivative_gpu.shape[2] + threadsperblock[1] - 1) // threadsperblock[1]
-        blockspergrid = (blockspergrid_x, blockspergrid_y)
-
-        # Run kernel
-        find_peaks_gpu[blockspergrid, threadsperblock](-derivative_gpu, heights_gpu, prominence)
-
-        # Move result back to CPU and return
-        return cp.asnumpy(heights_gpu)
-
-    def normalize_gpu(data):
-        bounds = cp.percentile(data, [1, 99])
-        # normalize in place
-        data -= bounds[0]
-        data /= bounds[1] - bounds[0]
-        data[data < 0] = 0
-        data[data > 1] = 1
-        return data
+    def get_optimal_tile_size(nz, byte_size=4, safety_factor=0.5):
+        """Calculates max XY square tile size that fits in VRAM given the Z-depth."""
+        free_mem, _ = cp.cuda.runtime.memGetInfo()
         
+        # Memory footprint per pixel column:
+        # 1. Input Tile (float32)
+        # 2. Normalized Tile (in-place or copy, let's assume copy for safety)
+        # 3. Gaussian Filter Output (float32)
+        # 4. Gradient Output (float32)
+        # 5. Heights Output (int64 -> 8 bytes, only 1 per XY pixel, negligible Z factor)
+        
+        # Bytes per voxel * Z depth
+        bytes_per_voxel_column = (4 * 4) * nz # 4 arrays of float32
+        
+        usable_mem = free_mem * safety_factor
+        pixels_per_tile = usable_mem // bytes_per_voxel_column
+        
+        tile_side = int(np.sqrt(pixels_per_tile))
+        # Clamp to reasonable powers of 2 for GPU efficiency
+        return min(max(tile_side, 64), 2048)
+
+    def process_zstack_gpu(zstack, prominence=0.004, sigma=6, z_sigma=0):
+        """
+        Processes the Z-stack in overlapping XY tiles to prevent OOM.
+        """
+        nz, ny, nx = zstack.shape
+        
+        # 1. Global Normalization Statistics (CPU)
+        # We must compute this globally first, otherwise each tile will be 
+        # normalized differently, creating "seams" in the final image.
+        # Use a strided sample for speed if zstack is huge
+        sample = zstack[::max(1, nz//50), ::max(1, ny//50), ::max(1, nx//50)]
+        bounds = np.percentile(sample, [1, 99])
+        lower_b, upper_b = bounds[0], bounds[1]
+        norm_range = upper_b - lower_b
+        if norm_range == 0:
+            norm_range = 1.0
+
+        # 2. Determine Tile Size
+        tile_size = get_optimal_tile_size(nz)
+        
+        # Output array (CPU)
+        heights_final = np.zeros((ny, nx), dtype=np.int64)
+
+        # Padding amount: 4 * sigma is usually sufficient for Gaussian to decay to zero
+        pad = int(4 * sigma)
+        
+        # 3. Iterate over XY tiles
+        for y_start in range(0, ny, tile_size):
+            for x_start in range(0, nx, tile_size):
+                y_end = min(y_start + tile_size, ny)
+                x_end = min(x_start + tile_size, nx)
+                
+                # Define the "Valid" region (where we want results)
+                h_valid = y_end - y_start
+                w_valid = x_end - x_start
+                
+                # Define the "Padded" region (what we load to GPU)
+                y_pad_start = max(0, y_start - pad)
+                y_pad_end = min(ny, y_end + pad)
+                x_pad_start = max(0, x_start - pad)
+                x_pad_end = min(nx, x_end + pad)
+                
+                # Load Tile to GPU
+                # We copy the slice to avoid sending the whole array
+                tile_cpu = zstack[:, y_pad_start:y_pad_end, x_pad_start:x_pad_end]
+                zstack_gpu = cp.array(tile_cpu, dtype=cp.float32)
+                
+                # --- Processing Pipeline (Same as original) ---
+                
+                # A. Normalize using GLOBAL bounds (In-place)
+                zstack_gpu -= lower_b
+                zstack_gpu /= norm_range
+                cp.clip(zstack_gpu, 0, 1, out=zstack_gpu)
+                
+                # B. Gaussian Filter
+                # Note: We filter the *entire* padded tile
+                zstack_gpu = cp_ndimage.gaussian_filter(zstack_gpu, sigma=(z_sigma, sigma, sigma))
+                
+                # C. Gradient
+                derivative_gpu = cp.gradient(zstack_gpu, axis=0)
+                
+                # D. Find Peaks
+                # Prepare output for this tile
+                tile_h, tile_w = derivative_gpu.shape[1], derivative_gpu.shape[2]
+                heights_gpu = cp.zeros((tile_h, tile_w), dtype=cp.int64)
+                
+                threadsperblock = (16, 16)
+                blockspergrid_x = (tile_h + threadsperblock[0] - 1) // threadsperblock[0]
+                blockspergrid_y = (tile_w + threadsperblock[1] - 1) // threadsperblock[1]
+                blockspergrid = (blockspergrid_x, blockspergrid_y)
+                
+                # Pass NEGATIVE derivative as per original logic
+                find_peaks_gpu[blockspergrid, threadsperblock](-derivative_gpu, heights_gpu, prominence)
+                
+                # --- Crop and Store ---
+                
+                # We need to extract the valid center region from the padded result
+                # Calculate offsets relative to the padded tile
+                rel_y_start = y_start - y_pad_start
+                rel_x_start = x_start - x_pad_start
+                
+                # Crop the GPU array
+                valid_heights_gpu = heights_gpu[
+                    rel_y_start : rel_y_start + h_valid, 
+                    rel_x_start : rel_x_start + w_valid
+                ]
+                
+                # Copy to CPU and place in final image
+                heights_final[y_start:y_end, x_start:x_end] = valid_heights_gpu.get()
+
+        deep_clean_gpu()  # Ensure all GPU memory is freed after processing
+        return heights_final
+
+    # def process_zstack_gpu(zstack, prominence=0.004, sigma=6, z_sigma=0):
+    #     # Move data to GPU
+    #     zstack_gpu = cp.asarray(zstack, dtype=cp.float32)
+    #     zstack_gpu = normalize_gpu(zstack_gpu)
+    #     zstack_gpu = cp_ndimage.gaussian_filter(zstack_gpu, sigma=(z_sigma, sigma, sigma))
+
+    #     # Calculate derivative
+    #     derivative_gpu = cp.gradient(zstack_gpu, axis=0)
+
+    #     # Prepare output array
+    #     heights_gpu = cp.zeros((derivative_gpu.shape[1], derivative_gpu.shape[2]), dtype=cp.int64)
+
+    #     # Set up grid for CUDA kernel
+    #     threadsperblock = (16, 16)
+    #     blockspergrid_x = (derivative_gpu.shape[1] + threadsperblock[0] - 1) // threadsperblock[0]
+    #     blockspergrid_y = (derivative_gpu.shape[2] + threadsperblock[1] - 1) // threadsperblock[1]
+    #     blockspergrid = (blockspergrid_x, blockspergrid_y)
+
+    #     # Run kernel
+    #     find_peaks_gpu[blockspergrid, threadsperblock](-derivative_gpu, heights_gpu, prominence)
+
+    #     # Move result back to CPU and return
+    #     return cp.asnumpy(heights_gpu)
+
+    # def normalize_gpu(data):
+    #     bounds = cp.percentile(data, [1, 99])
+    #     # normalize in place
+    #     data -= bounds[0]
+    #     data /= bounds[1] - bounds[0]
+    #     data[data < 0] = 0
+    #     data[data > 1] = 1
+    #     return data
+        
+    def get_optimal_z_chunk(ny, nx, xy_downsample, dtype_size=4, safety_factor=0.5):
+        """
+        Calculates how many Z-planes can fit in VRAM at once.
+        """
+        # Get current GPU memory status (free, total)
+        free_mem, total_mem = cp.cuda.runtime.memGetInfo()
+        
+        # Target XY dimensions after downsampling
+        out_ny = int(np.ceil(ny / xy_downsample))
+        out_nx = int(np.ceil(nx / xy_downsample))
+        pixels_per_plane = out_ny * out_nx
+
+        # Memory cost per output Z-plane:
+        # 1. The Output Array Chunk (on GPU): 1 * pixels_per_plane * dtype_size
+        # 2. The Coordinate Grid (3 arrays): 3 * pixels_per_plane * 4 bytes (coords are always float32)
+        # 3. The Input Slice (Approximate): (1 / z_upsample) * pixels_per_plane * dtype_size * (xy_downsample^2)
+        #    (Note: Input slice cost is tricky because of the 'halo', so we estimate conservatively)
+        
+        cost_per_plane = (
+            (1 * pixels_per_plane * dtype_size) +       # Output Image Storage
+            (3 * pixels_per_plane * 4) +                # Coordinate Grids (Biggest consumer)
+            (pixels_per_plane * dtype_size * 2)         # Overhead (Input slice copy + CUDA context)
+        )
+
+        # Calculate max planes
+        usable_mem = free_mem * safety_factor
+        max_z = int(usable_mem // cost_per_plane)
+        
+        # Clamp to reasonable limits (minimum 1, max 2048 to prevent timeouts)
+        return max(1, min(max_z, 2048))
+
     def resample_zstack_gpu(zstack: np.ndarray, xy_downsample: int, z_upsample: int):
-        zstack_cp = cp.array(zstack)
+        nz, ny, nx = zstack.shape
+        
+        # --- Auto-Detect Chunk Size ---
+        z_chunk_size = get_optimal_z_chunk(ny, nx, xy_downsample, zstack.itemsize)
+        # ------------------------------
 
-        z_range = cp.arange(0, zstack_cp.shape[0], step=1/z_upsample)
-        y_range = cp.arange(0, zstack_cp.shape[1], step=xy_downsample)
-        x_range = cp.arange(0, zstack_cp.shape[2], step=xy_downsample)
+        # 1. Setup Global Coordinates (CPU)
+        z_targets_global = np.arange(0, nz, step=1/z_upsample)
+        y_range = cp.arange(0, ny, step=xy_downsample, dtype=cp.float32)
+        x_range = cp.arange(0, nx, step=xy_downsample, dtype=cp.float32)
+        
+        out_shape = (len(z_targets_global), len(y_range), len(x_range))
+        zstack_interp = np.empty(out_shape, dtype=zstack.dtype)
+        
+        # 2. Process Chunks
+        SPLINE_PADDING = 12  # Slightly increased for safety
+        
+        for z_start in range(0, out_shape[0], z_chunk_size):
+            z_end = min(z_start + z_chunk_size, out_shape[0])
+            z_coords_chunk = z_targets_global[z_start:z_end]
+            
+            # Calculate Input ROI with Padding
+            z_min_input = int(np.floor(z_coords_chunk.min())) - SPLINE_PADDING
+            z_max_input = int(np.ceil(z_coords_chunk.max())) + SPLINE_PADDING
+            
+            # Clamp and Load
+            z_min_clamped = max(0, z_min_input)
+            z_max_clamped = min(nz, z_max_input)
+            input_chunk_gpu = cp.array(zstack[z_min_clamped:z_max_clamped])
+            
+            # Adjust Z coordinates relative to the loaded chunk
+            z_coords_gpu = cp.array(z_coords_chunk - z_min_clamped, dtype=cp.float32)
+            
+            # Meshgrid & Interpolate
+            z_grid, y_grid, x_grid = cp.meshgrid(z_coords_gpu, y_range, x_range, indexing='ij')
+            coords_gpu = cp.stack([z_grid, y_grid, x_grid], axis=0)
+            
+            out_chunk = cp_ndimage.map_coordinates(
+                input_chunk_gpu, 
+                coords_gpu, 
+                order=3,
+                prefilter=True,
+                mode='nearest' 
+            ).get()
+            
+            zstack_interp[z_start:z_end] = out_chunk
 
-        z_grid, y_grid, x_grid = cp.meshgrid(z_range, y_range, x_range, indexing='ij')
-
-        coords_gpu = cp.stack([z_grid, y_grid, x_grid], axis=0)
-
-        zstack_interp = cp_ndimage.map_coordinates(
-            zstack_cp, 
-            coords_gpu, 
-            order=3,
-            prefilter=True,
-            mode='nearest'
-        ).get()
-
+        deep_clean_gpu()
         return zstack_interp
 
 # Fallback for CPU execution

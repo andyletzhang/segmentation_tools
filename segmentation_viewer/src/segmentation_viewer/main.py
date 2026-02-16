@@ -2961,8 +2961,11 @@ class MainWidget(QMainWindow):
         frames = np.arange(len(self.stack.frames))
         for frame in self.stack.frames:
             frame_attrs = np.array(frame.get_cell_attrs(measurement, fill_value=np.nan))
-            frame_quantiles = np.nanquantile(frame_attrs, (0.25, 0.5, 0.75))
-            quantiles.append(frame_quantiles)
+            if len(frame_attrs) == 0 or np.all(np.isnan(frame_attrs)):
+                quantiles.append((np.nan, np.nan, np.nan))
+            else:
+                frame_quantiles = np.nanquantile(frame_attrs, (0.25, 0.5, 0.75))
+                quantiles.append(frame_quantiles)
         quantiles = np.array(quantiles)
 
         if np.all(np.isnan(quantiles)):

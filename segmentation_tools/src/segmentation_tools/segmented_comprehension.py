@@ -1675,7 +1675,8 @@ class SegmentedImage:
 
         # Assign nuclei to masks
         nuclei_centroids = np.array(ndimage.center_of_mass(np.ones(nuclear_masks.shape), labels=nuclear_masks, index=np.arange(1, nuclear_masks.max()+1)))
-
+        if len(nuclei_centroids) == 0:
+            nuclei_centroids = np.empty((0, 2))
         matches = points_to_masks(self.masks, nuclei_centroids)[0]
 
         cc_stages = np.zeros(nuclear_masks.max(), dtype=int)

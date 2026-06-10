@@ -1140,7 +1140,7 @@ class MainWidget(QMainWindow):
         Clear the segmentation masks for the current frame.
         """
 
-        for frame in frames:
+        for frame in self._progress_bar(frames, desc='Clearing masks'):
             self.replace_segmentation(frame, np.zeros_like(frame.masks))
             if hasattr(self.stack, 'tracked_centroids'):
                 t = self.stack.tracked_centroids

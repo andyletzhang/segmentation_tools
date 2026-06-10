@@ -324,7 +324,7 @@ class MainWidget(QMainWindow):
             'Undo': (self.undo_stack.undo, 'Ctrl+Z'),
             'Redo': (self.undo_stack.redo, ('Ctrl+Shift+Z', 'Ctrl+Y')),
             'Undo History': (self._show_undo_history, None),
-            'Clear Masks': (self.clear_masks, None),
+            'Clear Masks': (self._clear_masks, None),
             'Generate Outlines': (self._generate_outlines, None),
             'Mend Gaps': (self._mend_gaps, None),
             'Remove Edge Masks': (self._remove_edge_masks, None),
@@ -1123,19 +1123,22 @@ class MainWidget(QMainWindow):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-    @recordable
-    def clear_masks(self):
-        """
-        Clear the segmentation masks for the current frame.
-        """
-
+    def _clear_masks(self, event=None):
         if not self.file_loaded:
             return
-
+        
         if self.left_toolbar.utils_frame_stack.value == 'stack':
             frames = self.stack.frames
         else:
             frames = [self.frame]
+        
+        self.clear_masks(frames)
+        
+    @recordable
+    def clear_masks(self, frames):
+        """
+        Clear the segmentation masks for the current frame.
+        """
 
         for frame in frames:
             self.replace_segmentation(frame, np.zeros_like(frame.masks))
@@ -4300,7 +4303,7 @@ class MainWidget(QMainWindow):
             self._export_window_video_action,
             self._export_img_plot_video_action,
             self._export_seg_plot_video_action,
-            self.clear_masks_action,
+            self._clear_masks_action,
             self._generate_outlines_action,
             self._mend_gaps_action,
             self._remove_edge_masks_action,

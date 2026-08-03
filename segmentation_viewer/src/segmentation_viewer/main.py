@@ -1133,6 +1133,8 @@ class MainWidget(QMainWindow):
             frames = [self.frame]
         
         self.clear_masks(frames)
+
+        self.select_cell(None)
         
     @recordable
     def clear_masks(self, frames):

@@ -184,8 +184,8 @@ class PyQtGraphCanvas(QWidget):
         # get cell colors
         if frame is None:
             frame = self.main_window.frame
-        if frame.n_cells == 0:
-            img_masks, seg_masks = np.zeros((*frame.masks.shape, 4)), np.zeros((*frame.masks.shape, 4))
+        if frame.n_cells == 0: # initialize empty overlays
+            img_masks, seg_masks = np.zeros((frame.masks.shape[1], frame.masks.shape[0], 4)), np.zeros((frame.masks.shape[1], frame.masks.shape[0], 4))
         else:
             try:
                 cell_colors = frame.get_cell_attrs('color_ID')  # retrieve the stored colors for each cell
@@ -338,6 +338,7 @@ class PyQtGraphCanvas(QWidget):
         # get the binarized mask for the specified cell
         cell_mask = self.image_transform(frame.masks == cell_index + 1)
 
+        # check if we're drawing on the currently displayed frame, or updating a stored frame
         if frame == self.main_window.frame:
             drawing_layers = True
             layer_overlay = getattr(self, f'{layer}_overlay')

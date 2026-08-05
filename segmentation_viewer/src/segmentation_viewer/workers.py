@@ -103,7 +103,7 @@ class MasksLoaderTask(FrameProcessorTask):
         try:
             canvas = self.processor.canvas
             if self.frame.n_cells == 0:
-                img_masks, seg_masks = np.zeros((*self.frame.masks.shape, 4)), np.zeros((*self.frame.masks.shape, 4))
+                img_masks, seg_masks = np.zeros((self.frame.masks.shape[1], self.frame.masks.shape[0], 4)), np.zeros((self.frame.masks.shape[1], self.frame.masks.shape[0], 4))
             else:
                 try:
                     cell_colors = self.frame.get_cell_attrs('color_ID')

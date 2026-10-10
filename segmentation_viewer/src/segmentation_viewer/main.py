@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 from natsort import natsorted
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QDir
 from PyQt6.QtGui import QFontMetrics, QIcon, QIntValidator, QUndoCommand
 from PyQt6.QtWidgets import (
     QApplication,
@@ -367,6 +367,7 @@ class MainWidget(QMainWindow):
             'Apply Mitosis Weights': (self._apply_new_weights, None),
             'Track Centroids': (self._track_centroids, None),
             'Load Tracking': (self._load_tracking, None),
+            'Compute NDImage': (self._compute_masks_ndimage, None),
         }
 
         # Create Menu Bar
@@ -5740,7 +5741,12 @@ def main():
         app = QApplication.instance()
 
     # apply dark theme
-    darktheme_stylesheet = load_stylesheet(importlib.resources.files('segmentation_viewer.assets').joinpath('darktheme.qss'))
+    assets_dir=importlib.resources.files('segmentation_viewer.assets')
+    stylesheet_path = assets_dir.joinpath('darktheme.qss')
+    darktheme_stylesheet = load_stylesheet(stylesheet_path)
+    QDir.addSearchPath('icons', stylesheet_path.parent.as_posix())
+
+    app.setStyle('Fusion')
     app.setStyleSheet(darktheme_stylesheet)
 
     app.quitOnLastWindowClosed = True

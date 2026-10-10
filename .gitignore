@@ -2,6 +2,8 @@
 ######################
 segmentation_tools/src/segmentation_tools.egg-info/
 segmentation_viewer/src/segmentation_viewer.egg-info/
+segmentation_tools/build/
+segmentation_viewer/build/
 
 # Compiled source #
 ###################

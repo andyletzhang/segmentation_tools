@@ -2010,6 +2010,7 @@ class MainWidget(QMainWindow):
         if ndimage_function=='std':
             ndimage_function = 'standard_deviation'
 
+        desc = f'Applying {ndimage_function} to {input_channel}'
         ndimage_function = getattr(ndimage, ndimage_function)
 
         
@@ -2019,14 +2020,14 @@ class MainWidget(QMainWindow):
         else:
             color_channel = None
 
-        for frame in self._progress_bar(frames, desc=f'Applying {ndimage_function} to {input_channel}'):
+        for frame in self._progress_bar(frames, desc=desc):
             if color_channel is not None:
                 input_data = getattr(frame, input_channel)[..., color_channel]
             else:
                 input_data = getattr(frame, input_channel)
             masks = getattr(frame, masks_channel)
 
-            idx = np.arange(masks.max())+1
+            idx = np.arange(frame.n_cells)+1
             output_data = ndimage_function(input_data, labels=masks, index=idx)
             output_data = np.asanyarray(output_data)
 

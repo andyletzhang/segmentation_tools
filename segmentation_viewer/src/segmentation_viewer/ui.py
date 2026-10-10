@@ -666,13 +666,13 @@ class LeftToolbar(QScrollArea):
         ndimage_output_layout.addWidget(ndimage_output_label)
         ndimage_output_layout.addWidget(self.ndimage_output_channel)
 
-        # Function and operation on one line, two columns
+        # Function: label + combo
         ndimage_function_layout = QHBoxLayout()
         ndimage_function_layout.setSpacing(0)
         ndimage_function_label = QLabel('ndimage.', self)
         self.ndimage_function = QComboBox(self)
-        self.ndimage_function.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        # self.ndimage_function.setMinimumContentsLength(10)  # width in characters; the popup list still shows full names
+        self.ndimage_function.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.ndimage_function.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.ndimage_function.addItems([
             'mean',
             'median',
@@ -683,19 +683,20 @@ class LeftToolbar(QScrollArea):
             'std',
         ])
         ndimage_function_layout.addWidget(ndimage_function_label)
-        ndimage_function_layout.addWidget(self.ndimage_function, stretch=1)
+        ndimage_function_layout.addWidget(self.ndimage_function)
 
+        # Operation: label + line edit
         ndimage_op_layout = QHBoxLayout()
         ndimage_op_layout.setSpacing(0)
         ndimage_op_label = QLabel('f(x)=', self)
         self.ndimage_op_string = QLineEdit(self, placeholderText='x')
         self.ndimage_op_string.setMinimumWidth(40)
-        self.ndimage_op_string.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.ndimage_op_string.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         ndimage_op_layout.addWidget(ndimage_op_label)
         ndimage_op_layout.addWidget(self.ndimage_op_string, stretch=1)
 
         ndimage_function_op_layout = QHBoxLayout()
-        ndimage_function_op_layout.addLayout(ndimage_function_layout, stretch=1)
+        ndimage_function_op_layout.addLayout(ndimage_function_layout, stretch=0)
         ndimage_function_op_layout.addLayout(ndimage_op_layout, stretch=1)
 
         # Masks channel

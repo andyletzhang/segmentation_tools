@@ -366,7 +366,8 @@ class MainWidget(QMainWindow):
             'Open Command Line': (self._open_command_line, None),
             'Open Script Editor': (self._open_script_editor, None),
         }
-        help_actions = {'Pull Updates': (self._update_packages, None)}
+        help_actions = {'Pull Updates': (self._update_packages, None),
+                        'Report Bug...': (self._report_bug, None),}
         other_actions = {
             # Keyboard Shortcuts
             'Add Mitosis': (self._add_mitosis, 'Ctrl+M'),
@@ -4747,6 +4748,22 @@ class MainWidget(QMainWindow):
             QMessageBox.critical(self, 'Update Failed', f'Package update error: {str(e)}')
             return
         QMessageBox.information(self, 'Update Complete', 'Packages updated successfully. Please restart the application.')
+
+    def _report_bug(self):
+        from .bug_report import BugReportDialog
+
+        context = {'GPU available': GPU_AVAILABLE}
+        if self.file_loaded:
+            context.update({
+                'Frames': len(self.stack.frames),
+                'Image shape': self.frame.img.shape,
+                'Z-stack': self.is_zstack,
+                'Tracking loaded': hasattr(self.stack, 'tracked_centroids'),
+            })
+
+        dialog = BugReportDialog(self, context=context)
+        round_all_combo_popups(dialog)  # keep styling consistent with the rest of the app
+        dialog.exec()
 
     def closeEvent(self, event):
         # Close the command line window when the main window is closed

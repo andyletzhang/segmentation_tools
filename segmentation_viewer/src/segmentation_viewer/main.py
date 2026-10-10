@@ -34,6 +34,8 @@ from PyQt6.QtWidgets import (
     QTabWidget,
     QVBoxLayout,
     QWidget,
+    QStyledItemDelegate,
+    QComboBox,
 )
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
 from segmentation_tools.preprocessing import get_quantile
@@ -51,6 +53,22 @@ from .ui import LeftToolbar, calculate_range_params, clear_layout
 from .utils import create_html_table, load_stylesheet
 from .workers import BoundsProcessor
 
+
+def rounded_combo_popup(combo: QComboBox) -> None:
+    combo.setItemDelegate(QStyledItemDelegate(combo))
+
+    popup = combo.view().window()
+    popup.setWindowFlags(
+        popup.windowFlags()
+        | Qt.WindowType.FramelessWindowHint
+        | Qt.WindowType.NoDropShadowWindowHint
+    )
+    popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+
+def round_all_combo_popups(root: QWidget) -> None:
+    for combo in root.findChildren(QComboBox):
+        rounded_combo_popup(combo)
 try:
     import cupy as cp
     cp.array([0]) # claim context for cupy
@@ -233,6 +251,8 @@ class MainWidget(QMainWindow):
         # click event
         self.canvas.img_plot.scene().sigMouseClicked.connect(self._on_click)
         self.canvas.seg_plot.scene().sigMouseClicked.connect(self._on_click)
+
+        round_all_combo_popups(self)
 
     @property
     def pretrained_model(self) -> str:

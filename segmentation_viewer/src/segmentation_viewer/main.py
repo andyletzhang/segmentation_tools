@@ -1937,13 +1937,108 @@ class MainWidget(QMainWindow):
                 frame.scale = 0.325  # 20x objective with 6.5 µm/pixel camera, or 40x with 2x binning
             frame.get_volumes()
 
+    def _compute_masks_ndimage(self):
+        if not self.file_loaded:
+            return
+
+        frames = self.left_toolbar.ndimage_frame_stack.value
+
+        input_channel = self.left_toolbar.ndimage_input_channel.text()
+        output_channel = self.left_toolbar.ndimage_output_channel.text()
+        ndimage_function = self.left_toolbar.ndimage_function.currentText()
+        masks_channel = self.left_toolbar.ndimage_masks_channel.text()
+        op_string = self.left_toolbar.ndimage_op_string.text()
+
+        if op_string=='':
+            op_string = None
+        if ndimage_function=='':
+            ndimage_function = None
+        if masks_channel=='':
+            masks_channel = 'masks'
+
+        self.compute_masks_ndimage(
+            frames,
+            input_channel=input_channel,
+            output_channel=output_channel,
+            ndimage_function=ndimage_function,
+            masks_channel=masks_channel,
+            op_string=op_string,
+        )
+
+    @recordable
+    def compute_masks_ndimage(self, frames, input_channel, output_channel, ndimage_function='mean', masks_channel='masks', op_string=None):
+        """
+        Apply an ndimage function to the specified data channel for each cell mask in the specified frames.
+
+        Parameters
+        ----------
+        frames : segmentation_tools.SegmentedImage or list of segmentation_tools.SegmentedImage objects
+            The frames to apply the function to.
+        input_channel : str
+            The attribute of the frame to use as input (e.g. 'img', 'OPD', etc.).
+        output_channel : str
+            The attribute of the frame to store the output (e.g. 'mean_intensity', 'mass', etc.).
+        ndimage_function : str
+            The ndimage function to apply. Defaults to 'mean'.
+        masks_channel : str
+            The attribute of the frame containing the cell masks.
+        op_string : str
+            A string of math operations to apply to the output array. For example, 'x*2' would double the output values. Defaults to None.
+        """
+        from scipy import ndimage
+
+        def validate_op_string(op_string: str | None):
+            # Validate the op_string to ensure it only contains allowed characters and operations.
+            if op_string is None:
+                return
+            allowed_chars = set('0123456789+-*/().x ')
+            if not set(op_string).issubset(allowed_chars):
+                raise ValueError(f"Invalid characters in op_string: {op_string}. Only numbers, operators (+, -, *, /), parentheses, and 'x' are allowed.")
+            if 'x' not in op_string:
+                raise ValueError(f"op_string must contain 'x' to represent the input array. Provided op_string: {op_string}")
+            
+        def execute_op_string(x: np.ndarray, op_string: str | None):
+            validate_op_string(op_string)
+            if op_string is None:
+                return x
+            else:
+                return eval(op_string)
+
+        frames = self._parse_frames(frames)
+
+        if ndimage_function=='std':
+            ndimage_function = 'standard_deviation'
+
+        ndimage_function = getattr(ndimage, ndimage_function)
+
+        
+        if '[' in input_channel:
+            color_channel = int(input_channel.split('[')[1].split(']')[0])
+            input_channel = input_channel.split('[')[0]
+        else:
+            color_channel = None
+
+        for frame in self._progress_bar(frames, desc=f'Applying {ndimage_function} to {input_channel}'):
+            if color_channel is not None:
+                input_data = getattr(frame, input_channel)[..., color_channel]
+            else:
+                input_data = getattr(frame, input_channel)
+            masks = getattr(frame, masks_channel)
+
+            idx = np.arange(masks.max())+1
+            output_data = ndimage_function(input_data, labels=masks, index=idx)
+            output_data = np.asanyarray(output_data)
+
+            # Apply the op_string to the output data
+            output_data = execute_op_string(output_data, op_string)
+
+            frame.set_cell_attrs(output_channel, output_data)
+
     def _clear_coverslip_height(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.volumes_frame_stack.value == 'stack':
-            frames = self.stack.frames
-        else:
-            frames = [self.frame]
+
+        frames = self._parse_frames(self.left_toolbar.volumes_frame_stack.value)
 
         for frame in self._progress_bar(frames, desc='Clearing coverslip heights'):
             if hasattr(frame, 'coverslip_height'):

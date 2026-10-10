@@ -65,6 +65,7 @@ class LeftToolbar(QScrollArea):
             main_layout.addWidget(widget)
 
         self.setWidget(main_widget)
+        self.setMinimumWidth(400)
         return self
 
     def _create_lut_widget(self):
@@ -198,6 +199,7 @@ class LeftToolbar(QScrollArea):
             ('FUCCI', self.get_FUCCI_tab()),
             ('Tracking', self.get_tracking_tab()),
             ('Volumes', self.get_volumes_tab()),
+            ('NDImage', self.get_ndimage_tab())
         ]
 
         for name, widget in tabs:
@@ -641,6 +643,85 @@ class LeftToolbar(QScrollArea):
         self.get_coverslip_heightmaps_button.clicked.connect(self.main_window._measure_coverslip_heightmaps_action.trigger)
         self.fit_coverslip_surface_button.clicked.connect(self.main_window._fit_coverslip_surface_action.trigger)
         return self.volumes_tab
+
+    def get_ndimage_tab(self):
+        self.ndimage_tab = QWidget()
+        ndimage_layout = QVBoxLayout(self.ndimage_tab)
+        ndimage_layout.setSpacing(10)
+        ndimage_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self.ndimage_frame_stack = FrameStackButtons('Operate on:', self)
+
+        # Input channel
+        ndimage_input_layout = QHBoxLayout()
+        ndimage_input_label = QLabel('Input channel:', self)
+        self.ndimage_input_channel = QLineEdit(self, placeholderText='img')
+        ndimage_input_layout.addWidget(ndimage_input_label)
+        ndimage_input_layout.addWidget(self.ndimage_input_channel)
+
+        # Output channel
+        ndimage_output_layout = QHBoxLayout()
+        ndimage_output_label = QLabel('Output channel:', self)
+        self.ndimage_output_channel = QLineEdit(self, placeholderText='mean_intensity')
+        ndimage_output_layout.addWidget(ndimage_output_label)
+        ndimage_output_layout.addWidget(self.ndimage_output_channel)
+
+        # Function and operation on one line, two columns
+        ndimage_function_layout = QHBoxLayout()
+        ndimage_function_layout.setSpacing(0)
+        ndimage_function_label = QLabel('ndimage.', self)
+        self.ndimage_function = QComboBox(self)
+        self.ndimage_function.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        # self.ndimage_function.setMinimumContentsLength(10)  # width in characters; the popup list still shows full names
+        self.ndimage_function.addItems([
+            'mean',
+            'median',
+            'sum',
+            'maximum',
+            'minimum',
+            'variance',
+            'std',
+        ])
+        ndimage_function_layout.addWidget(ndimage_function_label)
+        ndimage_function_layout.addWidget(self.ndimage_function, stretch=1)
+
+        ndimage_op_layout = QHBoxLayout()
+        ndimage_op_layout.setSpacing(0)
+        ndimage_op_label = QLabel('f(x)=', self)
+        self.ndimage_op_string = QLineEdit(self, placeholderText='x')
+        self.ndimage_op_string.setMinimumWidth(40)
+        self.ndimage_op_string.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        ndimage_op_layout.addWidget(ndimage_op_label)
+        ndimage_op_layout.addWidget(self.ndimage_op_string, stretch=1)
+
+        ndimage_function_op_layout = QHBoxLayout()
+        ndimage_function_op_layout.addLayout(ndimage_function_layout, stretch=1)
+        ndimage_function_op_layout.addLayout(ndimage_op_layout, stretch=1)
+
+        # Masks channel
+        ndimage_masks_layout = QHBoxLayout()
+        ndimage_masks_label = QLabel('Masks channel:', self)
+        self.ndimage_masks_channel = QLineEdit(self, placeholderText='masks')
+        ndimage_masks_layout.addWidget(ndimage_masks_label)
+        ndimage_masks_layout.addWidget(self.ndimage_masks_channel)
+
+        self.compute_ndimage_button = QPushButton('Compute', self)
+
+        # Single non-collapsible bordered container
+        ndimage_widget = QWidget(self.tabbed_widget, objectName='bordered')
+        ndimage_widget_layout = QVBoxLayout(ndimage_widget)
+        ndimage_widget_layout.addLayout(ndimage_input_layout)
+        ndimage_widget_layout.addLayout(ndimage_output_layout)
+        ndimage_widget_layout.addLayout(ndimage_function_op_layout)
+        ndimage_widget_layout.addLayout(ndimage_masks_layout)
+        ndimage_widget_layout.addWidget(self.compute_ndimage_button)
+        ndimage_border = bordered(ndimage_widget)
+
+        ndimage_layout.addWidget(self.ndimage_frame_stack)
+        ndimage_layout.addWidget(ndimage_border)
+
+        self.compute_ndimage_button.clicked.connect(self.main_window._compute_masks_ndimage_action.trigger)
+        return self.ndimage_tab
 
     def get_tracking_tab(self):
         tracking_tab = QWidget()

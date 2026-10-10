@@ -21,7 +21,11 @@ def outlines_list(masks):
         
     outpix = []
     boundaries = find_objects(masks)
-    for (y,x), n in zip(boundaries, np.unique(masks)[1:]):
+    for coords, n in zip(boundaries, np.unique(masks)[1:]):
+        if coords is None:
+            outpix.append(np.zeros((0, 2)))
+            continue
+        y, x = coords
         mn=masks[y,x]==n
         if np.any(mn):
             contours, _ = cv2.findContours(mn.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)

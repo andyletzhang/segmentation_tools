@@ -942,10 +942,7 @@ class MainWidget(QMainWindow):
     def _mend_gaps(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.utils_frame_stack.value == 'stack':
-            frames = self.stack.frames
-        else:
-            frames = [self.frame]
+        frames=self.left_toolbar.utils_frame_stack.value
 
         gap_size = self.left_toolbar.gap_size.text()
         if gap_size == '':
@@ -956,8 +953,25 @@ class MainWidget(QMainWindow):
         self.mend_gaps(frames, gap_size)
         self._refresh_segmentation()
 
+    def _parse_frames(self, frames):
+        if isinstance(frames, str):
+            if frames == 'stack':
+                frames = self.stack.frames
+            elif frames == 'frame':
+                frames = [self.frame]
+            else:
+                raise ValueError(f'Invalid value for frames: {frames}. Must be "stack" or "frame".')
+        elif isinstance(frames, SegmentedImage):
+            frames = [frames]
+        elif isinstance(frames, list):
+            pass
+        else:
+            raise ValueError(f'Invalid value for frames: {frames}. Must be "stack", "frame", a SegmentedImage, or a list of SegmentedImages.')
+
+        return frames
+    
     @recordable
-    def mend_gaps(self, frames, gap_size=None):
+    def mend_gaps(self, frames: str|list, gap_size=None):
         """
         Mend gaps in/between the masks of the specified frames.
 
@@ -968,6 +982,7 @@ class MainWidget(QMainWindow):
         gap_size : int
             The maximum gap size to mend. If None, the default gap size (based on mean cell area) is used.
         """
+        frames = self._parse_frames(frames)
         for frame in self._progress_bar(frames, desc='Mending gaps'):
             mended = frame.mend_gaps(gap_size)
             if mended and hasattr(frame, 'stored_mask_overlay'):
@@ -977,11 +992,11 @@ class MainWidget(QMainWindow):
     def _remove_edge_masks(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.utils_frame_stack.value == 'stack':
-            frames = self.stack.frames
+
+        frames = self.left_toolbar.utils_frame_stack.value
+        if frames == 'stack':
             current_frame = self.frame_number
         else:
-            frames = [self.frame]
             current_frame = 0
 
         edge_cells = self.remove_edge_masks(frames)
@@ -995,7 +1010,7 @@ class MainWidget(QMainWindow):
         self.masks_visible = True
 
     @recordable
-    def remove_edge_masks(self, frames, margin=1):
+    def remove_edge_masks(self, frames: str|list, margin=1):
         """
         Remove masks bordering the edge of the image in the specified frames.
 
@@ -1011,6 +1026,7 @@ class MainWidget(QMainWindow):
         edge_cells : list of list of ints
             The cell IDs which were removed from each frame.
         """
+        frames = self._parse_frames(frames)
         edge_cells = self.stack.remove_edge_cells(self._progress_bar(frames, desc='Removing edge masks'), margin=margin)
         for deleted_cells, frame in zip(edge_cells, frames):
             # self._print(f'Removed {len(deleted_cells)} edge cells from frame {frame.frame_number}')
@@ -1050,7 +1066,7 @@ class MainWidget(QMainWindow):
             diameter = float(diameter)
         channels = self.left_toolbar.segmentation_channels
 
-        self.segment([self.frame], diameter=diameter, channels=channels)
+        self.segment('frame', diameter=diameter, channels=channels)
 
         # update the display
         self._refresh_segmentation(replace_masks=True)
@@ -1072,14 +1088,14 @@ class MainWidget(QMainWindow):
             diameter = float(diameter)
         channels = self.left_toolbar.segmentation_channels
 
-        self.segment(self.stack.frames, diameter=diameter, channels=channels)
+        self.segment('stack', diameter=diameter, channels=channels)
 
         # update the display
         self.masks_visible = True
         self._FUCCI_overlay()
 
     @recordable
-    def segment(self, frames, diameter=None, channels=None):
+    def segment(self, frames: str|list, diameter=None, channels=None):
         """
         Performs segmentation on the specified frames using Cellpose.
 
@@ -1099,6 +1115,7 @@ class MainWidget(QMainWindow):
 
             self.cellpose_model = models.CellposeModel(gpu=True, pretrained_model=self.pretrained_model)
 
+        frames = self._parse_frames(frames)
         for frame in self._progress_bar(frames, desc='Segmenting frames'):
             img = frame.img[..., channels].copy()  # segment with the specified channels
             if self.left_toolbar.apply_LUTs_checkbox.isChecked():
@@ -1126,11 +1143,8 @@ class MainWidget(QMainWindow):
     def _clear_masks(self, event=None):
         if not self.file_loaded:
             return
-        
-        if self.left_toolbar.utils_frame_stack.value == 'stack':
-            frames = self.stack.frames
-        else:
-            frames = [self.frame]
+
+        frames=self.left_toolbar.utils_frame_stack.value
         
         self.clear_masks(frames)
 
@@ -1142,6 +1156,7 @@ class MainWidget(QMainWindow):
         Clear the segmentation masks for the current frame.
         """
 
+        frames = self._parse_frames(frames)
         for frame in self._progress_bar(frames, desc='Clearing masks'):
             self.replace_segmentation(frame, np.zeros_like(frame.masks))
             if hasattr(self.stack, 'tracked_centroids'):
@@ -1291,18 +1306,20 @@ class MainWidget(QMainWindow):
     def _clear_FUCCI_frame(self):
         if not self.file_loaded:
             return
-        self.clear_FUCCI([self.frame])
+        self.clear_FUCCI('frame')
 
     def _clear_FUCCI_stack(self):
         if not self.file_loaded:
             return
-        self.clear_FUCCI(self.stack.frames)
+        self.clear_FUCCI('stack')
 
     @recordable
     def clear_FUCCI(self, frames):
         """
         Clear the FUCCI labels for the specified frames.
         """
+
+        frames = self._parse_frames(frames)
         for frame in frames:
             frame.set_cell_attrs(['red', 'green'], np.array([[False, False] for _ in range(frame.n_cells)]).T)
         self._FUCCI_overlay()
@@ -1314,7 +1331,7 @@ class MainWidget(QMainWindow):
             self.left_toolbar.red_cp_threshold,
             self.left_toolbar.green_cp_threshold,
         )
-        self.measure_FUCCI_cellpose([self.frame], red_threshold=red_threshold, green_threshold=green_threshold)
+        self.measure_FUCCI_cellpose('frame', red_threshold=red_threshold, green_threshold=green_threshold)
 
     def _measure_FUCCI_cellpose_stack(self):
         if not self.file_loaded:
@@ -1323,7 +1340,7 @@ class MainWidget(QMainWindow):
             self.left_toolbar.red_cp_threshold,
             self.left_toolbar.green_cp_threshold,
         )
-        self.measure_FUCCI_cellpose(self.stack.frames, red_threshold=red_threshold, green_threshold=green_threshold)
+        self.measure_FUCCI_cellpose('stack', red_threshold=red_threshold, green_threshold=green_threshold)
 
     def _measure_FUCCI_frame(self):
         if not self.file_loaded:
@@ -1334,7 +1351,7 @@ class MainWidget(QMainWindow):
             self.left_toolbar.percent_threshold,
         )
         self.measure_FUCCI(
-            [self.frame], red_threshold=red_threshold, green_threshold=green_threshold, percent_threshold=percent_threshold
+            'frame', red_threshold=red_threshold, green_threshold=green_threshold, percent_threshold=percent_threshold
         )
 
     def _measure_FUCCI_stack(self):
@@ -1346,7 +1363,7 @@ class MainWidget(QMainWindow):
             self.left_toolbar.percent_threshold,
         )
         self.measure_FUCCI(
-            self.stack.frames, red_threshold=red_threshold, green_threshold=green_threshold, percent_threshold=percent_threshold
+            'stack', red_threshold=red_threshold, green_threshold=green_threshold, percent_threshold=percent_threshold
         )
 
     @recordable
@@ -1368,6 +1385,7 @@ class MainWidget(QMainWindow):
         percent_threshold : float
             The fractional area of the cell which must be above the red/green threshold to be considered positive.
         """
+        frames = self._parse_frames(frames)
         for frame in self._progress_bar(frames, desc='Measuring FUCCI'):
             if self.is_zstack:
                 img = frame.zstack[self.zstack_number]
@@ -1391,6 +1409,7 @@ class MainWidget(QMainWindow):
 
     @recordable
     def measure_FUCCI_cellpose(self, frames, red_threshold=None, green_threshold=None):
+        frames = self._parse_frames(frames)
         for frame in self._progress_bar(frames, desc='Measuring FUCCI'):
             if self.is_zstack:
                 frame.img = frame.zstack[self.zstack_number]
@@ -1878,10 +1897,7 @@ class MainWidget(QMainWindow):
     def _measure_volumes(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.volumes_frame_stack.value == 'stack':
-            frames = self.stack.frames
-        else:
-            frames = [self.frame]
+        frames = self.left_toolbar.utils_frame_stack.value
 
         self.measure_volumes(frames)
 
@@ -1899,6 +1915,8 @@ class MainWidget(QMainWindow):
         frames : list of Frame
             The frames to measure volumes for.
         """
+
+        frames = self._parse_frames(frames)
         for frame in self._progress_bar(frames, desc='Measuring Cell Volumes'):
             if not hasattr(frame, 'heights'):
                 if hasattr(frame, 'zstack'):
@@ -2233,10 +2251,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
 
-        if self.left_toolbar.volumes_frame_stack.value == 'stack':
-            frames = self.stack.frames
-        else:
-            frames = [self.frame]
+        frames = self.left_toolbar.volumes_frame_stack.value
 
         if self.left_toolbar.xy_size is None:
             self._print('No xy scale specified. Defaulting to 0.325.')
@@ -2247,7 +2262,7 @@ class MainWidget(QMainWindow):
         self._refresh_right_toolbar('volume')
 
     @recordable
-    def get_spherical_volumes(self, frames, scale=None):
+    def get_spherical_volumes(self, frames: str|list, scale=None):
         """
         Compute the volumes of cells if their areas are treated as circular cross-sections of spheres.
         This is used for estimating the volumes of cells in suspension.
@@ -2257,6 +2272,9 @@ class MainWidget(QMainWindow):
         frames : list of Frame
             The frames to compute spherical volumes for
         """
+
+        frames = self._parse_frames(frames)
+
         if scale is None:
             self._print('No xy scale specified. Defaulting to 0.325.')
             scale = 0.325
@@ -3389,10 +3407,7 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
 
-        if self.left_toolbar.utils_frame_stack.value == 'stack':
-            frames = self.stack.frames
-        else:
-            frames = [self.frame]
+        frames = self.left_toolbar.utils_frame_stack.value
 
         self.generate_outlines(frames)
         self._print('Generated outlines.')

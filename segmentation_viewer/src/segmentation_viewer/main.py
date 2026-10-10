@@ -3522,7 +3522,7 @@ class MainWidget(QMainWindow):
             self.save_tracking(file_path=folder_path + '/tracking.csv')
 
     @recordable
-    def save_frame(self, frame, file_path=None):
+    def save_frame(self, frame, file_path=None, write_attrs=[]):
         """
         Save a frame to a .seg.npy file.
 
@@ -3538,10 +3538,10 @@ class MainWidget(QMainWindow):
             file_path = frame.name
         try:  # fetch cell cycle data if available
             self._convert_red_green([frame])
-            write_attrs = ['cell_cycles']
+            write_attrs += ['cell_cycles']
 
         except AttributeError:
-            write_attrs = []
+            pass
 
         if hasattr(frame, 'zstack'):
             frame.img = frame.zstack[self.zstack_number]

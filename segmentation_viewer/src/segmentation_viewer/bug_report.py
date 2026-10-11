@@ -121,7 +121,7 @@ class BugReportDialog(QDialog):
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
-        self.name_edit = QLineEdit(placeholderText='Optional, so I know who to follow up with')
+        self.name_edit = QLineEdit(placeholderText='Name (Optional)')
         self.subject_edit = QLineEdit(placeholderText='Short summary of the problem')
         form.addRow('Your name:', self.name_edit)
         form.addRow('Subject:', self.subject_edit)

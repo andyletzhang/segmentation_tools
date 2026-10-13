@@ -3091,7 +3091,7 @@ class MainWidget(QMainWindow):
             self.particle_stat_plot.autoRange()
             if self.particle_stat_zero.isChecked():
                 current_y_range = self.particle_stat_plot.viewRange()[1]
-                self.particle_stat_plot.setYRange(0, current_y_range[1], padding=0)
+                self.particle_stat_plot.setYRange(0, current_y_range[1])
 
     def _plot_time_series(self):
         if not self.file_loaded:

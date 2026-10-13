@@ -3041,8 +3041,8 @@ class MainWidget(QMainWindow):
             brush = (0, 0, 255, 150)
         else:  # stack
             cell_attrs = []
-            for frame in self.stack.frames:
-                cell_attrs.extend(self.frame.get_cell_attrs(hist_attr, fill_value=np.nan))
+            for f in self.stack.frames:
+                cell_attrs.extend(f.get_cell_attrs(hist_attr, fill_value=np.nan))
             cell_attrs = np.array(cell_attrs)
             brush = (0, 128, 255, 150)
 

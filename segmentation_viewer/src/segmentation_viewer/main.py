@@ -1919,7 +1919,7 @@ class MainWidget(QMainWindow):
     def _measure_volumes(self):
         if not self.file_loaded:
             return
-        frames = self.left_toolbar.utils_frame_stack.value
+        frames = self.left_toolbar.volumes_frame_stack.value
 
         self.measure_volumes(frames)
 

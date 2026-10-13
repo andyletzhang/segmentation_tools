@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
     QWidget,
     QStyledItemDelegate,
     QComboBox,
+    QCheckBox,
 )
 from segmentation_tools.io import segmentation_from_img, segmentation_from_zstack
 from segmentation_tools.preprocessing import get_quantile
@@ -640,9 +641,12 @@ class MainWidget(QMainWindow):
         particle_plot_widget = QWidget()
         particle_plot_layout = QVBoxLayout(particle_plot_widget)
         particle_stat_menu_layout = QHBoxLayout()
+        self.particle_stat_zero = QCheckBox('Zero', self)
         self.particle_stat_menu = CustomComboBox(self)
         particle_stat_menu_layout.addWidget(self.particle_stat_menu)
+        self.particle_stat_zero.setFixedWidth(50)
         particle_stat_menu_layout.setContentsMargins(40, 0, 0, 0)  # indent the title/menu
+        particle_stat_menu_layout.addWidget(self.particle_stat_zero)
         self.particle_stat_menu.addItem('Select Cell Attribute')
         self.particle_stat_plot = pg.PlotWidget(background='transparent')
         self.particle_stat_plot.setLabel('left', 'Select Cell Attribute')
@@ -657,6 +661,7 @@ class MainWidget(QMainWindow):
         # connect particle measurements
         self.particle_stat_menu.dropdownOpened.connect(self._menu_frame_attrs)
         self.particle_stat_menu.currentTextChanged.connect(self._plot_particle_statistic)
+        self.particle_stat_zero.stateChanged.connect(self._plot_particle_statistic)
 
         return particle_plot_widget
 
@@ -3084,6 +3089,9 @@ class MainWidget(QMainWindow):
                 timepoints, values, pen=color, symbol='o', symbolPen='w', symbolBrush=color, symbolSize=7, width=4
             )
             self.particle_stat_plot.autoRange()
+            if self.particle_stat_zero.isChecked():
+                current_y_range = self.particle_stat_plot.viewRange()[1]
+                self.particle_stat_plot.setYRange(0, current_y_range[1], padding=0)
 
     def _plot_time_series(self):
         if not self.file_loaded:

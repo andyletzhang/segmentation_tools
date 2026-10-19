@@ -592,9 +592,11 @@ class TimeStack(SegmentedStack):
             np.nanmean([np.sqrt(np.nanquantile(frame.cell_areas(scaled=False), 0.9)) for frame in self.frames]) * 2 / 3
         )  # 2/3 a large cell: overshoot the largest tracking tprange by a bit.
 
+        centroids = self.centroids().dropna(subset=['x', 'y'])  # drop any cells which don't have centroid data (likely faulty/non-contiguous masks)
+
         # FIRST PASS: large search range
         t_firstpass = tp.link(
-            self.centroids(), search_range=max_search_range, adaptive_step=0.96, adaptive_stop=2
+            centroids, search_range=max_search_range, adaptive_step=0.96, adaptive_stop=2
         )  # use adaptive search range to find the most tracks without throwing an error
 
         drift_firstpass = tp.compute_drift(t_firstpass)

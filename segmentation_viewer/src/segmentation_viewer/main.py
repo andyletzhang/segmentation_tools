@@ -589,11 +589,21 @@ class MainWidget(QMainWindow):
         if not self.file_loaded:
             return
 
+        # set the current attribute in the new tab to match the previous tab's selection
         last_tab_combo = [self.histogram_menu, self.particle_stat_menu, self.time_series_menu][self.last_stat_tab]
         current_tab_combo = [self.histogram_menu, self.particle_stat_menu, self.time_series_menu][index]
         current_attr = last_tab_combo.currentText()
 
+        current_tab_combo.blockSignals(True)
         current_tab_combo.changeToText(current_attr)
+        current_tab_combo.blockSignals(False)
+
+        if index == 0:
+            self._plot_histogram()
+        elif index == 1:
+            self._plot_particle_statistic()
+        elif index == 2:
+            self._plot_time_series()
 
         self.last_stat_tab = index
 
@@ -637,6 +647,24 @@ class MainWidget(QMainWindow):
 
         self._plot_histogram()
 
+    def _stat_zero_checked(self, state):
+        self.particle_stat_zero.blockSignals(True)
+        self.time_series_zero.blockSignals(True)
+        if state == 2:
+            self.particle_stat_zero.setChecked(True)
+            self.time_series_zero.setChecked(True)
+        else:
+            self.particle_stat_zero.setChecked(False)
+            self.time_series_zero.setChecked(False)
+        self.particle_stat_zero.blockSignals(False)
+        self.time_series_zero.blockSignals(False)
+
+        print(self.stat_tabs.currentIndex())
+        if self.stat_tabs.currentIndex() == 1:
+            self._plot_particle_statistic()
+        elif self.stat_tabs.currentIndex() == 2:
+            self._plot_time_series()
+
     def _get_particle_stat_tab(self):
         particle_plot_widget = QWidget()
         particle_plot_layout = QVBoxLayout(particle_plot_widget)
@@ -661,7 +689,7 @@ class MainWidget(QMainWindow):
         # connect particle measurements
         self.particle_stat_menu.dropdownOpened.connect(self._menu_frame_attrs)
         self.particle_stat_menu.currentTextChanged.connect(self._plot_particle_statistic)
-        self.particle_stat_zero.stateChanged.connect(self._plot_particle_statistic)
+        self.particle_stat_zero.stateChanged.connect(self._stat_zero_checked)
 
         return particle_plot_widget
 
@@ -669,9 +697,12 @@ class MainWidget(QMainWindow):
         time_series_widget = QWidget()
         time_series_layout = QVBoxLayout(time_series_widget)
         time_series_menu_layout = QHBoxLayout()
+        self.time_series_zero = QCheckBox('Zero', self)
         self.time_series_menu = CustomComboBox(self)
         self.time_series_menu.addItems(['Select Cell Attribute'])
+        self.time_series_zero.setFixedWidth(50)
         time_series_menu_layout.addWidget(self.time_series_menu)
+        time_series_menu_layout.addWidget(self.time_series_zero)
         time_series_menu_layout.setContentsMargins(40, 0, 0, 0)  # indent the title/menu
 
         self.time_series_plot = pg.PlotWidget(background='transparent')
@@ -687,6 +718,7 @@ class MainWidget(QMainWindow):
         # connect time series measurements
         self.time_series_menu.dropdownOpened.connect(self._menu_frame_attrs)
         self.time_series_menu.currentTextChanged.connect(self._plot_time_series)
+        self.time_series_zero.stateChanged.connect(self._stat_zero_checked)
         return time_series_widget
 
     def _stat_LUT_slider_changed(self):
@@ -2080,14 +2112,13 @@ class MainWidget(QMainWindow):
     def _calibrate_coverslip_height(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.volumes_frame_stack.value == 'stack':
-            frames = self.stack.frames
+
+        frames = self.left_toolbar.volumes_frame_stack.value
+        if frames == 'stack':
             if not all(hasattr(frame, 'zstack') for frame in frames):
                 raise ValueError('No z-stacks available to calibrate coverslip height.')
             if len(np.unique([frame.zstack.shape[0] for frame in frames])) > 1:
                 raise ValueError('Z-stack lengths are not consistent.')
-        else:
-            frames = [self.frame]
 
         peak_prominence = self.left_toolbar.coverslip_prominence.text()
         if peak_prominence == '':
@@ -2131,8 +2162,7 @@ class MainWidget(QMainWindow):
         """
         from segmentation_tools.heightmap import get_coverslip_z
 
-        if isinstance(frames, SegmentedImage):
-            frames = [frames]
+        frames = self._parse_frames(frames)
 
         z_profile = []
         for z_index in range(frames[0].zstack.shape[0]):
@@ -2154,10 +2184,8 @@ class MainWidget(QMainWindow):
     def _measure_heights(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.volumes_frame_stack.value == 'stack':
-            frames = self.stack.frames
-        else:
-            frames = self.frame
+        
+        frames = self.left_toolbar.volumes_frame_stack.value
 
         peak_prominence = self.left_toolbar.peak_prominence.text()
         z_upsample = self.left_toolbar.zstack_upsample.text()
@@ -2201,8 +2229,7 @@ class MainWidget(QMainWindow):
         """
         from segmentation_tools.heightmap import get_heights, resample_zstack
 
-        if isinstance(frames, SegmentedImage):
-            frames = [frames]
+        frames = self._parse_frames(frames)
 
         if hasattr(frames[0], 'scale'):
             scale = frames[0].scale
@@ -2247,10 +2274,8 @@ class MainWidget(QMainWindow):
     def _measure_coverslip_heightmaps(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.volumes_frame_stack.value == 'stack':
-            frames = self.stack.frames
-        else:
-            frames = self.frame
+        
+        frames = self.left_toolbar.volumes_frame_stack.value
 
         peak_prominence = self.left_toolbar.coverslip_prominence.text()
         if peak_prominence == '':
@@ -2280,8 +2305,7 @@ class MainWidget(QMainWindow):
         """
         from segmentation_tools.heightmap import get_heights
 
-        if isinstance(frames, SegmentedImage):
-            frames = [frames]
+        frames = self._parse_frames(frames)
 
         if hasattr(frames[0], 'scale'):
             scale = frames[0].scale
@@ -2334,10 +2358,8 @@ class MainWidget(QMainWindow):
     def _fit_coverslip_surface(self):
         if not self.file_loaded:
             return
-        if self.left_toolbar.volumes_frame_stack.value == 'stack':
-            frames = self.stack.frames
-        else:
-            frames = self.frame
+        
+        frames = self.left_toolbar.volumes_frame_stack.value
 
         xy_downsample = self.left_toolbar.cs_xy_downsample.text()
         z_upsample = self.left_toolbar.cs_z_upsample.text()
@@ -2360,8 +2382,7 @@ class MainWidget(QMainWindow):
     def fit_coverslip_surface(self, frames, membrane_channel: int = 0, xy_downsample: int = 32, z_upsample: int = 8, z_scale: float = 1, xy_scale: float = 0.325):
         from segmentation_tools.heightmap import fit_zstack_surface
 
-        if isinstance(frames, SegmentedImage):
-            frames = [frames]
+        frames = self._parse_frames(frames)
 
         for frame in self._progress_bar(frames, desc='Fitting Coverslip Surfaces'):
             if not hasattr(frame, 'zstack'):
@@ -3130,6 +3151,10 @@ class MainWidget(QMainWindow):
         self.time_series_plot.addItem(error_bars)
         self.time_series_plot.plot(frames, median, pen=median_pen)
         self.time_series_plot.autoRange()
+
+        if self.time_series_zero.isChecked():
+            current_y_range = self.time_series_plot.viewRange()[1]
+            self.time_series_plot.setYRange(0, current_y_range[1])
 
     def _FUCCI_click(self, event, current_cell_n):
         if current_cell_n >= 0:
